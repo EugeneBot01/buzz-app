@@ -11,6 +11,7 @@ import { Header, InlineHeader } from "../shared/design-system/ui/Header";
 import { ToastNotice } from "../shared/design-system/ui/Toast";
 import { PreferenceRow } from "../shared/design-system/ui/PreferenceRow";
 import { AppearancePreview } from "./AppearancePreview";
+import { LanguageSetting } from "../team/i18n/LanguageSetting";
 import { Button } from "../shared/design-system/ui/Button";
 import {
   useCallback,
@@ -72,6 +73,7 @@ export function AppearanceSettings({
       <div>
         <InlineHeader title="Interface" />
         <SettingsGroup>
+          <LanguageSetting />
           <PreferenceRow
             id="setting-mode"
             title="Mode"

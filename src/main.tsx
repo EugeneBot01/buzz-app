@@ -11,6 +11,10 @@ import "@fontsource-variable/inter/wght-italic.css";
 import "@fontsource/jetbrains-mono/400.css";
 import { useKeyboardFocusVisibility } from "./shared/design-system/useKeyboardFocusVisibility";
 import { useRejectUnclaimedDrops } from "./features/messages/use-file-drop";
+import { startTeamTranslation } from "./team/i18n/start";
+
+// Team: Korean UI (display-layer translation).
+startTeamTranslation();
 
 const container = document.getElementById("root");
 

@@ -433,8 +433,14 @@ export function MessageMarkdown({
   const resolveName = useChannelIdentityNames(session, row.channelId);
   const prepared = useMemo(() => prepareMarkdown(row.content), [row.content]);
   if (prepared.kind === "plain")
-    return <div className={styles.plainText}>{prepared.content}</div>;
+    return (
+      <div className={styles.plainText} data-no-translate="">
+        {prepared.content}
+      </div>
+    );
+  // Team: message text is user content; the Korean UI translator skips it.
   return (
+    <div data-no-translate="" style={{ display: "contents" }}>
     <PreparedMessageMarkdown
       row={row}
       prepared={prepared}
@@ -451,6 +457,7 @@ export function MessageMarkdown({
       interactive={interactive}
       staticMentions={staticMentions}
     />
+    </div>
   );
 }
 
