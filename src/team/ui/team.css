@@ -3,5 +3,6 @@
    light and dark themes. */
 :root,
 :root * {
+  /* biome-ignore lint/complexity/noImportantStyles: theme selectors redefine this token and must not bring the dots back */
   --texture-dots-color: transparent !important;
 }

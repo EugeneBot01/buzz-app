@@ -3,14 +3,16 @@ import { createRoot } from "react-dom/client";
 import type { PluginModule } from "../../plugins/api";
 import type { RelayData } from "../../features/relay/service";
 import type { RelaySession } from "../../features/relay/session";
-import {
-  readRoster,
-  managesCommunity,
-} from "../../features/communities/roster";
 import { useCommunityRole } from "../../features/communities/useCommunityRole";
 import { Button } from "../../shared/design-system/ui/Button";
 import { scopeOf } from "../reminders/react";
-import { normalizeRelayUrl } from "../../team/calendar/compat/relay";
+import {
+  joinedChannels,
+  readManagers,
+  readTeamDocs,
+  teamRelayUrl as relayUrlOf,
+  waitForChannels,
+} from "../../team/relay/community";
 import {
   ONBOARDING_TAG,
   encodeOnboarding,
@@ -26,10 +28,6 @@ import {
 export const inject = ["relay", "settingsCards"];
 
 type Scope = { session: RelaySession; viewer: string; community: string };
-
-/** The same relay address the calendar uses, so every team document agrees. */
-const relayUrlOf = (origin: string) =>
-  normalizeRelayUrl(origin.replace(/^https:/, "wss:").replace(/^http:/, "ws:"));
 
 // ---- shared state: the current community and whether the guide is open ----
 
@@ -64,50 +62,13 @@ function closeGuide() {
 
 // ---- relay helpers ----
 
-function waitForChannels(session: RelaySession, signal: AbortSignal) {
-  return new Promise<ReturnType<RelaySession["channels"]["list"]>>(
-    (resolve, reject) => {
-      session.channels.ensureList();
-      const check = () => {
-        const list = session.channels.list();
-        if (list.status !== "ready") return;
-        finish();
-        resolve(list);
-      };
-      const stop = session.channels.subscribeList(check);
-      const timer = setTimeout(() => {
-        finish();
-        reject(new Error("Channel list timed out"));
-      }, 30_000);
-      const abort = () => {
-        finish();
-        reject(signal.reason);
-      };
-      function finish() {
-        stop();
-        clearTimeout(timer);
-        signal.removeEventListener("abort", abort);
-      }
-      signal.addEventListener("abort", abort);
-      check();
-    },
-  );
-}
-
 async function readDefaults(
   session: RelaySession,
   relayUrl: string,
   signal: AbortSignal,
 ): Promise<OnboardingDoc | null> {
-  const roster = await readRoster(session, signal);
-  const managers = new Set(
-    (roster ?? [])
-      .filter(({ role }) => managesCommunity(role))
-      .map(({ pubkey }) => pubkey),
-  );
-  const events = await session.read([
-    { kinds: [30078], "#d": [onboardingDTag(relayUrl)], limit: 50 } as never,
-  ]);
+  const managers = await readManagers(session, signal);
+  const events = await readTeamDocs(session, onboardingDTag(relayUrl));
   return latestOnboarding(events, managers);
 }
 
@@ -115,9 +76,7 @@ async function readDefaults(
 async function welcome(scope: Scope, signal: AbortSignal) {
   const { session, viewer, community } = scope;
   const list = await waitForChannels(session, signal);
-  const joined = new Set(
-    list.channels.filter((channel) => !channel.readOnly).map(({ id }) => id),
-  );
+  const joined = joinedChannels(list);
   const progress = readProgress(viewer, community);
   let doc: OnboardingDoc | null = null;
   try {
@@ -185,6 +144,7 @@ function follow(relay: RelayData) {
 
 /** The guide lives in its own small root so it shows over any page. */
 function mountGuide() {
+  if (typeof document === "undefined") return () => {};
   const host = document.createElement("div");
   host.setAttribute("data-team-welcome", "");
   document.body.append(host);

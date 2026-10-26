@@ -3123,5 +3123,7 @@
   "Calendar reminders": "캘린더 알림",
   "A month calendar every member of a community shares, with polls, reminders and a weekly digest.": "커뮤니티 모두가 함께 쓰는 월간 캘린더입니다. 투표, 알림, 주간 요약이 있습니다.",
   "Team welcome": "팀 안내",
-  "A short welcome guide for new teammates, and default channels everyone joins automatically.": "새 팀원을 위한 짧은 환영 안내와, 모두가 자동으로 들어가는 기본 채널입니다."
+  "A short welcome guide for new teammates, and default channels everyone joins automatically.": "새 팀원을 위한 짧은 환영 안내와, 모두가 자동으로 들어가는 기본 채널입니다.",
+  "Team folders": "팀 폴더",
+  "One sidebar folder layout an admin shares with everyone in the community.": "관리자가 커뮤니티 모두와 함께 쓰는 사이드바 폴더 배치입니다."
 }

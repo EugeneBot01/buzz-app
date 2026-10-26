@@ -2,6 +2,8 @@ import teamCalendarManifest from "./team-calendar/manifest.json";
 import * as teamCalendar from "./team-calendar";
 import teamWelcomeManifest from "./team-welcome/manifest.json";
 import * as teamWelcome from "./team-welcome";
+import teamSectionsManifest from "./team-sections/manifest.json";
+import * as teamSections from "./team-sections";
 import teamMentionsManifest from "./team-mentions/manifest.json";
 import * as teamMentions from "./team-mentions";
 import voiceNotesManifest from "./voice-notes/manifest.json";
@@ -248,6 +250,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...teamWelcomeManifest, apiVersion: 1 },
     module: teamWelcome,
+    enabledByDefault: true,
+  },
+  // Team: shared sidebar folders.
+  {
+    manifest: { ...teamSectionsManifest, apiVersion: 1 },
+    module: teamSections,
     enabledByDefault: true,
   },
 ];

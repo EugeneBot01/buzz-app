@@ -1,0 +1,7 @@
+{
+  "id": "buzz.team.sections",
+  "name": "Team folders",
+  "apiVersion": 1,
+  "description": "One sidebar folder layout an admin shares with everyone in the community.",
+  "discovery": { "category": "communication", "tags": ["messaging"] }
+}

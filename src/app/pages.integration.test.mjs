@@ -129,6 +129,8 @@ test("the app runtime exposes ready bundled pages and removes them on disable", 
         "buzz.channels",
         "buzz.emoji",
         "buzz.pairing",
+        "buzz.team.sections",
+        "buzz.team.welcome",
       ],
     );
     // The device-local template library remains reachable without a selected community.
@@ -201,6 +203,8 @@ test("the app runtime exposes ready bundled pages and removes them on disable", 
         "buzz.channels",
         "buzz.emoji",
         "buzz.pairing",
+        "buzz.team.sections",
+        "buzz.team.welcome",
       ],
     );
 
