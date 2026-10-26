@@ -1161,5 +1161,289 @@
   ["Version {0}", "버전 {0}"],
   ["Duration: {0}", "유지 기간: {0}"],
   ["Preview {0} identity", "{0} 계정 미리보기"],
-  ["{0} channel(s)", "{0}개 채널"]
+  ["{0} channel(s)", "{0}개 채널"],
+  ["Shift+{0}+{1}", "Shift+{0}+{1}"],
+  [
+    "Apps Platform requires client {0}; update Buzz before creating or deploying apps",
+    "앱 플랫폼은 버전 {0} 이상이 필요합니다. 앱을 만들거나 배포하기 전에 Buzz를 업데이트하세요"
+  ],
+  [
+    "This Apps Platform does not advertise {0}; read apps_contract and select a supported runtime",
+    "이 앱 플랫폼은 {0}을(를) 지원하지 않습니다. 지원하는 실행 방식을 고르세요"
+  ],
+  [
+    "Apps Platform reserved {0}, not the planned {1}",
+    "앱 플랫폼이 계획한 {1}이 아니라 {0}을(를) 잡았습니다"
+  ],
+  [
+    "Create stopped during {0} for app_id={1}: {2}. The reservation may already exist; inspect or resume this exact app before creating a replacement.",
+    "앱 {1}을(를) 만들다가 {0} 단계에서 멈췄습니다: {2}. 이미 만들어졌을 수 있으니, 새로 만들기 전에 이 앱을 먼저 확인하거나 이어서 진행하세요."
+  ],
+  [
+    "Sharing with a workspace needs restricted visibility; this app is {0}",
+    "워크스페이스와 공유하려면 공개 범위가 '제한'이어야 합니다. 이 앱은 {0}입니다"
+  ],
+  [
+    "Builderlab {0} {1}; known-communities sync {2}.",
+    "Builderlab {0} {1}, 커뮤니티 목록 동기화 {2}."
+  ],
+  [
+    "Builderlab listed {0} community address(es) this device can’t save; they were left out.",
+    "Builderlab이 알려 준 커뮤니티 주소 중 {0}개는 이 기기에 저장할 수 없어서 뺐습니다."
+  ],
+  ["Buzz does not handle {0}", "Buzz는 {0}을(를) 처리하지 않습니다"],
+  [
+    "CI failed {0}for {1}: {2} failed, as GitHub names them:",
+    "{1}의 CI 실패 {0}: {2} 실패 (GitHub 표기):"
+  ],
+  ["CI passed {0}for {1}.", "{1}의 CI 통과 {0}."],
+  [
+    "Stopped watching {0}: it could not be read with gh, or you could not be woken, for {1} minutes. Call watch_pr again to retry.",
+    "{0} 지켜보기를 멈췄습니다: {1}분 동안 읽지 못했거나 알릴 수 없었습니다. 다시 하려면 watch_pr를 다시 부르세요."
+  ],
+  [
+    "Watching {0}. You will be woken here{1} when CI finishes on its latest commit or new feedback arrives.",
+    "{0}을(를) 지켜보는 중입니다. 최신 커밋의 CI가 끝나거나 새 의견이 오면 여기{1}로 알려 드립니다."
+  ],
+  ["From goose config ({0})", "goose 설정에서 ({0})"],
+  ["Set up {0} on the Settings tab.", "설정 탭에서 {0}을(를) 준비하세요."],
+  ["Available once {0} is set up.", "{0}을(를) 준비하면 쓸 수 있습니다."],
+  ["Could not list models: {0}", "모델 목록을 불러오지 못했습니다: {0}"],
+  ["Could not read goose's levels: {0}", "goose의 단계를 읽지 못했습니다: {0}"],
+  ["Default: {0}", "기본값: {0}"],
+  [
+    "Deletion of {0} stopped. This community is not being deleted.",
+    "{0} 삭제를 멈췄습니다. 이 커뮤니티는 지워지지 않습니다."
+  ],
+  [
+    "The change was saved, but the list could not be refreshed. {0} Use Refresh to try again.",
+    "변경은 저장했지만 목록을 새로 고치지 못했습니다. {0} '새로 고침'으로 다시 시도하세요."
+  ],
+  [
+    "Deletion was not sent. A deletion request from {0} is already pending on this device.",
+    "삭제 요청을 보내지 않았습니다. 이 기기에 {0}의 삭제 요청이 이미 처리 중입니다."
+  ],
+  ["Permanently delete {0}?", "{0}을(를) 영구 삭제할까요?"],
+  [
+    "Transfer {0} to another person. You become a regular member. The recipient needs a connected Buzz identity first, and this can’t be undone.",
+    "{0}을(를) 다른 사람에게 넘깁니다. 나는 일반 멤버가 됩니다. 받는 사람은 먼저 Buzz 계정을 연결해야 하고, 되돌릴 수 없습니다."
+  ],
+  [
+    "You've reached your limit of {0} communities.",
+    "커뮤니티 {0}개 한도에 찼습니다."
+  ],
+  ["Builderlab request failed ({0})", "Builderlab 요청 실패 ({0})"],
+  [
+    "Builderlab session check failed with HTTP {0}",
+    "Builderlab 세션 확인 실패 (HTTP {0})"
+  ],
+  [
+    "Builderlab code exchange failed with HTTP {0}",
+    "Builderlab 로그인 처리 실패 (HTTP {0})"
+  ],
+  ["Missing {0}", "{0} 없음"],
+  ["Pi did not take that: {0}", "Pi가 받지 않았습니다: {0}"],
+  ["Pi stopped: {0}", "Pi가 멈췄습니다: {0}"],
+  ["Pi stopped ({0})", "Pi가 멈췄습니다 ({0})"],
+  ["Pi could not start ({0})", "Pi를 시작하지 못했습니다 ({0})"],
+  ["Pi did not answer ({0})", "Pi가 답하지 않았습니다 ({0})"],
+  [
+    "Buzz can use only Pi's built-in providers, and {0} isn't one. It may come from a Pi package. Choose another.",
+    "Buzz는 Pi에 기본으로 들어 있는 제공자만 쓸 수 있는데, {0}은(는) 아닙니다. Pi 패키지에서 온 것일 수 있어요. 다른 것을 고르세요."
+  ],
+  ["Set up {0} in Settings.", "설정에서 {0}을(를) 준비하세요."],
+  ["From Pi settings ({0})", "Pi 설정에서 ({0})"],
+  ["Pi default ({0})", "Pi 기본값 ({0})"],
+  [
+    "Pi's settings name no model for {0}. Choose one.",
+    "Pi 설정에 {0}의 모델이 없습니다. 하나 고르세요."
+  ],
+  [
+    "Saved in ~/.pi/agent/auth.json, for every Pi agent and the pi command.{0}",
+    "~/.pi/agent/auth.json에 저장되어 모든 Pi 에이전트와 pi 명령이 씁니다.{0}"
+  ],
+  ["Pi default ({0} · {1})", "Pi 기본값 ({0} · {1})"],
+  ["Model: {0}", "모델: {0}"],
+  ["Role: {0}", "역할: {0}"],
+  ["Timed out until {0}", "{0}까지 일시 정지"],
+  [
+    "Already staff as {0}. Change their role on their row.",
+    "이미 {0} 운영진입니다. 그 줄에서 역할을 바꾸세요."
+  ],
+  ["Role for {0}", "{0}의 역할"],
+  [
+    "Your reopen went through, but the report has since been {0}.",
+    "다시 열기는 됐지만 그 뒤에 신고가 {0} 처리됐습니다."
+  ],
+  [
+    "The relay did not confirm the result. {0}",
+    "서버가 결과를 확인해 주지 않았습니다. {0}"
+  ],
+  ["This {0} is no longer available.", "이 {0}은(는) 더 이상 없습니다."],
+  ["Terminal ({0})", "터미널 ({0})"],
+  ["Last {0} days", "최근 {0}일"],
+  ["By {0}", "{0}별"],
+  [
+    "Filling in as agents finish: {0} of {1}",
+    "에이전트가 끝나는 대로 채우는 중: {1}개 중 {0}개"
+  ],
+  ["Workflows in {0}", "{0}의 워크플로"],
+  ["Remove {0} condition", "{0} 조건 지우기"],
+  ["Couldn't delete {0}", "{0}을(를) 삭제하지 못했습니다"],
+  ["Couldn't confirm deletion{0}", "삭제를 확인하지 못했습니다{0}"],
+  ["Add after Step {0}", "{0}단계 뒤에 추가"],
+  ["Remove step {0}", "{0}단계 지우기"],
+  ["Edit trigger: {0}", "실행 조건 편집: {0}"],
+  ["Edit step {0}: {1}", "{0}단계 편집: {1}"],
+  ["Step {0} settings", "{0}단계 설정"],
+  ["Run now: {0}", "지금 실행: {0}"],
+  ["Enabled in configuration: {0}", "설정에서 켜짐: {0}"],
+  ["Open {0}: {1}", "{0} 열기: {1}"],
+  ["Header {0} name", "헤더 {0} 이름"],
+  ["Header {0} value", "헤더 {0} 값"],
+  ["Remove header {0}", "헤더 {0} 지우기"],
+  [
+    "Paste a 5-field cron expression. Found {0} field{1}.",
+    "5칸짜리 cron 식을 붙여 넣으세요. 지금 {0}칸입니다{1}."
+  ],
+  [
+    "It is scheduled to run every {0}. Review the schedule before turning it on.",
+    "{0}마다 실행되도록 되어 있습니다. 켜기 전에 일정을 확인하세요."
+  ],
+  [
+    "It is scheduled to run every {0} minute{1}. Review the schedule before turning it on.",
+    "{0}분마다 실행되도록 되어 있습니다{1}. 켜기 전에 일정을 확인하세요."
+  ],
+  [
+    "Unsupported workflow field \"{0}\" — use the YAML editor",
+    "지원하지 않는 워크플로 항목 \"{0}\" — YAML 편집기를 쓰세요"
+  ],
+  [
+    "Unsupported trigger type \"{0}\" — use the YAML editor",
+    "지원하지 않는 실행 조건 \"{0}\" — YAML 편집기를 쓰세요"
+  ],
+  [
+    "Unsupported {0} trigger field \"{1}\" — use the YAML editor",
+    "{0} 실행 조건에서 지원하지 않는 항목 \"{1}\" — YAML 편집기를 쓰세요"
+  ],
+  [
+    "Unsupported cron expression: {0} Use the YAML editor",
+    "지원하지 않는 cron 식: {0} YAML 편집기를 쓰세요"
+  ],
+  ["Step {0} must be an object", "{0}단계는 객체여야 합니다"],
+  [
+    "Step {0} requires a unique 1–64 character alphanumeric or underscore ID",
+    "{0}단계에는 겹치지 않는 영문·숫자·밑줄 1~64자 ID가 필요합니다"
+  ],
+  [
+    "Duplicate step ID \"{0}\" — use the YAML editor",
+    "단계 ID \"{0}\"이(가) 겹칩니다 — YAML 편집기를 쓰세요"
+  ],
+  [
+    "Unsupported action type \"{0}\" — use the YAML editor",
+    "지원하지 않는 동작 \"{0}\" — YAML 편집기를 쓰세요"
+  ],
+  [
+    "Unsupported {0} step field \"{1}\" — use the YAML editor",
+    "{0} 단계에서 지원하지 않는 항목 \"{1}\" — YAML 편집기를 쓰세요"
+  ],
+  ["Step {0} name", "{0}단계 이름"],
+  [
+    "Step {0} name has surrounding whitespace — use the YAML editor",
+    "{0}단계 이름 앞뒤에 빈칸이 있습니다 — YAML 편집기를 쓰세요"
+  ],
+  [
+    "Step {0} timeout_secs must be a positive integer",
+    "{0}단계 제한 시간은 0보다 큰 정수여야 합니다"
+  ],
+  ["Step {0} {1}", "{0}단계 {1}"],
+  [
+    "Step {0} reply_in_thread must be a boolean — use the YAML editor",
+    "{0}단계 스레드 답글 값은 참/거짓이어야 합니다 — YAML 편집기를 쓰세요"
+  ],
+  ["That revision isn't valid: {0}", "그 버전은 올바르지 않습니다: {0}"],
+  ["Unknown setting \"{0}\"", "알 수 없는 설정 \"{0}\""],
+  ["Setting \"{0}\" is not text", "설정 \"{0}\"이(가) 글자가 아닙니다"],
+  [
+    "Setting \"{0}\" has an unsupported value",
+    "설정 \"{0}\"의 값을 지원하지 않습니다"
+  ],
+  [
+    "Agent {0} picture was not published",
+    "에이전트 {0}의 사진을 올리지 못했습니다"
+  ],
+  [
+    "Agent {0} archive state was not checked",
+    "에이전트 {0}의 보관 상태를 확인하지 못했습니다"
+  ],
+  [
+    "Couldn't check whether {0} is archived in this community. Retry from its settings.",
+    "{0}이(가) 이 커뮤니티에서 보관됐는지 확인하지 못했습니다. 설정에서 다시 시도하세요."
+  ],
+  ["Team {0} was not saved", "팀 {0}을(를) 저장하지 못했습니다"],
+  [
+    "Agent {0} settings were not saved",
+    "에이전트 {0}의 설정을 저장하지 못했습니다"
+  ],
+  [
+    "Agent {0} picture was not saved",
+    "에이전트 {0}의 사진을 저장하지 못했습니다"
+  ],
+  [
+    "Could not save or restore {0}'s provider",
+    "{0}의 제공 업체 정보를 저장하거나 되돌리지 못했습니다"
+  ],
+  ["Agent {0} Delete did not finish", "에이전트 {0} 삭제가 끝나지 않았습니다"],
+  ["Agent {0} was not listed", "에이전트 {0}이(가) 목록에 없습니다"],
+  [
+    "Agent {0} settings were not removed",
+    "에이전트 {0}의 설정을 지우지 못했습니다"
+  ],
+  [
+    "Agent {0} profile was not published",
+    "에이전트 {0}의 프로필을 올리지 못했습니다"
+  ],
+  ["Solo chat not named ({0})", "혼자 대화 이름을 정하지 못했습니다 ({0})"],
+  [
+    "Couldn't read this community's channels to tell where to answer ({0}). Try again.",
+    "어디에 답할지 알려고 이 커뮤니티의 채널을 읽었지만 실패했습니다 ({0}). 다시 시도하세요."
+  ],
+  [
+    "Agent state {0} was not saved",
+    "에이전트 상태 {0}을(를) 저장하지 못했습니다"
+  ],
+  [
+    "An agent can have at most {0} {1}",
+    "에이전트는 {1}을(를) 최대 {0}개까지 가질 수 있습니다"
+  ],
+  ["Over the limit of {0} {1}", "{1} {0}개 한도를 넘었습니다"],
+  ["Cannot migrate {0}", "{0}을(를) 옮길 수 없습니다"],
+  [
+    "Cannot migrate {0}: {1} already contains different data",
+    "{0}을(를) 옮길 수 없습니다: {1}에 이미 다른 정보가 있습니다"
+  ],
+  [
+    "A selected team is unavailable ({0}); remove or replace it",
+    "고른 팀을 쓸 수 없습니다 ({0}). 빼거나 바꾸세요"
+  ],
+  [
+    "Agent {0} is unavailable in this community; remove or replace it",
+    "에이전트 {0}은(는) 이 커뮤니티에서 쓸 수 없습니다. 빼거나 바꾸세요"
+  ],
+  ["Effort for {0}'s next run", "{0}의 다음 실행 노력 정도"],
+  [
+    "This agent-add request expired. Open Outbox, remove the “Add agent {0}” item, then add the agent again. Check channel membership first if the request was unconfirmed.",
+    "에이전트 추가 요청이 만료됐습니다. 보내는 중 목록에서 “Add agent {0}” 항목을 지우고 다시 추가하세요. 확인되지 않은 요청이었다면 먼저 채널 멤버를 확인하세요."
+  ],
+  [
+    "Selected agents are unavailable in this community: {0}. Refresh agents or remove them before creating the channel.",
+    "고른 에이전트를 이 커뮤니티에서 쓸 수 없습니다: {0}. 채널을 만들기 전에 에이전트를 새로 고치거나 빼세요."
+  ],
+  ["Community registration failed ({0})", "커뮤니티 등록 실패 ({0})"],
+  ["Signing failed ({0})", "서명 실패 ({0})"],
+  ["Shortcut failed: {0}", "단축키 실행 실패: {0}"],
+  [
+    "Plugin storage did not respond within {0} seconds",
+    "플러그인 저장소가 {0}초 안에 응답하지 않았습니다"
+  ]
 ]

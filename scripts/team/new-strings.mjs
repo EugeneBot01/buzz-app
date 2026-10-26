@@ -13,7 +13,8 @@ const exact = read(
 const patterns = read(
   new URL("../../src/team/i18n/ko-patterns.json", import.meta.url),
 );
-const known = (text) => text in exact || text in patterns;
+const patternKeys = new Set(patterns.map(([key]) => key));
+const known = (text) => text in exact || patternKeys.has(text);
 
 const fresh = Object.entries(after).filter(
   ([text]) => !(text in before) && !known(text),

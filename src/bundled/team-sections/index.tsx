@@ -87,7 +87,7 @@ function waitForFolders(session: RelaySession, signal: AbortSignal) {
       const stop = prefs.subscribe(check);
       const timer = setTimeout(() => {
         finish();
-        reject(new Error("Folders are unavailable"));
+        reject(new Error("폴더를 아직 쓸 수 없어요"));
       }, 30_000);
       const abort = () => {
         finish();

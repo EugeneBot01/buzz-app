@@ -42,7 +42,7 @@ export function waitForChannels(session: RelaySession, signal: AbortSignal) {
       const stop = session.channels.subscribeList(check);
       const timer = setTimeout(() => {
         finish();
-        reject(new Error("Channel list timed out"));
+        reject(new Error("채널 목록을 불러오지 못했어요"));
       }, 30_000);
       const abort = () => {
         finish();
