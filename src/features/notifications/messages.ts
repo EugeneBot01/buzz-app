@@ -29,10 +29,20 @@ export function notificationAuthorized(
   )
     return false;
   if (target.kind !== "conversation") return true;
-  const relay = communities.relay.snapshot();
-  return (
+  // Team: alerts also come from joined communities that are not selected.
+  const selected =
     !!client.selected &&
-    communityDestination(client.selected).url === scope.communityOrigin &&
+    communityDestination(client.selected).url === scope.communityOrigin;
+  const background = client.memberships.find(
+    (item) => communityDestination(item.id).url === scope.communityOrigin,
+  );
+  const relay = selected
+    ? communities.relay.snapshot()
+    : background
+      ? communities.open(background.id)?.snapshot()
+      : undefined;
+  if (!relay) return false;
+  return (
     relay.status === "ready" &&
     relay.viewer === scope.viewer &&
     relay.session.channels
@@ -50,7 +60,12 @@ export function notificationAuthorized(
 export function bindMessageNotifications(
   notifications: NotificationsService,
   communities: Communities,
+  /** Team: a joined community watched in the background (not the selected
+   * one). Quiet while it is selected; the selected binding covers it. */
+  background?: Readonly<{ id: string; name: () => string }>,
 ) {
+  const source = background ? communities.open(background.id) : undefined;
+  if (background && !source) return () => {};
   let closed = false;
   let session: RelaySession | undefined;
   let identity = "";
@@ -61,11 +76,15 @@ export function bindMessageNotifications(
   let stopPreferences = () => {};
   const update = () => {
     const client = communities.snapshot();
-    void notifications.selectViewer(client.viewer);
-    const relay = communities.relay.snapshot();
-    const origin = client.selected
-      ? communityDestination(client.selected).url
-      : undefined;
+    if (!background) void notifications.selectViewer(client.viewer);
+    const relay = (source ?? communities.relay).snapshot();
+    const origin = background
+      ? client.selected === background.id
+        ? undefined
+        : communityDestination(background.id).url
+      : client.selected
+        ? communityDestination(client.selected).url
+        : undefined;
     const next = `${client.viewer ?? ""}:${origin ?? ""}:${relay.status}`;
     if (session === relay.session && identity === next) return;
     generation++;
@@ -91,7 +110,7 @@ export function bindMessageNotifications(
     const valid = () =>
       !closed &&
       generation === current &&
-      communities.relay.snapshot().session === owned;
+      (source ?? communities.relay).snapshot().session === owned;
     const receive: IncomingListener = (messages) => {
       for (const message of messages) {
         if (!valid()) return;
@@ -185,22 +204,25 @@ export function bindMessageNotifications(
             return attention.unread || (whileViewing && attention.viewing);
           },
           () =>
-            messageNotificationText(
-              message,
-              category,
-              owned.channels
-                .list()
-                .channels.find((item) => item.id === message.channelId),
-              owned.profiles
-                .snapshot()
-                .get(message.workflowOwnerId ?? message.authorId),
-              owned.names.resolve(
-                message.workflowOwnerId ?? message.authorId,
-                undefined,
+            withCommunity(
+              background?.name(),
+              messageNotificationText(
+                message,
+                category,
                 owned.channels
                   .list()
-                  .channels.find((item) => item.id === message.channelId)
-                  ?.members ?? [],
+                  .channels.find((item) => item.id === message.channelId),
+                owned.profiles
+                  .snapshot()
+                  .get(message.workflowOwnerId ?? message.authorId),
+                owned.names.resolve(
+                  message.workflowOwnerId ?? message.authorId,
+                  undefined,
+                  owned.channels
+                    .list()
+                    .channels.find((item) => item.id === message.channelId)
+                    ?.members ?? [],
+                ),
               ),
             ),
         );
@@ -250,7 +272,7 @@ export function bindMessageNotifications(
     stopAccess = owned.channels.subscribeList(accessChanged);
     accessChanged();
   };
-  const stop = communities.relay.subscribe(update);
+  const stop = (source ?? communities.relay).subscribe(update);
   const stopCommunities = communities.subscribe(update);
   update();
   return () => {
@@ -263,4 +285,14 @@ export function bindMessageNotifications(
     stopSync();
     stopPreferences();
   };
+}
+
+/** Team: a background community's alert says which community it came from. */
+function withCommunity(
+  name: string | undefined,
+  text: ReturnType<typeof messageNotificationText>,
+) {
+  return name
+    ? Object.freeze({ ...text, title: `${text.title} · ${name}` })
+    : text;
 }

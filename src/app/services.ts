@@ -1,4 +1,5 @@
 import { createAdminAccess } from "../bundled/admin-access";
+import { bindBackgroundCommunityAlerts } from "../team/notifications/background-communities";
 import { nativeRelayStaff } from "../features/relay-staff/native";
 import { createLocalAgentActivity } from "../features/agents/local-activity";
 // FOUNDATION: Compose the bundled distribution, plugin runtime, and services here.
@@ -111,6 +112,8 @@ export function createServices() {
     (target) => notificationAuthorized(communities, target),
   );
   ctx.effect(() => bindMessageNotifications(notifications, communities));
+  // Team: also alert for joined communities that are not selected.
+  ctx.effect(() => bindBackgroundCommunityAlerts(notifications, communities));
   const invites = createInviteIntent();
   // OS deep links; a no-op in the browser build. Invite admission remains in
   // the join dialog, never in navigation or the native queue.
