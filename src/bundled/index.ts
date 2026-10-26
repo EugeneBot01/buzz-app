@@ -4,6 +4,8 @@ import teamWelcomeManifest from "./team-welcome/manifest.json";
 import * as teamWelcome from "./team-welcome";
 import teamSectionsManifest from "./team-sections/manifest.json";
 import * as teamSections from "./team-sections";
+import teamFilesManifest from "./team-files/manifest.json";
+import * as teamFiles from "./team-files";
 import teamMentionsManifest from "./team-mentions/manifest.json";
 import * as teamMentions from "./team-mentions";
 import voiceNotesManifest from "./voice-notes/manifest.json";
@@ -256,6 +258,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...teamSectionsManifest, apiVersion: 1 },
     module: teamSections,
+    enabledByDefault: true,
+  },
+  // Team: channel file list and bulk download.
+  {
+    manifest: { ...teamFilesManifest, apiVersion: 1 },
+    module: teamFiles,
     enabledByDefault: true,
   },
 ];

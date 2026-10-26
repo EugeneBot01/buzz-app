@@ -1,0 +1,7 @@
+{
+  "id": "buzz.team.files",
+  "name": "Channel files",
+  "apiVersion": 1,
+  "description": "See every file shared in a channel, search them, and download one or all.",
+  "discovery": { "category": "productivity", "tags": ["tasks"] }
+}
