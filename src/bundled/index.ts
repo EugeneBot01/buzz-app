@@ -6,6 +6,8 @@ import teamSectionsManifest from "./team-sections/manifest.json";
 import * as teamSections from "./team-sections";
 import teamFilesManifest from "./team-files/manifest.json";
 import * as teamFiles from "./team-files";
+import teamAgentStatusManifest from "./team-agent-status/manifest.json";
+import * as teamAgentStatus from "./team-agent-status";
 import teamMentionsManifest from "./team-mentions/manifest.json";
 import * as teamMentions from "./team-mentions";
 import voiceNotesManifest from "./voice-notes/manifest.json";
@@ -264,6 +266,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...teamFilesManifest, apiVersion: 1 },
     module: teamFiles,
+    enabledByDefault: true,
+  },
+  // Team: which channel agents can answer now.
+  {
+    manifest: { ...teamAgentStatusManifest, apiVersion: 1 },
+    module: teamAgentStatus,
     enabledByDefault: true,
   },
 ];

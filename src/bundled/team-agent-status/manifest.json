@@ -1,0 +1,7 @@
+{
+  "id": "buzz.team.agent-status",
+  "name": "Agent status line",
+  "apiVersion": 1,
+  "description": "Shows above the composer which of a channel's agents can answer right now.",
+  "discovery": { "category": "agents", "tags": ["coding-agents"] }
+}

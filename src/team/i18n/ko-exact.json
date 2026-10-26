@@ -3852,5 +3852,7 @@
   "Bundled plugins can only be enabled or disabled": "기본 플러그인은 켜거나 끄기만 할 수 있습니다",
   "Plugin reload requires the desktop app": "플러그인 다시 불러오기는 데스크톱 앱에서만 됩니다",
   "Recover browser settings before editing them": "고치기 전에 브라우저 설정을 복구하세요",
-  "Default (": "기본 ("
+  "Default (": "기본 (",
+  "Agent status line": "에이전트 상태 줄",
+  "Shows above the composer which of a channel's agents can answer right now.": "입력창 위에 채널의 에이전트 중 지금 답할 수 있는 에이전트를 보여 줍니다."
 }
