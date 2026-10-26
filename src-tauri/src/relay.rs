@@ -252,7 +252,9 @@ pub(crate) async fn relay_sign(
     if event.kind == 9007 && !channel_creation_supported(&community).await? {
         return Err("Channel creation is unavailable".into());
     }
-    if event.kind == 30078 {
+    // Team: plaintext team app data (team calendar and friends) is allowed;
+    // every other kind-30078 event keeps the encrypted recipe path.
+    if event.kind == 30078 && !team_app_data(&event) {
         return Err("Channel recipe or Canvas rejected".into());
     }
     let coordinate_delete = if event.kind == 5 {
@@ -368,6 +370,10 @@ fn validate_event(community: &str, event: &EventTemplate) -> Result<()> {
         if !valid_member_command(event) {
             return Err("Invalid member change".into());
         }
+    } else if event.kind == 30078 {
+        if !team_app_data(event) {
+            return Err("Channel recipe or Canvas rejected".into());
+        }
     } else if !matches!(
         event.kind,
         0 | 7 | 9 | 1984 | 9000 | 9001 | 20001 | 30030 | 30177 | 30315 | 40003 | 42000 | 45010
@@ -375,6 +381,50 @@ fn validate_event(community: &str, event: &EventTemplate) -> Result<()> {
         return Err("This event is not supported by the packaged relay connection".into());
     }
     Ok(())
+}
+
+/// Team: `d` prefixes of the plaintext app data the team build shares in a
+/// community. Mirrors `src/team/relay/app-data.ts`.
+const TEAM_APP_DATA_PREFIXES: [&str; 6] = [
+    "team-calendar:",
+    "team-calendar-polls:",
+    "team-calendar-digest:",
+    "team-sections:",
+    "team-shortcuts:",
+    "team-onboarding:",
+];
+
+/// Team: one `d` tag with a team prefix, at most one `team-*` `t` tag, no
+/// other tags, and at most 60 KB of content.
+fn team_app_data(event: &EventTemplate) -> bool {
+    if event.kind != 30078 || event.content.len() > 60 * 1024 {
+        return false;
+    }
+    let mut d_ok = 0;
+    let mut t_count = 0;
+    for tag in &event.tags {
+        match tag.as_slice() {
+            [name, value] if name == "d" => {
+                if value.len() <= 256
+                    && TEAM_APP_DATA_PREFIXES
+                        .iter()
+                        .any(|prefix| value.starts_with(prefix))
+                {
+                    d_ok += 1;
+                } else {
+                    return false;
+                }
+            }
+            [name, value] if name == "t" => {
+                if !value.starts_with("team-") || value.len() > 45 {
+                    return false;
+                }
+                t_count += 1;
+            }
+            _ => return false,
+        }
+    }
+    d_ok == 1 && t_count <= 1
 }
 
 /** Match the broker's NIP-43 member command shape (`memberCommand` in

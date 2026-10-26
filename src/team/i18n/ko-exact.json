@@ -3116,5 +3116,10 @@
   "Every person in this channel (no agents)": "이 채널의 사람 모두 (에이전트 제외)",
   "Group mentions": "그룹 멘션",
   "Mention every person (@everyone) or everyone including agents (@all) in a channel.": "채널의 사람 모두(@everyone) 또는 에이전트까지 모두(@all)를 한 번에 멘션합니다.",
-  "Group mention": "그룹 멘션"
+  "Group mention": "그룹 멘션",
+  "Calendar": "캘린더",
+  "Add to calendar": "캘린더에 추가",
+  "Team calendar": "팀 캘린더",
+  "Calendar reminders": "캘린더 알림",
+  "A month calendar every member of a community shares, with polls, reminders and a weekly digest.": "커뮤니티 모두가 함께 쓰는 월간 캘린더입니다. 투표, 알림, 주간 요약이 있습니다."
 }

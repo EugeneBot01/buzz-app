@@ -1,3 +1,5 @@
+import teamCalendarManifest from "./team-calendar/manifest.json";
+import * as teamCalendar from "./team-calendar";
 import teamMentionsManifest from "./team-mentions/manifest.json";
 import * as teamMentions from "./team-mentions";
 import voiceNotesManifest from "./voice-notes/manifest.json";
@@ -232,6 +234,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...relayStaffManifest, apiVersion: 1 },
     module: relayStaff,
+    enabledByDefault: true,
+  },
+  // Team: shared team calendar.
+  {
+    manifest: { ...teamCalendarManifest, apiVersion: 1 },
+    module: teamCalendar,
     enabledByDefault: true,
   },
 ];

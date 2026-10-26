@@ -1,4 +1,5 @@
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { isTeamAppData } from "../../team/relay/app-data";
 import type { EventTemplate } from "nostr-tools";
 import { communityDestination, relayOrigin } from "../communities/destination";
 import {
@@ -289,10 +290,16 @@ export function nativeRelaySigner(community: string): Signer {
     async signEvent(event: EventTemplate) {
       const { kind, created_at, tags, content } = event;
       return eventDto(
-        await invoke(kind === 30078 ? "relay_kit_sign" : "relay_sign", {
-          community: origin,
-          event: { kind, created_at, tags, content },
-        }),
+        // Team: plaintext team app data goes through the general signer.
+        await invoke(
+          kind === 30078 && !isTeamAppData({ kind, tags, content })
+            ? "relay_kit_sign"
+            : "relay_sign",
+          {
+            community: origin,
+            event: { kind, created_at, tags, content },
+          },
+        ),
       );
     },
     request(url, body, signal) {

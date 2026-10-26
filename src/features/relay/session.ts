@@ -1,5 +1,9 @@
 import type { LocalAgentSource } from "../agents/local-activity";
 import {
+  isTeamAppData,
+  type TeamAppDataTemplate,
+} from "../../team/relay/app-data";
+import {
   expandGroupMentions,
   MAX_MENTION_RECIPIENTS,
 } from "../../team/mentions/group-mentions";
@@ -2029,6 +2033,24 @@ export function createRelaySession(
             },
           })
         : undefined,
+    /** Team: sign and publish team app data (e.g. the team calendar). */
+    teamAppData: writer
+      ? {
+          async publish(template: TeamAppDataTemplate) {
+            if (closed) throw new Error("Relay session closed");
+            if (!isTeamAppData(template))
+              throw new Error("This is not team app data");
+            const signal = AbortSignal.any([
+              lifetime.signal,
+              AbortSignal.timeout(15_000),
+            ]);
+            const signed = await writer.sign(template, signal);
+            signal.throwIfAborted();
+            await writer.publish(signed, signal);
+            return signed;
+          },
+        }
+      : undefined,
     messages: createMessages(
       writes?.outbox,
       transport?.viewer,

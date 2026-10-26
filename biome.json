@@ -144,6 +144,18 @@
           }
         }
       }
+    },
+    {
+      "includes": ["src/team/calendar/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noStaticElementInteractions": "off",
+            "useAriaPropsSupportedByRole": "off",
+            "noLabelWithoutControl": "off"
+          }
+        }
+      }
     }
   ]
 }

@@ -1,0 +1,7 @@
+{
+  "id": "buzz.team.calendar",
+  "name": "Team calendar",
+  "apiVersion": 1,
+  "description": "A month calendar every member of a community shares, with polls, reminders and a weekly digest.",
+  "discovery": { "category": "productivity", "tags": ["tasks"] }
+}
