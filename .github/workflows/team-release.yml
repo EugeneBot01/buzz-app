@@ -120,7 +120,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 120
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - arch: aarch64
@@ -147,9 +147,24 @@ jobs:
           key: team-macos-${{ matrix.arch }}
           cache-all-crates: true
 
-      - name: Add Rust target
+      # Hermit's Rust is a standalone toolchain that cannot add targets, so the
+      # cross build uses rustup's copy of the same version, ahead on PATH.
+      - name: Rust with the Intel target
         if: matrix.target != ''
-        run: rustup target add "$TARGET"
+        run: |
+          set -euo pipefail
+          version=$(ls -a bin | sed -n 's/^\.rust-\(.*\)\.pkg$/\1/p' | head -1)
+          [[ -n "$version" ]] || { echo "::error::Hermit Rust version not found"; exit 1; }
+          rustup toolchain install "$version" --profile minimal --target "$TARGET" aarch64-apple-darwin
+          echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Check the Intel toolchain
+        if: matrix.target != ''
+        run: |
+          which cargo rustc
+          rustc --version
+          rustup target list --installed
 
       - name: Team config (name, bundle id, updater, ad-hoc signing)
         env:
