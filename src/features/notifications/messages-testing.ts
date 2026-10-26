@@ -1,4 +1,5 @@
 import { bindNames } from "../identity-names/service";
+import { channelAlertLevels } from "../../team/notifications/channel-levels";
 import { createAgentDirectory } from "../identity-names/testing";
 import { Context } from "@deepseek-ai/cordis";
 import { PluginRuntime } from "../../plugins/runtime";
@@ -47,6 +48,9 @@ export async function setup(
   /** A signing host, so visible rows publish read intent as in production. */
   readIntent = false,
 ) {
+  // Team: these upstream tests assume plain channel messages stay quiet,
+  // which is the "Only @mentions" channel level.
+  channelAlertLevels.setInitialDefault("mentions");
   const viewer = keypair(),
     peer = keypair(),
     relay = keypair();

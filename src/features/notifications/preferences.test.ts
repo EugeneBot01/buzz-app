@@ -18,8 +18,8 @@ it("values saved before per-category sounds restore with the defaults", () => {
 });
 
 it.each([
-  { mention: "ping", direct: "unison", thread: "doop" },
-  { mention: "silent", direct: "silent", thread: "silent" },
+  { mention: "ping", direct: "unison", thread: "doop", channel: "dng" },
+  { mention: "silent", direct: "silent", thread: "silent", channel: "silent" },
 ])(
   "saved sound choices round-trip and unknown names reject the payload: %j",
   (sounds) => {

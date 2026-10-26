@@ -57,6 +57,7 @@ const categories = Object.freeze([
   { key: "mention", label: "Mentions" },
   { key: "direct", label: "Direct messages" },
   { key: "thread", label: "Thread replies" },
+  { key: "channel", label: "Channel messages" },
 ]);
 const FRESH_MS = 120_000;
 export type NotificationSnapshot = Readonly<{

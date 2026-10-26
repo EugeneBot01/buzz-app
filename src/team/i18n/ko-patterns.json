@@ -1160,5 +1160,6 @@
   ["Workflow · owned by {0}", "워크플로 · 소유자 {0}"],
   ["Version {0}", "버전 {0}"],
   ["Duration: {0}", "유지 기간: {0}"],
-  ["Preview {0} identity", "{0} 계정 미리보기"]
+  ["Preview {0} identity", "{0} 계정 미리보기"],
+  ["{0} channel(s)", "{0}개 채널"]
 ]

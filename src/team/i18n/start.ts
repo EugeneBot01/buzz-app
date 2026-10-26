@@ -7,3 +7,11 @@ export function startTeamTranslation() {
   // Loaded lazily so the English path stays untouched.
   void import("./ko").then(({ KO_TABLE }) => startDomTranslator(KO_TABLE));
 }
+
+/** True once the Korean UI started in this window (text outside the page, such
+ * as OS notification banners, is written in Korean directly). */
+export function koreanUiActive() {
+  return (
+    typeof document !== "undefined" && document.documentElement.lang === "ko"
+  );
+}

@@ -3,6 +3,7 @@ import type { ChannelSummary, Profile } from "../relay/contracts";
 import type { IncomingMessage } from "../relay/incoming";
 import { scanMarkdown, visibleHtmlSource } from "../relay/message-content";
 import type { NotificationCategory } from "./preferences";
+import { koreanUiActive } from "../../team/i18n/start";
 
 export type NotificationText = Readonly<{ title: string; body: string }>;
 
@@ -53,7 +54,7 @@ export function plainText(content: string) {
 
 /** Bounded CommonMark text, not rendered HTML or a fetch of linked/attached content. */
 export function messagePreview(content: string): string {
-  return plainText(content) || "New message";
+  return plainText(content) || (koreanUiActive() ? "새 메시지" : "New message");
 }
 
 /** Plugin text gets the same flattening and bounds; missing text keeps the category fallback. */
@@ -83,11 +84,30 @@ export function messageNotificationText(
     channel?.channelType === "dm"
       ? "a direct message"
       : `#${shortText(channel?.name ?? "", 64) || message.channelId.slice(0, 8)}`;
+  // Team: OS banners are not part of the page, so the Korean UI translator
+  // cannot reach them; write them in Korean here.
+  if (koreanUiActive()) {
+    const where = channel?.channelType === "dm" ? "DM" : destination;
+    const title =
+      category === "mention"
+        ? `${sender}님이 ${where}에서 나를 멘션했어요`
+        : category === "direct"
+          ? `${sender}님의 DM`
+          : category === "channel"
+            ? `${destination} · ${sender}`
+            : `${sender}님이 ${where}에 답글을 달았어요`;
+    return Object.freeze({
+      title,
+      body: messagePreview(message.previewContent),
+    });
+  }
   const title =
     category === "mention"
       ? `${sender} mentioned you in ${destination}`
       : category === "direct"
         ? `${sender} sent you a direct message`
-        : `${sender} replied in ${destination}`;
+        : category === "channel"
+          ? `${sender} in ${destination}`
+          : `${sender} replied in ${destination}`;
   return Object.freeze({ title, body: messagePreview(message.previewContent) });
 }

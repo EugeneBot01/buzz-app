@@ -5,11 +5,13 @@ import type { IncomingListener } from "../relay/incoming";
 import type { RelaySession } from "../relay/session";
 import type { NotificationsService } from "./service";
 import { messageNotificationText } from "./content";
+import { channelAlertLevels } from "../../team/notifications/channel-levels";
 
 const labels = {
   mention: "Mentions",
   direct: "Direct messages",
   thread: "Thread replies",
+  channel: "Channel messages",
 };
 /** No new subscriptions: this first adapter covers only the selected community. */
 export function notificationAuthorized(
@@ -83,6 +85,7 @@ export function bindMessageNotifications(
     )
       return;
     const viewer = client.viewer;
+    channelAlertLevels.selectViewer(viewer);
     const owned = relay.session;
     const current = generation;
     const valid = () =>
@@ -101,11 +104,19 @@ export function bindMessageNotifications(
         );
         // A reply whose conversation lookup is pending may become thread
         // attention; admission waits until the lookup decides it.
+        // Team: in a channel set to All messages, any other new message alerts.
         const category =
-          attention.category ?? (attention.pending ? "thread" : undefined);
+          attention.category ??
+          (attention.pending
+            ? "thread"
+            : allMessages(message.channelId, attention)
+              ? "channel"
+              : undefined);
         if (
           !category ||
-          (attention.status !== "eligible" && !attention.pending)
+          (attention.status !== "eligible" &&
+            !attention.pending &&
+            category !== "channel")
         )
           continue;
         void notifications.admit(
@@ -147,7 +158,14 @@ export function bindMessageNotifications(
             }
             const whileViewing =
               notifications.snapshot().preferences.notifyWhileViewing;
-            if (
+            if (category === "channel") {
+              if (
+                attention.category ||
+                !allMessages(message.channelId, attention) ||
+                (!whileViewing && attention.viewing)
+              )
+                return false;
+            } else if (
               attention.status === "ineligible" ||
               (!attention.pending && attention.category !== category) ||
               (!whileViewing && attention.viewing)
@@ -187,6 +205,26 @@ export function bindMessageNotifications(
             ),
         );
       }
+    };
+    // Team: a channel alerts on every message when its level is All messages.
+    // Own messages, DMs, Huddle channels and unknown channels never do.
+    const allMessages = (
+      channelId: string,
+      attention: ReturnType<typeof owned.unread.attention>,
+    ) => {
+      if (attention.status === "unknown" && !attention.unread) return false;
+      if (attention.status === "ineligible" && !attention.unread) return false;
+      const channel = owned.channels
+        .list()
+        .channels.find((item) => item.id === channelId);
+      return (
+        !!channel &&
+        channel.channelType !== "dm" &&
+        channel.channelType !== "system" &&
+        !channel.huddle &&
+        !!channel.members?.includes(viewer) &&
+        channelAlertLevels.level(channelId) === "all"
+      );
     };
     stopIncoming = owned.subscribeIncoming(receive);
     // Only reconsider retained live candidates; readiness is not an event source.

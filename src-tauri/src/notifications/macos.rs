@@ -123,8 +123,12 @@ define_class!(
             _notification: &objc2_user_notifications::UNNotification,
             completion: &Block<dyn Fn(UNNotificationPresentationOptions)>,
         ) {
-            // Notification Center list only, never a foreground banner.
-            completion.call((UNNotificationPresentationOptions::List,));
+            // Team: also show the banner while Buzz is in front. The app
+            // already drops alerts for the conversation being viewed, so what
+            // reaches here is worth showing (otherwise channel alerts only
+            // land silently in Notification Center).
+            completion.call((UNNotificationPresentationOptions::Banner
+                | UNNotificationPresentationOptions::List,));
         }
 
         #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]

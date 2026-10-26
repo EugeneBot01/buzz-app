@@ -6,7 +6,13 @@ import {
 } from "./sound";
 
 /** Desired account-local policy is separate from system permission. */
-export const NOTIFICATION_CATEGORIES = ["mention", "direct", "thread"] as const;
+// Team: "channel" is every message in a channel set to All messages.
+export const NOTIFICATION_CATEGORIES = [
+  "mention",
+  "direct",
+  "thread",
+  "channel",
+] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 export type NotificationPreferences = Readonly<{
   enabled: boolean;
@@ -21,7 +27,12 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences =
     notifyWhileViewing: false,
     sound: true,
     sounds: DEFAULT_CATEGORY_SOUNDS,
-    categories: Object.freeze({ mention: true, direct: true, thread: true }),
+    categories: Object.freeze({
+      mention: true,
+      direct: true,
+      thread: true,
+      channel: true,
+    }),
   });
 const KEY = "buzz-notification-preferences.v1";
 // Values saved before per-category sounds existed omit `sounds`; they get the

@@ -17,12 +17,14 @@ import {
   type SoundName,
 } from "../features/notifications/sound";
 import styles from "./NotificationSettings.module.css";
+import { ChannelAlertSettings } from "../team/notifications/ChannelAlertSettings";
 
 // Reference row order: direct messages, mentions, thread replies.
 const SOUND_ROWS: readonly NotificationCategory[] = [
   "direct",
   "mention",
   "thread",
+  "channel",
 ];
 
 function AlertSoundRow({
@@ -189,6 +191,7 @@ export function NotificationSettings({
             ))}
           </SettingsGroup>
         </section>
+        <ChannelAlertSettings />
         <section id="setting-delivery" aria-label="Desktop delivery">
           <InlineHeader title="Delivery" />
           <SettingsGroup>

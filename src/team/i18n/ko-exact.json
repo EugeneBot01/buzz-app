@@ -3103,5 +3103,13 @@
   "Token usage and estimated costs from local agent sessions.": "이 컴퓨터 에이전트 세션의 토큰 사용량과 예상 비용입니다.",
   "Record voice notes and play them in conversations.": "음성 메모를 녹음하고 대화에서 재생합니다.",
   "Create and manage community workflows.": "커뮤니티 워크플로를 만들고 관리합니다.",
-  "Show an object’s available context in a non-modal preview on hover or focus.": "마우스를 올리면 해당 항목의 정보를 미리 보여 줍니다."
+  "Show an object’s available context in a non-modal preview on hover or focus.": "마우스를 올리면 해당 항목의 정보를 미리 보여 줍니다.",
+  "Channel messages": "채널 메시지",
+  "Only @mentions": "@멘션만",
+  "Channel notifications": "채널 알림",
+  "Default for channels": "채널 기본값",
+  "Each channel can change this from its menu in the sidebar.": "채널마다 사이드바 메뉴에서 따로 바꿀 수 있습니다.",
+  "Channels with their own setting": "따로 설정한 채널",
+  "None. Every channel follows the default.": "없음. 모든 채널이 기본값을 따릅니다.",
+  "Apply default to all channels": "모든 채널에 기본값 적용"
 }

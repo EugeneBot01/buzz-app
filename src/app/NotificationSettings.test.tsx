@@ -448,6 +448,7 @@ it("selects and restores Silent for every category, stops previews, and can rest
     ["direct", "Direct messages"],
     ["mention", "@Mentions"],
     ["thread", "Thread replies"],
+    ["channel", "Channel messages"],
   ] as const) {
     await user.click(screen.getByRole("combobox", { name: label }));
     await user.click(await screen.findByRole("option", { name: "Silent" }));
@@ -463,6 +464,7 @@ it("selects and restores Silent for every category, stops previews, and can rest
     direct: "silent",
     mention: "silent",
     thread: "silent",
+    channel: "silent",
   });
   expect(play).toHaveBeenCalledOnce();
   expect(screen.getByRole("switch", { name: "Desktop alerts" })).toBeChecked();

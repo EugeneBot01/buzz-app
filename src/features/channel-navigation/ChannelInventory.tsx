@@ -49,6 +49,7 @@ import {
 } from "../../shared/design-system/icons";
 import { ChannelReadMenuItem } from "../../bundled/channels/ChannelReadMenuItem";
 import { ChannelCopyLinkMenuItem } from "../../bundled/channels/ChannelCopyLinkMenuItem";
+import { ChannelAlertMenu } from "../../team/notifications/ChannelAlertMenu";
 import { ChannelSidebarItem } from "../../bundled/channels/ChannelSidebarItem";
 import type { UnreadDmPreview } from "../../bundled/channels/SidebarUnread";
 import {
@@ -707,6 +708,11 @@ export function ChannelInventory({
         </MenuItem>,
       );
     }
+    // Team: per-channel alert level (All messages / Only @mentions).
+    if (channel.channelType !== "dm" && channel.channelType !== "system")
+      actions.push(
+        <ChannelAlertMenu key="team-alerts" channelId={channel.id} />,
+      );
     if (readable)
       actions.push(
         <ChannelReadMenuItem
