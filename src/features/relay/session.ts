@@ -1,4 +1,8 @@
 import type { LocalAgentSource } from "../agents/local-activity";
+import {
+  expandGroupMentions,
+  MAX_MENTION_RECIPIENTS,
+} from "../../team/mentions/group-mentions";
 // FOUNDATION: One relay session owns reads, local intent, delivery and shared views.
 import { createSoloPreferences, soloGroups } from "./solo-preferences";
 import { npubEncode } from "nostr-tools/nip19";
@@ -1069,7 +1073,7 @@ export function createRelaySession(
     const recipients = event.tags.filter(([name]) => name === "p");
     if (!recipients.length) return;
     if (
-      recipients.length > 32 ||
+      recipients.length > MAX_MENTION_RECIPIENTS ||
       recipients.some(
         (tag) => tag.length !== 2 || !/^[0-9a-f]{64}$/.test(tag[1] ?? ""),
       )
@@ -2059,6 +2063,32 @@ export function createRelaySession(
         : undefined,
       transport?.archiveAuthority,
       profiles.queries,
+      (channelId, content, mentions) => {
+        const channel = channels.queries
+          .list()
+          .channels.find((item) => item.id === channelId);
+        if (!channel || channel.channelType === "dm") return mentions;
+        const known = profiles.queries.snapshot();
+        const unknown = (channel.members ?? []).filter(
+          (key) => !known.has(key),
+        );
+        if (unknown.length)
+          void profiles.queries.ensure(unknown).catch(() => {});
+        // A member whose profile is not loaded yet counts as an agent, so
+        // @everyone never wakes an agent by mistake.
+        return expandGroupMentions(
+          content,
+          mentions,
+          channel.members,
+          transport?.viewer,
+          (pubkey) => {
+            const profile = known.get(pubkey);
+            return (
+              !profile || profile.isAgent === true || !!profile.ownerPubkey
+            );
+          },
+        );
+      },
     ),
     /** An owned bounded thread reader. Dispose on close; the session retains access/lifetime authority. */
     thread(

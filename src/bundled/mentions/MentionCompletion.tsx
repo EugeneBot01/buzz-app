@@ -1,4 +1,5 @@
 import { TeamMentionAvatars } from "./TeamMentionAvatars";
+import { groupMentionSuggestions } from "../../team/mentions/group-suggestions";
 import { useEffect, useRef, useState } from "react";
 import { useTeamMentions } from "./use-team-mentions";
 import { useMentionChoices } from "./use-mention-choices";
@@ -184,7 +185,11 @@ export function MentionCompletion({
     const byId = new Map(available.map((item) => [item.id, item]));
     const withdraw = publish({
       spaceId: teams.blocksSpace ? undefined : model.spaceId,
-      items: next.flatMap((id) => byId.get(id) ?? []),
+      // Team: @all / @everyone come first when the typed text starts them.
+      items: [
+        ...groupMentionSuggestions(query.query, channel?.channelType),
+        ...next.flatMap((id) => byId.get(id) ?? []),
+      ],
       ...(model.pending
         ? { status: "Loading recipients…" }
         : model.directory.error

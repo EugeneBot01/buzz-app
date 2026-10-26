@@ -1,4 +1,5 @@
 import { attestedOwner } from "../agents/owner-attestation";
+import { MAX_MENTION_RECIPIENTS } from "../../team/mentions/group-mentions";
 import { hasEventProof } from "./events";
 import type { ProfileQueries } from "./profile-directory";
 import { attachmentMessage, type UploadedAttachment } from "./attachments";
@@ -49,6 +50,12 @@ export function createMessages(
   /** Explicit relay NIP-11 self; never inferred from contacts or a displayed row. */
   signingAuthority?: string,
   profiles?: ProfileQueries,
+  /** Team: expands @everyone / @all to channel members. */
+  groupRecipients?: (
+    channelId: string,
+    content: string,
+    mentions: readonly string[],
+  ) => readonly string[],
 ) {
   const writer = (kind: number, channelId: string) => {
     if (!canParticipate(channelId))
@@ -65,8 +72,9 @@ export function createMessages(
     return value;
   };
   const mentionTags = (channelId: string, pubkeys: readonly string[]) => {
+    // Team: @everyone / @all can carry a whole channel.
     if (
-      pubkeys.length > 32 ||
+      pubkeys.length > MAX_MENTION_RECIPIENTS ||
       pubkeys.some((key) => !/^[0-9a-f]{64}$/.test(key))
     )
       throw new Error("Choose at most 32 valid mention recipients");
@@ -204,6 +212,8 @@ export function createMessages(
       picks: MentionPicks = {},
     ) {
       if (!channelId) throw new Error("A channel is required");
+      // Team: @everyone / @all become ordinary recipients.
+      mentions = groupRecipients?.(channelId, content, mentions) ?? mentions;
       const message = attachmentMessage(content, attachments, relayOrigin);
       return writer(9, channelId).send(
         {

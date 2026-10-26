@@ -3111,5 +3111,10 @@
   "Each channel can change this from its menu in the sidebar.": "채널마다 사이드바 메뉴에서 따로 바꿀 수 있습니다.",
   "Channels with their own setting": "따로 설정한 채널",
   "None. Every channel follows the default.": "없음. 모든 채널이 기본값을 따릅니다.",
-  "Apply default to all channels": "모든 채널에 기본값 적용"
+  "Apply default to all channels": "모든 채널에 기본값 적용",
+  "Everyone in this channel, agents included": "에이전트를 포함한 이 채널의 모두",
+  "Every person in this channel (no agents)": "이 채널의 사람 모두 (에이전트 제외)",
+  "Group mentions": "그룹 멘션",
+  "Mention every person (@everyone) or everyone including agents (@all) in a channel.": "채널의 사람 모두(@everyone) 또는 에이전트까지 모두(@all)를 한 번에 멘션합니다.",
+  "Group mention": "그룹 멘션"
 }

@@ -1,0 +1,7 @@
+{
+  "id": "buzz.team.group-mentions",
+  "name": "Group mentions",
+  "apiVersion": 1,
+  "description": "Mention every person (@everyone) or everyone including agents (@all) in a channel.",
+  "discovery": { "category": "communication", "tags": ["messaging", "people"] }
+}

@@ -1,3 +1,5 @@
+import teamMentionsManifest from "./team-mentions/manifest.json";
+import * as teamMentions from "./team-mentions";
 import voiceNotesManifest from "./voice-notes/manifest.json";
 import * as voiceNotes from "./voice-notes";
 import pairingManifest from "./pairing/manifest.json";
@@ -144,6 +146,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...emojiManifest, apiVersion: 1 },
     module: emoji,
+    enabledByDefault: true,
+  },
+  // Team: @everyone / @all chips.
+  {
+    manifest: { ...teamMentionsManifest, apiVersion: 1 },
+    module: teamMentions,
     enabledByDefault: true,
   },
   {
