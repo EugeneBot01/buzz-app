@@ -191,7 +191,7 @@ export function NotificationSettings({
             ))}
           </SettingsGroup>
         </section>
-        <ChannelAlertSettings />
+        {desktopAlertsEnabled && <ChannelAlertSettings />}
         <section id="setting-delivery" aria-label="Desktop delivery">
           <InlineHeader title="Delivery" />
           <SettingsGroup>
