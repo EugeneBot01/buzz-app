@@ -1,0 +1,7 @@
+{
+  "id": "buzz.team.shortcuts",
+  "name": "Channel shortcuts",
+  "apiVersion": 1,
+  "description": "Pin Notion, Drive, Figma and other links at the top of a channel for everyone in it.",
+  "discovery": { "category": "productivity", "tags": ["tasks"] }
+}

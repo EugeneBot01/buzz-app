@@ -3854,5 +3854,7 @@
   "Recover browser settings before editing them": "고치기 전에 브라우저 설정을 복구하세요",
   "Default (": "기본 (",
   "Agent status line": "에이전트 상태 줄",
-  "Shows above the composer which of a channel's agents can answer right now.": "입력창 위에 채널의 에이전트 중 지금 답할 수 있는 에이전트를 보여 줍니다."
+  "Shows above the composer which of a channel's agents can answer right now.": "입력창 위에 채널의 에이전트 중 지금 답할 수 있는 에이전트를 보여 줍니다.",
+  "Channel shortcuts": "채널 바로가기",
+  "Pin Notion, Drive, Figma and other links at the top of a channel for everyone in it.": "노션·드라이브·피그마 같은 링크를 채널 위쪽에 걸어 두고 채널 사람 모두가 같이 봅니다."
 }

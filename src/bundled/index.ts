@@ -8,6 +8,8 @@ import teamFilesManifest from "./team-files/manifest.json";
 import * as teamFiles from "./team-files";
 import teamAgentStatusManifest from "./team-agent-status/manifest.json";
 import * as teamAgentStatus from "./team-agent-status";
+import teamShortcutsManifest from "./team-shortcuts/manifest.json";
+import * as teamShortcuts from "./team-shortcuts";
 import teamMentionsManifest from "./team-mentions/manifest.json";
 import * as teamMentions from "./team-mentions";
 import voiceNotesManifest from "./voice-notes/manifest.json";
@@ -272,6 +274,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...teamAgentStatusManifest, apiVersion: 1 },
     module: teamAgentStatus,
+    enabledByDefault: true,
+  },
+  // Team: links pinned at the top of a channel.
+  {
+    manifest: { ...teamShortcutsManifest, apiVersion: 1 },
+    module: teamShortcuts,
     enabledByDefault: true,
   },
 ];
