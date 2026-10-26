@@ -1282,5 +1282,337 @@
  [
   "Origin resolved from {0} .",
   "{0}에서 가져온 주소입니다."
+ ],
+ [
+  "Wait {0}, render {1}",
+  "대기 {0}, 그리기 {1}"
+ ],
+ [
+  "Reconnect {0}",
+  "다시 연결 {0}"
+ ],
+ [
+  "All {0} settled",
+  "{0}개 모두 완료"
+ ],
+ [
+  "Copy community URL, {0}",
+  "커뮤니티 주소 복사, {0}"
+ ],
+ [
+  "Leave {0}?",
+  "{0}에서 나갈까요?"
+ ],
+ [
+  "Remove {0} from this device?",
+  "이 기기에서 {0}을(를) 지울까요?"
+ ],
+ [
+  "Buzz couldn’t clear the cache. {0}",
+  "저장된 데이터를 지우지 못했습니다. {0}"
+ ],
+ [
+  "Couldn’t copy {0}. Select it and copy manually.",
+  "{0}을(를) 복사하지 못했습니다. 직접 선택해서 복사해 주세요."
+ ],
+ [
+  "Argument {0}",
+  "인자 {0}"
+ ],
+ [
+  "Command {0}: {1} · input: {2} · output: up to {3} bytes",
+  "명령 {0}: {1} · 입력: {2} · 출력: 최대 {3}바이트"
+ ],
+ [
+  "Command {0}:",
+  "명령 {0}:"
+ ],
+ [
+  "Run {0}",
+  "{0} 실행"
+ ],
+ [
+  "HTTPS origin: {0}",
+  "HTTPS 주소: {0}"
+ ],
+ [
+  "HTTPS origin {0}",
+  "HTTPS 주소 {0}"
+ ],
+ [
+  "Connect to {0}",
+  "{0}에 연결"
+ ],
+ [
+  "Process {0}: {1}{2} and any further arguments · stdin, full user access",
+  "프로세스 {0}: {1}{2}와 추가 인자 · 표준 입력, 내 계정의 모든 권한"
+ ],
+ [
+  "Process {0}:",
+  "프로세스 {0}:"
+ ],
+ [
+  "Start {0}",
+  "{0} 시작"
+ ],
+ [
+  "Update {0}",
+  "{0} 업데이트"
+ ],
+ [
+  "Roll back {0}?",
+  "{0}을(를) 이전 버전으로 되돌릴까요?"
+ ],
+ [
+  "Loading your profile in {0}…",
+  "{0}의 내 프로필 불러오는 중…"
+ ],
+ [
+  "View {0} details",
+  "{0} 자세히 보기"
+ ],
+ [
+  "More actions for {0}",
+  "{0} 메뉴 더 보기"
+ ],
+ [
+  "Showing the last available configuration; retrying automatically. {0}",
+  "마지막 설정을 보여 주는 중이며 자동으로 다시 시도합니다. {0}"
+ ],
+ [
+  "Check the current settings before trying again. {0}",
+  "다시 시도하기 전에 지금 설정을 확인하세요. {0}"
+ ],
+ [
+  "Search Buzz ({0})",
+  "Buzz 검색 ({0})"
+ ],
+ [
+  "Your status: {0}",
+  "내 상태: {0}"
+ ],
+ [
+  "Availability: {0}{1}",
+  "상태: {0}{1}"
+ ],
+ [
+  "Set a status: {0}",
+  "상태 설정: {0}"
+ ],
+ [
+  "Remove author {0}",
+  "작성자 {0} 빼기"
+ ],
+ [
+  "Chat with {0}",
+  "{0}와(과) 대화"
+ ],
+ [
+  "Search {0} {1}",
+  "{0} {1} 검색"
+ ],
+ [
+  "Opening your conversation with {0}…",
+  "{0}와(과)의 대화 여는 중…"
+ ],
+ [
+  "Enable {0}",
+  "{0} 켜기"
+ ],
+ [
+  "Message search couldn’t finish{0}{1}",
+  "메시지 검색을 끝내지 못했습니다{0}{1}"
+ ],
+ [
+  "More messages couldn’t load{0}",
+  "메시지를 더 불러오지 못했습니다{0}"
+ ],
+ [
+  "Focus {0} pane",
+  "{0} 창으로 이동"
+ ],
+ [
+  "Include {0} so ordinary typing keeps working.",
+  "평소 타자에 방해되지 않게 {0}을(를) 함께 누르세요."
+ ],
+ [
+  "Saved. The message editor handles {0} itself while you are typing, so it wins there.",
+  "저장했습니다. 메시지를 입력하는 동안에는 입력창이 {0}을(를) 먼저 처리합니다."
+ ],
+ [
+  "New shortcut for {0}",
+  "{0} 새 단축키"
+ ],
+ [
+  "Cancel changing {0}",
+  "{0} 바꾸기 취소"
+ ],
+ [
+  "Change shortcut for {0}",
+  "{0} 단축키 바꾸기"
+ ],
+ [
+  "Reset shortcut for {0}",
+  "{0} 단축키 초기화"
+ ],
+ [
+  "Exit code {0}",
+  "종료 코드 {0}"
+ ],
+ [
+  "Stopped {0}",
+  "{0} 중지됨"
+ ],
+ [
+  "Stopping {0}",
+  "{0} 중지하는 중"
+ ],
+ [
+  "Couldn’t stop {0}. {1}",
+  "{0}을(를) 멈추지 못했습니다. {1}"
+ ],
+ [
+  "View activity for {0}",
+  "{0}의 활동 보기"
+ ],
+ [
+  "Dismiss error from {0}",
+  "{0}의 오류 닫기"
+ ],
+ [
+  "Stop {0}",
+  "{0} 중지"
+ ],
+ [
+  "Use {0} background",
+  "{0} 배경 쓰기"
+ ],
+ [
+  "Import {0}",
+  "{0} 가져오기"
+ ],
+ [
+  "Change harness from {0}",
+  "{0}에서 실행 도구 바꾸기"
+ ],
+ [
+  "Move {0} to {1}?",
+  "{0}을(를) {1}(으)로 옮길까요?"
+ ],
+ [
+  "Actions for {0}",
+  "{0} 메뉴"
+ ],
+ [
+  "Couldn't save team {0}. {1} in Teams.",
+  "팀 {0}을(를) 저장하지 못했습니다. 팀 화면에서 {1}"
+ ],
+ [
+  "Imported {0}; add them",
+  "{0} 가져옴. 멤버를 추가하세요"
+ ],
+ [
+  "Imported team {0}{1}.",
+  "팀 {0}을(를) 가져왔습니다{1}."
+ ],
+ [
+  "Couldn't import {0}: {1}",
+  "{0}을(를) 가져오지 못했습니다: {1}"
+ ],
+ [
+  "Kept out: {0}, in another community.",
+  "제외됨: {0}, 다른 커뮤니티에 있습니다."
+ ],
+ [
+  "Kept out: {0}, which another account on this device has.",
+  "제외됨: {0}, 이 기기의 다른 계정이 가지고 있습니다."
+ ],
+ [
+  "Import team {0}",
+  "팀 {0} 가져오기"
+ ],
+ [
+  "Builderlab request failed (HTTP {0}).",
+  "Builderlab 요청에 실패했습니다 (HTTP {0})."
+ ],
+ [
+  "Could not link your Buzz identity to Builderlab ({0}).",
+  "Buzz 계정을 Builderlab에 연결하지 못했습니다 ({0})."
+ ],
+ [
+  "HTTP {0}",
+  "HTTP {0}"
+ ],
+ [
+  "Agent setup was not confirmed ({0}). Retry setup in Agents.",
+  "에이전트 설정을 확인하지 못했습니다 ({0}). 에이전트 화면에서 다시 설정하세요."
+ ],
+ [
+  "Instructions must be empty or contain up to {0} characters of nonblank text.",
+  "지침은 비워 두거나 공백이 아닌 글자로 최대 {0}자까지 쓸 수 있습니다."
+ ],
+ [
+  "Builderlab is not signed in. {0}",
+  "Builderlab에 로그인하지 않았습니다. {0}"
+ ],
+ [
+  "Builderlab refused the sign-in for {0} (HTTP {1}). {2}",
+  "Builderlab이 {0} 로그인을 거부했습니다 (HTTP {1}). {2}"
+ ],
+ [
+  "Signed in as {0}.",
+  "{0}(으)로 로그인했습니다."
+ ],
+ [
+  "Builderlab sign-in failed (HTTP {0}). Try again.",
+  "Builderlab 로그인에 실패했습니다 (HTTP {0}). 다시 시도해 주세요."
+ ],
+ [
+  "Open unread thread from {0}: {1}",
+  "{0}의 안 읽은 스레드 열기: {1}"
+ ],
+ [
+  "Mark thread from {0} as read",
+  "{0}의 스레드를 읽음으로 표시"
+ ],
+ [
+  "Activity in {0}",
+  "{0}의 활동"
+ ],
+ [
+  "Open {0} for {1} in {2}",
+  "{2}에서 {1}의 {0} 열기"
+ ],
+ [
+  "Archives after {0} without activity.",
+  "{0} 동안 활동이 없으면 보관합니다."
+ ],
+ [
+  "Unarchive {0}",
+  "{0} 보관 풀기"
+ ],
+ [
+  "Archive {0}",
+  "{0} 보관"
+ ],
+ [
+  "Presence: {0}",
+  "접속 상태: {0}"
+ ],
+ [
+  "Open profile for {0} ({1}){2}{3}{4}",
+  "{0}({1}) 프로필 열기{2}{3}{4}"
+ ],
+ [
+  "Open owner profile: {0}",
+  "소유자 프로필 열기: {0}"
+ ],
+ [
+  "Add team {0}",
+  "팀 {0} 추가"
+ ],
+ [
+  "Remove {0} from {1}",
+  "{1}에서 {0} 내보내기"
  ]
 ]
