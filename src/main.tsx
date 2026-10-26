@@ -1,6 +1,7 @@
 // FOUNDATION: React startup. Keep initialization explicit and minimal.
 // Establish host CSS layer order before product modules import component layers.
 import "./shared/styles/globals.css";
+import "./team/ui/team.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createServices } from "./app/services";

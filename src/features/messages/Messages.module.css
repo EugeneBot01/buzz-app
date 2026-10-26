@@ -3320,3 +3320,18 @@ html[data-keyboard-navigation]
   min-width: 0;
   max-width: calc(100% - var(--size-control));
 }
+
+/* Team build: Discord-style flat messages. Text sits on the timeline itself,
+   left-aligned under the byline, with no bubble surface. Neutral insets
+   (code, tables, spoilers) keep their own panels. */
+.messageBubble {
+  width: auto;
+  max-width: 100%;
+  margin-top: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.message .messageBubble > .reactions {
+  margin-inline: 0;
+}

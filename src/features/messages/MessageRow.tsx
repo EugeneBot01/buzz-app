@@ -193,7 +193,7 @@ function MessageRowContent({
   viewer = session?.viewer,
   stackPrevious = layout === "continuation",
   stackNext = false,
-  alignViewer = true,
+  alignViewer = false,
 
   mediaMode = "inline",
   mediaSeekTo,
@@ -343,9 +343,9 @@ function MessageRowContent({
     !row.agentEnvelope &&
     row.attachments.length > 0 &&
     row.attachments.every((attachment) => !!safeMessageUrl(attachment.url));
-  // Own-message surface colours apply to a bubble, never to a shown thread root.
-  const ownBubble =
-    !shownRow && !row.workflowOwnerId && !!viewer && row.authorId === viewer;
+  // Team build: messages are flat and left-aligned (Discord-style), so no
+  // message gets the own-bubble colours.
+  const ownBubble = false;
   const emojiOnly = usesLargeEmojiPresentation(displayRow.content, row.emoji);
   const canReact = !!(
     extensions &&
@@ -1353,7 +1353,7 @@ function AgentsMessageRow(props: MessageRowProps) {
           className={styles.audienceRow}
           data-audience="agents"
           data-viewer-message={
-            (props.alignViewer ?? true) &&
+            (props.alignViewer ?? false) &&
             !row.workflowOwnerId &&
             row.authorId === (props.viewer ?? session?.viewer)
               ? ""

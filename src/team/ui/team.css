@@ -1,0 +1,7 @@
+/* Team build: a plain background. The shared dot texture reads its colour from
+   this one token, so a transparent dot removes the pattern everywhere in both
+   light and dark themes. */
+:root,
+:root * {
+  --texture-dots-color: transparent !important;
+}

@@ -206,6 +206,16 @@ function ScopedSidebar({
                 )}
                 {before}
                 <SidebarUnread listRef={sidebar.list} dmPreviews={dmPreviews}>
+                  {/* Team build: team channels sit above Solo. */}
+                  <div
+                    className={styles.sidebarGroup}
+                    hidden={filter === "solo"}
+                  >
+                    {filter === "all" && (
+                      <div className={styles.teamHeading}>{label("Team")}</div>
+                    )}
+                    {content}
+                  </div>
                   <section
                     aria-label="Solo"
                     className={styles.sidebarGroup}
@@ -220,15 +230,6 @@ function ScopedSidebar({
                       chatIcons={props.chatIcons}
                     />
                   </section>
-                  <div
-                    className={styles.sidebarGroup}
-                    hidden={filter === "solo"}
-                  >
-                    {filter === "all" && (
-                      <div className={styles.teamHeading}>{label("Team")}</div>
-                    )}
-                    {content}
-                  </div>
                 </SidebarUnread>
                 {after}
               </SidebarFrame>
