@@ -230,7 +230,8 @@ test("the app runtime exposes ready bundled pages and removes them on disable", 
       services.conversation.tools.snapshot().map((tool) => tool.pluginId),
       ["buzz.mentions", "buzz.repos"],
     );
-    assert.equal(services.conversation.inline.snapshot().length, 0);
+    // Team: the group mention chip stays while only emoji is disabled.
+    assert.equal(services.conversation.inline.snapshot().length, 1);
     await services.plugins.change("disable", "buzz.mentions");
     assert.deepEqual(
       services.conversation.tools.snapshot().map((tool) => tool.pluginId),
