@@ -1,0 +1,7 @@
+{
+  "id": "buzz.team.welcome",
+  "name": "Team welcome",
+  "apiVersion": 1,
+  "description": "A short welcome guide for new teammates, and default channels everyone joins automatically.",
+  "discovery": { "category": "communication", "tags": ["people"] }
+}

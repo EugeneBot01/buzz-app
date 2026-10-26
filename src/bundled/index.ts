@@ -1,5 +1,7 @@
 import teamCalendarManifest from "./team-calendar/manifest.json";
 import * as teamCalendar from "./team-calendar";
+import teamWelcomeManifest from "./team-welcome/manifest.json";
+import * as teamWelcome from "./team-welcome";
 import teamMentionsManifest from "./team-mentions/manifest.json";
 import * as teamMentions from "./team-mentions";
 import voiceNotesManifest from "./voice-notes/manifest.json";
@@ -240,6 +242,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...teamCalendarManifest, apiVersion: 1 },
     module: teamCalendar,
+    enabledByDefault: true,
+  },
+  // Team: welcome guide and default channels.
+  {
+    manifest: { ...teamWelcomeManifest, apiVersion: 1 },
+    module: teamWelcome,
     enabledByDefault: true,
   },
 ];
