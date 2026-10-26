@@ -1,0 +1,122 @@
+name: Team Promote
+
+# Sends an already-built TEST build to team apps without rebuilding it.
+#
+# A Team Release run with publish OFF produces a pre-release
+# (app-vX.Y.Z-team.N) holding the signed app archives and a latest.json that
+# points at them. After that build has been tried out, this workflow marks it
+# as the real release and copies its latest.json into the team-app-latest feed --
+# the same two things Team Release does when publish is ON, minus the 40-minute
+# rebuild.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tested version to send to team apps (e.g. 0.0.0-team.3). Leave empty for the newest test build."
+        required: false
+        default: ""
+      dry_run:
+        description: "Only check and report what would happen. Changes nothing."
+        type: boolean
+        default: false
+
+concurrency:
+  group: team-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    name: Promote test build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - name: Pick the build
+        id: pick
+        run: |
+          set -euo pipefail
+          if [[ -z "$VERSION" ]]; then
+            # Newest pre-release that is a team build (not the team-app-latest feed).
+            VERSION=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 \
+              --json tagName,isPrerelease,createdAt \
+              --jq '[.[] | select(.isPrerelease and (.tagName | test("^app-v[0-9]+\\.[0-9]+\\.[0-9]+-team\\.[0-9]+$")))]
+                    | sort_by(.createdAt) | last | .tagName // "" | ltrimstr("app-v")')
+            [[ -n "$VERSION" ]] || { echo "::error::no test build found to promote"; exit 1; }
+            echo "No version given; newest test build is ${VERSION}."
+          fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-team\.[1-9][0-9]*$ ]] || {
+            echo "::error::version must look like 0.0.0-team.3 (got '$VERSION')"; exit 1;
+          }
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Check it is a complete test build
+        env:
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="app-v${VERSION}"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease,assets > release.json || {
+            echo "::error::release ${TAG} does not exist"; exit 1;
+          }
+          [[ "$(jq -r .isPrerelease release.json)" == "true" ]] || {
+            echo "::error::${TAG} is not a test build (it was already sent to team apps)"; exit 1;
+          }
+          for f in latest.json \
+                   "BuzzTeam_${VERSION}_aarch64.app.tar.gz" "BuzzTeam_${VERSION}_aarch64.app.tar.gz.sig" \
+                   "BuzzTeam_${VERSION}_x64.app.tar.gz" "BuzzTeam_${VERSION}_x64.app.tar.gz.sig"; do
+            jq -e --arg f "$f" '.assets | any(.name == $f)' release.json >/dev/null || {
+              echo "::error::${TAG} is missing ${f}"; exit 1;
+            }
+          done
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --clobber
+          [[ "$(jq -r .version latest.json)" == "$VERSION" ]] || {
+            echo "::error::latest.json in ${TAG} is for $(jq -r .version latest.json), not ${VERSION}"; exit 1;
+          }
+
+      - name: Refuse to go backwards
+        env:
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: |
+          set -euo pipefail
+          CURRENT=$(curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/team-app-latest/latest.json" | jq -r .version || true)
+          echo "Team apps are on: ${CURRENT:-unknown}. Promoting: ${VERSION}."
+          if [[ -n "${CURRENT:-}" && "$CURRENT" != "null" ]]; then
+            # Team apps only update to a higher version; the feed must not move down.
+            NEWEST=$(printf '%s\n%s\n' "$CURRENT" "$VERSION" | sort -V | tail -n 1)
+            [[ "$CURRENT" != "$VERSION" && "$NEWEST" == "$VERSION" ]] || {
+              echo "::error::${VERSION} is not newer than what team apps already have (${CURRENT})"; exit 1;
+            }
+          fi
+
+      - name: Send to team apps
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="app-v${VERSION}"
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --title "Buzz Team v${VERSION}" --prerelease=false --latest
+          if ! gh release view team-app-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create team-app-latest \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Buzz Team update feed (do not delete)" \
+              --notes "Team apps read latest.json from this release to find updates. Deleting it stops all updates." \
+              --prerelease
+          fi
+          gh release upload team-app-latest latest.json --repo "$GITHUB_REPOSITORY" --clobber
+          echo "team-app-latest now points at v${VERSION}"
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.pick.outputs.version }}
+        run: echo "Dry run - would send v${VERSION} to team apps. Nothing was changed."

@@ -1,0 +1,292 @@
+name: Team Release
+
+# Builds "Buzz Team" (this fork's `team` branch) for macOS on Apple Silicon and
+# Intel, and publishes it as a release of this repository.
+#
+# A test build (publish OFF) becomes a pre-release only; nothing reaches team
+# apps until Team Promote sends it (or a run with publish ON).
+#
+# No Apple Developer account: the app is ad-hoc signed, so teammates approve it
+# once in System Settings → Privacy & Security.
+#
+# Required repository secrets (the same updater key as the 0.5 team build):
+#   TAURI_SIGNING_PRIVATE_KEY           updater private key (contents)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
+#   TEAM_UPDATER_PUBLIC_KEY             matching public key (contents)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Team build number (1, 2, 3, ...). Leave empty for the next free number."
+        required: false
+        default: ""
+      publish:
+        description: "Send to team apps as an update. Leave OFF for a test build."
+        type: boolean
+        default: false
+      check_only:
+        description: "Only run typecheck and tests (about 10 minutes). Builds nothing."
+        type: boolean
+        default: false
+
+concurrency:
+  group: team-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  UPDATER_ENDPOINT: https://github.com/${{ github.repository }}/releases/download/team-app-latest/latest.json
+  BUZZ_BUILDERLAB_URL: ${{ vars.BUZZ_BUILDERLAB_URL || 'https://app.builderlab.xyz' }}
+
+jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: src-tauri/tauri.conf.json
+          sparse-checkout-cone-mode: false
+
+      - name: Determine version
+        id: version
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BASE=$(jq -r .version src-tauri/tauri.conf.json | cut -d- -f1)
+          [[ "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::unexpected app version '$BASE'"; exit 1; }
+          if [[ -z "$BUILD_NUMBER" ]]; then
+            # Numbers keep counting across official versions, so every build
+            # is newer than the last even when the official base stays 0.0.0.
+            last=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \
+              --jq '[.[].tagName | select(test("^app-v[0-9]+\\.[0-9]+\\.[0-9]+-team\\.[0-9]+$")) | sub("^.*-team\\."; "") | tonumber] | max // 0')
+            BUILD_NUMBER=$((last + 1))
+            echo "No build_number given; using ${BUILD_NUMBER} (highest existing: ${last})."
+          fi
+          [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "::error::build_number must be 1, 2, 3, ... (got '$BUILD_NUMBER')"; exit 1; }
+          echo "version=${BASE}-team.${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Check secrets are configured
+        if: ${{ !inputs.check_only }}
+        env:
+          HAS_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          HAS_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD != '' }}
+          HAS_PUBLIC_KEY: ${{ secrets.TEAM_UPDATER_PUBLIC_KEY != '' }}
+        run: |
+          missing=0
+          [[ "$HAS_PRIVATE_KEY" == true ]] || { echo "::error::secret TAURI_SIGNING_PRIVATE_KEY is not set"; missing=1; }
+          [[ "$HAS_PASSWORD" == true ]] || { echo "::error::secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not set"; missing=1; }
+          [[ "$HAS_PUBLIC_KEY" == true ]] || { echo "::error::secret TEAM_UPDATER_PUBLIC_KEY is not set"; missing=1; }
+          exit "$missing"
+
+      - name: Refuse to overwrite an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "app-v${VERSION}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::release app-v${VERSION} already exists. Use the next build_number."
+            exit 1
+          fi
+
+  check:
+    name: Typecheck and tests
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm exec vitest run
+
+  build:
+    name: Build macOS (${{ matrix.arch }})
+    needs: [setup, check]
+    if: ${{ !inputs.check_only }}
+    runs-on: macos-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: aarch64
+            target: ""
+            lipo: arm64
+            bundle_dir: target/release/bundle
+          - arch: x64
+            target: x86_64-apple-darwin
+            lipo: x86_64
+            bundle_dir: target/x86_64-apple-darwin/release/bundle
+    env:
+      CI: "true"
+      CARGO_TERM_COLOR: always
+      VERSION: ${{ needs.setup.outputs.version }}
+      TARGET: ${{ matrix.target }}
+      BUNDLE_DIR: ${{ matrix.bundle_dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: team-macos-${{ matrix.arch }}
+          cache-all-crates: true
+
+      - name: Add Rust target
+        if: matrix.target != ''
+        run: rustup target add "$TARGET"
+
+      - name: Team config (name, bundle id, updater, ad-hoc signing)
+        env:
+          BUZZ_UPDATER_PUBLIC_KEY: ${{ secrets.TEAM_UPDATER_PUBLIC_KEY }}
+          BUZZ_UPDATER_ENDPOINT: ${{ env.UPDATER_ENDPOINT }}
+        run: node scripts/team/team-config.mjs "$VERSION" "$RUNNER_TEMP/team.json"
+
+      - name: Build app, DMG and updater archive
+        env:
+          # The native build enables the updater only when both are set.
+          BUZZ_UPDATER_PUBLIC_KEY: ${{ secrets.TEAM_UPDATER_PUBLIC_KEY }}
+          BUZZ_UPDATER_ENDPOINT: ${{ env.UPDATER_ENDPOINT }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+        run: |
+          set -euo pipefail
+          rm -rf "$BUNDLE_DIR"
+          ARGS=(--ci --bundles app,dmg --config "$RUNNER_TEMP/team.json")
+          [[ -n "$TARGET" ]] && ARGS+=(--target "$TARGET")
+          pnpm tauri build "${ARGS[@]}" -- --locked
+
+      - name: Verify the app
+        env:
+          LIPO: ${{ matrix.lipo }}
+        run: |
+          set -euo pipefail
+          APP="$BUNDLE_DIR/macos/Buzz Team.app"
+          test -d "$APP" || { echo "::error::Buzz Team.app not found"; ls -la "$BUNDLE_DIR/macos"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -q "Signature=adhoc" || { echo "::error::app is not ad-hoc signed"; exit 1; }
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = xyz.buzzteam.desktop
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$APP/Contents/Info.plist")"
+          for bin in "$APP/Contents/MacOS/"* "$APP/Contents/Resources/bin/goose-acp"; do
+            test -x "$bin" || { echo "::error::missing $bin"; exit 1; }
+            lipo -archs "$bin" | grep -qw "$LIPO" || { echo "::error::$bin is not $LIPO"; exit 1; }
+          done
+
+      - name: Collect artifacts
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out"
+          DMG=$(find "$BUNDLE_DIR/dmg" -name '*.dmg' -type f | head -1)
+          ARCHIVE=$(find "$BUNDLE_DIR/macos" -name '*.tar.gz' -type f | head -1)
+          [[ -n "$DMG" ]] || { echo "::error::no DMG"; exit 1; }
+          [[ -n "$ARCHIVE" && -f "${ARCHIVE}.sig" ]] || { echo "::error::no signed updater archive"; exit 1; }
+          cp "$DMG" "$RUNNER_TEMP/out/BuzzTeam_${VERSION}_${ARCH}.dmg"
+          cp "$ARCHIVE" "$RUNNER_TEMP/out/BuzzTeam_${VERSION}_${ARCH}.app.tar.gz"
+          cp "${ARCHIVE}.sig" "$RUNNER_TEMP/out/BuzzTeam_${VERSION}_${ARCH}.app.tar.gz.sig"
+          ls -la "$RUNNER_TEMP/out"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: team-app-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 7
+          path: ${{ runner.temp }}/out/*
+
+  publish:
+    name: Publish release
+    needs: [setup, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.setup.outputs.version }}
+      PUBLISH: ${{ inputs.publish }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: team-app-*
+          path: staged
+          merge-multiple: true
+
+      - name: Generate latest.json
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/app-v${VERSION}"
+          ARM="BuzzTeam_${VERSION}_aarch64.app.tar.gz"
+          X64="BuzzTeam_${VERSION}_x64.app.tar.gz"
+          for f in "$ARM" "$X64"; do
+            [[ -f "staged/$f" && -f "staged/$f.sig" ]] || { echo "::error::missing staged/$f(.sig)"; exit 1; }
+          done
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "Buzz Team v$VERSION" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg arm_sig "$(cat "staged/$ARM.sig")" --arg arm_url "$BASE/$ARM" \
+            --arg x64_sig "$(cat "staged/$X64.sig")" --arg x64_url "$BASE/$X64" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {
+               "darwin-aarch64": {signature: $arm_sig, url: $arm_url},
+               "darwin-x86_64":  {signature: $x64_sig, url: $x64_url}
+             }}' > latest.json
+          cat latest.json
+
+      - name: Write release notes
+        run: |
+          cat > notes.md <<EOF
+          새 Buzz(buzz-app) + 팀 기능.
+
+          **처음 설치**
+          - Apple 칩 맥(M1/M2/M3…): \`BuzzTeam_${VERSION}_aarch64.dmg\`
+          - Intel 맥: \`BuzzTeam_${VERSION}_x64.dmg\`
+          - Apple 인증이 없는 앱이라 처음 열 때 경고가 떠요. 시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기".
+          - 첫 화면에서 "내 Buzz 계정으로 계속하기"를 누르면 예전 계정을 그대로 써요.
+
+          이미 Buzz Team을 쓰고 있으면 앱 안의 "업데이트"로 받으면 돼요.
+          EOF
+
+      - name: Create release
+        run: |
+          set -euo pipefail
+          FLAGS=(--prerelease)
+          [[ "$PUBLISH" == true ]] && FLAGS=(--latest)
+          gh release create "app-v${VERSION}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Buzz Team v${VERSION}$([[ "$PUBLISH" == true ]] || echo ' (test)')" \
+            --notes-file notes.md \
+            "${FLAGS[@]}" \
+            staged/* latest.json
+
+      - name: Point team apps at this release
+        if: inputs.publish
+        run: |
+          set -euo pipefail
+          if ! gh release view team-app-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create team-app-latest \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Buzz Team update feed (do not delete)" \
+              --notes "Buzz Team apps read latest.json from this release to find updates. Deleting it stops all updates." \
+              --prerelease
+          fi
+          gh release upload team-app-latest latest.json --repo "$GITHUB_REPOSITORY" --clobber
+          echo "team-app-latest now points at v${VERSION}"

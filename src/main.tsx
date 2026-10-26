@@ -1,4 +1,6 @@
 // FOUNDATION: React startup. Keep initialization explicit and minimal.
+// Team build: fill in APIs older macOS lacks before any app code runs.
+import "./team/polyfills";
 // Establish host CSS layer order before product modules import component layers.
 import "./shared/styles/globals.css";
 import "./team/ui/team.css";

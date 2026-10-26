@@ -1,0 +1,187 @@
+name: Team Weekly Refresh
+
+# The weekly robot: brings the newest official Buzz (block/buzz-app main) into
+# the `team` branch, checks it, reports new English text that has no Korean
+# yet, and starts a TEST build. Nothing reaches team apps until someone runs
+# Team Promote, so a person always decides what ships.
+#
+# When: every day at 21:00 UTC (06:00 KST) the robot wakes up and only works
+# on the days in the repository variable TEAM_REFRESH_DAYS (KST weekday names,
+# default "Mon"; e.g. "Mon,Thu"). To change the hour, edit the cron line below
+# (UTC = KST − 9 hours). GitHub runs schedules from the default branch, so set
+# the repository's default branch to `team`. The computer does not need to be
+# on: this runs on GitHub's servers.
+#
+# Optional secret TEAM_ROBOT_TOKEN: a token with "workflows" permission. Only
+# needed when an official update changes files under .github/workflows; the
+# built-in token is not allowed to push those, and the robot then opens an
+# issue instead.
+
+on:
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "Start a test build after a successful refresh"
+        type: boolean
+        default: true
+
+concurrency:
+  group: team-weekly
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+env:
+  UPSTREAM: https://github.com/block/buzz-app.git
+
+jobs:
+  refresh:
+    name: Refresh from official Buzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Is today a refresh day?
+        id: day
+        env:
+          DAYS: ${{ vars.TEAM_REFRESH_DAYS || 'Mon' }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          today=$(TZ=Asia/Seoul date +%a)
+          if [[ "$EVENT" == workflow_dispatch ]] || [[ ",${DAYS// /}," == *",${today},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Today is ${today} (KST); refresh days are ${DAYS}. Nothing to do."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.day.outputs.run == 'true'
+        with:
+          ref: team
+          fetch-depth: 0
+          token: ${{ secrets.TEAM_ROBOT_TOKEN || github.token }}
+
+      - name: Fetch official Buzz
+        id: fetch
+        if: steps.day.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          git fetch --quiet "$UPSTREAM" main:refs/remotes/upstream/main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=${behind}" >> "$GITHUB_OUTPUT"
+          echo "Official commits not yet in team: ${behind}"
+          git log --oneline HEAD..upstream/main | head -50 > "$RUNNER_TEMP/commits.txt" || true
+
+      - uses: ./.github/actions/setup
+        if: steps.day.outputs.run == 'true' && steps.fetch.outputs.behind != '0'
+
+      - name: Strings before
+        if: steps.day.outputs.run == 'true' && steps.fetch.outputs.behind != '0'
+        run: |
+          npm install --silent --no-save --prefix "$RUNNER_TEMP/ts5" typescript@5.9.3
+          TS_MODULE="$RUNNER_TEMP/ts5/node_modules/typescript" node scripts/team/extract-strings.mjs "$RUNNER_TEMP/before.json" .
+
+      - name: Merge
+        id: merge
+        if: steps.day.outputs.run == 'true' && steps.fetch.outputs.behind != '0'
+        run: |
+          set -uo pipefail
+          git config user.name "buzz-team-robot"
+          git config user.email "buzz-team-robot@users.noreply.github.com"
+          if git merge --no-edit upstream/main; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
+            git merge --abort
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install merged dependencies
+        if: steps.merge.outputs.ok == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck and tests
+        id: test
+        if: steps.merge.outputs.ok == 'true'
+        run: |
+          set -o pipefail
+          if { pnpm typecheck && pnpm exec vitest run; } 2>&1 | tee "$RUNNER_TEMP/test.log"; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push
+        id: push
+        if: steps.test.outputs.ok == 'true'
+        run: |
+          if git push origin HEAD:team; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Strings after
+        if: steps.push.outputs.ok == 'true'
+        run: |
+          TS_MODULE="$RUNNER_TEMP/ts5/node_modules/typescript" node scripts/team/extract-strings.mjs "$RUNNER_TEMP/after.json" .
+          node scripts/team/new-strings.mjs "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after.json" > "$RUNNER_TEMP/strings.md"
+
+      - name: Start a test build
+        id: build
+        if: steps.push.outputs.ok == 'true' && (github.event_name == 'schedule' || inputs.build)
+        run: gh workflow run team-release.yml --ref team -f publish=false
+
+      - name: Report
+        if: always() && steps.day.outputs.run == 'true'
+        env:
+          BEHIND: ${{ steps.fetch.outputs.behind }}
+          MERGED: ${{ steps.merge.outputs.ok }}
+          TESTED: ${{ steps.test.outputs.ok }}
+          PUSHED: ${{ steps.push.outputs.ok }}
+          BUILT: ${{ steps.build.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          day=$(TZ=Asia/Seoul date +%Y-%m-%d)
+          report="$RUNNER_TEMP/report.md"
+          {
+            echo "공식 Buzz에서 새로 들어온 변경: ${BEHIND:-?}개"
+            echo
+            if [[ "${BEHIND:-}" == 0 ]]; then
+              echo "새 변경이 없어서 이번 주는 할 일이 없어요. ✅"
+              title="주간 갱신 ${day}: 변경 없음"
+            elif [[ "$MERGED" != true ]]; then
+              title="주간 갱신 ${day}: 합치다 충돌 ⚠️"
+              echo "공식 변경과 팀 기능이 같은 곳을 고쳐서 자동으로 합치지 못했어요. 팀 브랜치는 그대로예요."
+              echo; echo "충돌한 파일:"; sed 's/^/- /' "$RUNNER_TEMP/conflicts.txt"
+            elif [[ "$TESTED" != true ]]; then
+              title="주간 갱신 ${day}: 검사 실패 ⚠️"
+              echo "합치기는 됐지만 검사(타입·테스트)가 실패해서 팀 브랜치에 올리지 않았어요."
+              echo; echo '```'; tail -60 "$RUNNER_TEMP/test.log"; echo '```'
+            elif [[ "$PUSHED" != true ]]; then
+              title="주간 갱신 ${day}: 올리기 실패 ⚠️"
+              echo "검사는 통과했지만 팀 브랜치에 올리지 못했어요. 공식 변경이 .github/workflows 파일을 고친 경우일 수 있어요(TEAM_ROBOT_TOKEN 필요)."
+            else
+              title="주간 갱신 ${day}: 완료 ✅"
+              echo "합치기·검사·올리기를 마쳤어요."
+              [[ "$BUILT" == success ]] && echo "테스트 빌드를 시작했어요(약 1시간). 써 보고 괜찮으면 Team Promote를 눌러 팀원에게 보내세요."
+              echo; cat "$RUNNER_TEMP/strings.md"
+            fi
+            echo; echo "<details><summary>들어온 공식 변경</summary>"; echo
+            sed 's/^/- /' "$RUNNER_TEMP/commits.txt" 2>/dev/null
+            echo; echo "</details>"; echo; echo "실행 기록: ${RUN_URL}"
+          } > "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          # Quiet weeks stay in the run summary; anything worth a look gets an issue.
+          if [[ "${BEHIND:-}" != 0 ]]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$report" || true
+          fi
+          [[ "${BEHIND:-}" == 0 || "$PUSHED" == true ]]
