@@ -8,7 +8,6 @@
  * exactly match a dictionary entry (or a `{0}` pattern) are replaced.
  */
 
-
 export type TranslationTable = {
   exact: Record<string, string>;
   /** Entries whose source contains `{0}`-style placeholders. */

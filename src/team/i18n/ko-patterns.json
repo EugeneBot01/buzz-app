@@ -1,2278 +1,1164 @@
 [
- [
-  "{0}'s card is ready",
-  "{0} 카드가 완성됐습니다"
- ],
- [
-  "Minting {0}'s card failed",
-  "{0} 카드를 만들지 못했습니다"
- ],
- [
-  "{0} (unavailable)",
-  "{0} (사용할 수 없음)"
- ],
- [
-  "Add {0} to a channel so desktop chat can `@mention` it. Running agents pick up new channels automatically via membership notifications.",
-  "채널에 추가하면 데스크톱 채팅에서 {0} 에이전트를 `@멘션`으로 부를 수 있습니다. 실행 중인 에이전트는 새 채널을 자동으로 인식합니다."
- ],
- [
-  "Agents ({0})",
-  "에이전트 ({0})"
- ],
- [
-  "This team references {0} agent {1} that {2} no longer in My Agents. Add them back or edit the team before deploying.",
-  "이 팀에 속한 에이전트 {0}명이 더 이상 내 에이전트 목록에 없습니다. 배포하기 전에 다시 추가하거나 팀을 수정하세요."
- ],
- [
-  "Deploy {0} {1}",
-  "에이전트 {0}개 배포"
- ],
- [
-  "Create {0}'s card",
-  "{0} 카드 만들기"
- ],
- [
-  "Saved {0}'s card. Share it — the card IS the agent.",
-  "{0} 카드를 저장했습니다. 공유해 보세요. 카드가 곧 에이전트입니다."
- ],
- [
-  "Sent {0}'s card.",
-  "{0} 카드를 보냈습니다."
- ],
- [
-  "{0}'s card",
-  "{0} 카드"
- ],
- [
-  "Couldn’t load your minted cards: {0}",
-  "만든 카드를 불러오지 못했습니다: {0}"
- ],
- [
-  "Edit {0}",
-  "{0} 편집"
- ],
- [
-  "Copy {0}",
-  "{0} 복사"
- ],
- [
-  "{0} Advanced ({1})",
-  "{0} 고급 ({1})"
- ],
- [
-  "Remove {0}",
-  "{0} 제거"
- ],
- [
-  "Add {0}",
-  "{0} 추가"
- ],
- [
-  "Saved. Restarted {0} agent{1}.{2}",
-  "저장했습니다. 에이전트 {0}개를 재시작했습니다.{2}"
- ],
- [
-  "{0} Save defaults",
-  "{0} 기본값 저장"
- ],
- [
-  "{0} Visit Settings &gt; Agents to set it up.",
-  "{0} 설정 &gt; 에이전트에서 설정하세요."
- ],
- [
-  "LLM provider {0}",
-  "LLM 제공자 {0}"
- ],
- [
-  "{0} (current)",
-  "{0} (현재)"
- ],
- [
-  "{0} saved while stopped.",
-  "{0} 에이전트를 저장했습니다. 지금은 중지 상태입니다."
- ],
- [
-  "{0} started.",
-  "{0} 에이전트를 시작했습니다."
- ],
- [
-  "{0} was saved locally, but relay sync failed: {1}. Remote users may still see the previous name or access policy until Buzz retries the sync.",
-  "{0} 설정은 이 기기에 저장했지만, 릴레이와 동기화하지 못했습니다({1}). Buzz가 다시 시도하기 전까지 다른 사용자에게는 이전 이름이나 접근 설정이 보일 수 있습니다."
- ],
- [
-  "Ran {0} tool calls",
-  "도구 {0}번 사용함"
- ],
- [
-  "ACP wire source: {0}",
-  "ACP 데이터 출처: {0}"
- ],
- [
-  "Export {0}",
-  "{0} 내보내기"
- ],
- [
-  "{0} {1} memory entr {2}",
-  "이 스냅샷에는 {1} 메모리 {0}개가 들어 있습니다."
- ],
- [
-  "Respond-to allowlist ({0} entr {1})",
-  "응답 대상 허용 목록 ({0}개)"
- ],
- [
-  "Memory partially restored: {0} of {1} entr {2} written. The agent exists but some memory entries failed to publish.",
-  "메모리를 일부만 복원했습니다. {1}개 중 {0}개를 저장했고, 나머지는 저장하지 못했습니다. 에이전트는 만들어졌습니다."
- ],
- [
-  "{0} memory entr {1} restored.",
-  "메모리 {0}개를 복원했습니다."
- ],
- [
-  "Profile sync: {0}",
-  "프로필 동기화에 실패했습니다: {0}"
- ],
- [
-  "Minting {0}’s card… (takes a few minutes)",
-  "{0} 카드를 만드는 중… (몇 분 걸립니다)"
- ],
- [
-  "{0}’s card is ready — view it",
-  "{0} 카드가 완성됐습니다 — 보기"
- ],
- [
-  "Minting {0}’s card failed",
-  "{0} 카드를 만들지 못했습니다"
- ],
- [
-  "Uses the {0} template's runtime{1}. Editing the template and respawning propagates the new runtime.",
-  "{0} 템플릿의 런타임을 그대로 씁니다{1}. 템플릿을 수정한 뒤 에이전트를 다시 만들면 새 런타임이 적용됩니다."
- ],
- [
-  "Model {0}",
-  "모델 {0}"
- ],
- [
-  "Inherited from {0}",
-  "{0}에서 물려받음"
- ],
- [
-  "Working in #{0} · {1}",
-  "#{0}에서 작업 중 · {1}"
- ],
- [
-  "{0} event{1}",
-  "이벤트 {0}개"
- ],
- [
-  "Duplicate {0}",
-  "{0} 복제"
- ],
- [
-  "{0} only",
-  "{0}만"
- ],
- [
-  "{0} + core memory",
-  "{0} + 핵심 메모리"
- ],
- [
-  "{0} + all memories",
-  "{0} + 전체 메모리"
- ],
- [
-  "{0}—and anyone with the file link—can view it.",
-  "{0}와(과) 파일 링크를 가진 사람은 누구나 볼 수 있습니다."
- ],
- [
-  "Sent a copy of {0}",
-  "{0} 사본을 보냈습니다"
- ],
- [
-  "Share {0}",
-  "{0} 공유"
- ],
- [
-  "Anyone you share this {0} with will receive a copy they can add and use. Changes you make later won’t sync.",
-  "공유받은 사람은 이 {0}의 사본을 받아 추가해 쓸 수 있습니다. 이후에 바꾼 내용은 반영되지 않습니다."
- ],
- [
-  "Remove {0} member{1}?",
-  "멤버 {0}명을 제거할까요?"
- ],
- [
-  "{0} will be removed from this team. Do you also want to remove the {1} completely?",
-  "이 팀에서 {0}을(를) 뺍니다. {1}도 완전히 제거할까요?"
- ],
- [
-  "Keep {0}",
-  "{0} 유지"
- ],
- [
-  "{0} selected",
-  "{0}명 선택됨"
- ],
- [
-  "{0} entr {1} not a valid npub or 64-char hex public key and will be ignored.",
-  "{0}개는 올바른 npub 또는 64자리 16진수 공개 키가 아니어서 제외됩니다."
- ],
- [
-  "{0} valid pubkey{1} ready.",
-  "유효한 공개 키 {0}개가 준비되었습니다."
- ],
- [
-  "{0} chars → {1} chars",
-  "{0}자 → {1}자"
- ],
- [
-  "and {0} more",
-  "외 {0}개"
- ],
- [
-  "Delete \"{0}\". Already-deployed agents are not affected, but this team template will no longer be available.",
-  "\"{0}\" 팀을 삭제합니다. 이미 배포한 에이전트는 그대로지만, 이 팀 템플릿은 더 이상 쓸 수 없습니다."
- ],
- [
-  "This team references {0} agent {1} that {2} no longer in My Agents. Save to remove them, or add them back to My Agents first.",
-  "이 팀에 들어 있는 에이전트 {0}개가 더 이상 내 에이전트에 없습니다. 저장하면 팀에서 빠지며, 먼저 내 에이전트에 다시 추가할 수도 있습니다."
- ],
- [
-  "Linked from {0}",
-  "{0}에서 연결됨"
- ],
- [
-  "Members ({0})",
-  "멤버 ({0})"
- ],
- [
-  ", but {0} member{1} failed to publish {2}.",
-  ". 다만 멤버 {0}명의 프로필은 게시하지 못했습니다."
- ],
- [
-  "successfully with {0} member{1}.",
-  ". 멤버 {0}명이 포함되어 있습니다."
- ],
- [
-  "Memory partially restored: {0} of {1} entr {2} written across all members.",
-  "메모리를 일부만 복원했습니다. 전체 {1}개 중 {0}개가 멤버들에게 기록되었습니다."
- ],
- [
-  "{0} memory entr {1} restored across all members.",
-  "메모리 {0}개를 모든 멤버에게 복원했습니다."
- ],
- [
-  "{0} agent {1} in this team {2} no longer in your agents. Edit the team to fix it before deploying or sharing.",
-  "이 팀의 에이전트 {0}개가 내 에이전트에 없습니다. 배포하거나 공유하기 전에 팀을 편집해서 고치세요."
- ],
- [
-  "Runtime not available: {0}",
-  "런타임을 쓸 수 없습니다: {0}"
- ],
- [
-  "{0} copy",
-  "{0} 사본"
- ],
- [
-  "Could not probe provider: {0}",
-  "제공자에 연결하지 못했습니다: {0}"
- ],
- [
-  "{0} couldn’t be added to #{1}. {2}",
-  "#{1}에 {0} 추가에 실패했습니다. {2}"
- ],
- [
-  "Adding {0} to #{1}…",
-  "#{1}에 {0} 추가하는 중…"
- ],
- [
-  "Added {0} to #{1}",
-  "#{1}에 {0}을(를) 추가했습니다"
- ],
- [
-  "You already have a project named \"{0}\".",
-  "이미 \"{0}\" 프로젝트가 있습니다."
- ],
- [
-  "A project named \"{0}\" already exists. Open that one instead of creating another.",
-  "\"{0}\" 프로젝트가 이미 있습니다. 새로 만들지 말고 기존 프로젝트를 여세요."
- ],
- [
-  "A project cannot contain more than {0} extra channels.",
-  "프로젝트에는 채널을 최대 {0}개까지 더 추가할 수 있습니다."
- ],
- [
-  "Could not fetch project deletion records: {0} — refresh to retry.",
-  "프로젝트 삭제 기록을 가져오지 못했습니다: {0} — 새로고침한 뒤 다시 시도하세요."
- ],
- [
-  "A project cannot contain more than {0} repositories.",
-  "프로젝트에는 저장소를 최대 {0}개까지 넣을 수 있습니다."
- ],
- [
-  "This project already contains \"{0}\" (it was added by another session).",
-  "\"{0}\"은(는) 이미 이 프로젝트에 있습니다. 다른 세션에서 추가된 것입니다."
- ],
- [
-  "Choose an existing repository to add to {0}.",
-  "{0}에 추가할 기존 저장소를 선택하세요."
- ],
- [
-  "Create a task in {0}",
-  "{0}에 작업 만들기"
- ],
- [
-  "discussed {0} in",
-  "— {0}을(를) 논의한 채널:"
- ],
- [
-  "created {0} from",
-  "— {0}을(를) 만든 채널:"
- ],
- [
-  "Open #{0}",
-  "#{0} 열기"
- ],
- [
-  "Show {0} more {1}",
-  "대화 {0}개 더 보기"
- ],
- [
-  "and {0} others",
-  "외 {0}명"
- ],
- [
-  "Showing the latest {0} mentions; totals may be higher.",
-  "최근 멘션 {0}개만 표시합니다. 실제로는 더 많을 수 있습니다."
- ],
- [
-  "Assigned to {0}",
-  "담당자: {0}"
- ],
- [
-  "Unassign {0}",
-  "{0} 담당 해제"
- ],
- [
-  "{0} — assigned",
-  "{0} — 담당 중"
- ],
- [
-  "{0} Assign to me",
-  "{0} 내가 맡기"
- ],
- [
-  "{0} Assign",
-  "{0} 담당자 지정"
- ],
- [
-  "Merge {0} into {1} and push the result to the repository. The remote will reject the operation if the branch changed or conflicts.",
-  "{0} 브랜치를 {1} 브랜치에 병합하고 결과를 저장소에 푸시합니다. 그 사이 브랜치가 바뀌었거나 충돌이 있으면 원격 저장소에서 거부됩니다."
- ],
- [
-  "Prepare the local checkout, then switch to {0} with the commands shown. After resolving and committing, push the target branch and retry the merge.",
-  "로컬 저장소를 준비한 뒤, 안내된 명령으로 {0} 브랜치로 전환하세요. 충돌을 해결하고 커밋한 다음 대상 브랜치를 푸시하고 병합을 다시 시도하세요."
- ],
- [
-  "{0} more",
-  "외 {0}개"
- ],
- [
-  "Create “{0}”",
-  "“{0}” 만들기"
- ],
- [
-  "View {0}",
-  "{0} 보기"
- ],
- [
-  "More options for {0}",
-  "{0} 더보기"
- ],
- [
-  "Delete {0} from Projects for everyone. This can only be done for projects you own and cannot be undone.",
-  "{0} 프로젝트를 모든 사용자의 프로젝트 목록에서 삭제합니다. 내가 소유한 프로젝트만 삭제할 수 있으며, 삭제하면 되돌릴 수 없습니다."
- ],
- [
-  "Channel \"#{0}\" created.",
-  "\"#{0}\" 채널을 만들었습니다."
- ],
- [
-  "Temporary · {0}. Cleans up automatically after that period of inactivity.",
-  "임시 · {0}. 이 기간 동안 활동이 없으면 자동으로 정리됩니다."
- ],
- [
-  "Your agent requested a new channel in {0}. Review the details before creating it.",
-  "에이전트가 {0}에 새 채널을 만들어 달라고 요청했습니다. 만들기 전에 내용을 확인하세요."
- ],
- [
-  "Project \"{0}\" created.",
-  "\"{0}\" 프로젝트를 만들었습니다."
- ],
- [
-  "Committed by {0}{1}",
-  "커밋한 사람: {0}{1}"
- ],
- [
-  "Select {0}",
-  "{0} 선택"
- ],
- [
-  "Showing commits from {0} of {1} repositories. {2} {3} not be loaded.",
-  "저장소 {1}개 중 {0}개의 커밋만 표시합니다. {2}개 저장소는 불러오지 못했습니다."
- ],
- [
-  "Show {0}",
-  "{0} 보기"
- ],
- [
-  "Created by {0}",
-  "작성자: {0}"
- ],
- [
-  "Large diff truncated — showing the first {0} lines. Use a local checkout to review the full change.",
-  "diff가 커서 앞의 {0}줄만 표시합니다. 전체 변경 사항은 로컬 저장소에서 확인하세요."
- ],
- [
-  "Could not load changed files for this {0}.",
-  "이 {0}의 변경된 파일을 불러오지 못했습니다."
- ],
- [
-  "No changed files are available for this {0} yet.",
-  "이 {0}에는 아직 변경된 파일이 없습니다."
- ],
- [
-  "{0} changed files",
-  "변경된 파일 {0}개"
- ],
- [
-  "{0} files changed",
-  "파일 {0}개 변경됨"
- ],
- [
-  "View commit {0}",
-  "커밋 {0} 보기"
- ],
- [
-  "Show {0} earlier {1}",
-  "이전 활동 {0}개 보기"
- ],
- [
-  "Last changed {0}",
-  "마지막 변경: {0}"
- ],
- [
-  "Code hosted on {0}",
-  "코드 저장 위치: {0}"
- ],
- [
-  "{0} Fetch",
-  "{0} 페치"
- ],
- [
-  "{0} Pull {1}",
-  "{0} 풀 {1}"
- ],
- [
-  "{0} Push {1}",
-  "{0} 푸시 {1}"
- ],
- [
-  "Repository \"{0}\" created.",
-  "\"{0}\" 저장소를 만들었습니다."
- ],
- [
-  "Repository \"{0}\" added.",
-  "\"{0}\" 저장소를 추가했습니다."
- ],
- [
-  "Repository access set to #{0}.",
-  "#{0} 채널을 저장소 접근 채널로 지정했습니다."
- ],
- [
-  "Repository files · {0} tracked files",
-  "저장소 파일 · 추적 중인 파일 {0}개"
- ],
- [
-  "Showing {0} of {1} entries.",
-  "{1}개 중 {0}개 표시 중"
- ],
- [
-  "Show next {0}",
-  "다음 {0}개 더 보기"
- ],
- [
-  "Open repository on {0}",
-  "{0}에서 저장소 열기"
- ],
- [
-  "{0} Pull{1}",
-  "{0} 풀{1}"
- ],
- [
-  "{0} Push",
-  "{0} 푸시"
- ],
- [
-  "{0} Ask",
-  "{0} 질문"
- ],
- [
-  "{0} all {1}",
-  "{1} 전체 {0}"
- ],
- [
-  "View task {0}",
-  "작업 보기: {0}"
- ],
- [
-  "Chat with an agent about {0}",
-  "{0}에 대해 에이전트와 채팅"
- ],
- [
-  "View review {0}",
-  "리뷰 보기: {0}"
- ],
- [
-  "Search {0}",
-  "{0} 검색"
- ],
- [
-  "Cloning {0}…",
-  "{0} 클론 중…"
- ],
- [
-  "Cloned to {0}",
-  "{0}에 클론했습니다"
- ],
- [
-  "A repository named \"{0}\" already exists (as a standalone repository or in another project). Choose a different name to avoid overwriting it.",
-  "\"{0}\" 저장소가 이미 있습니다(단독 저장소이거나 다른 프로젝트 소속). 덮어쓰지 않도록 다른 이름을 입력하세요."
- ],
- [
-  "This relay does not support multi-repository projects (event kind {0}).",
-  "이 릴레이는 저장소가 여러 개인 프로젝트를 지원하지 않습니다(event kind {0})."
- ],
- [
-  "v{0} available — download from GitHub. Switch to AppImage for automatic updates.",
-  "{0} 버전이 나왔습니다. GitHub에서 다운로드하세요. 자동 업데이트를 쓰려면 AppImage로 바꿔 설치하세요."
- ],
- [
-  "Thread layout {0}",
-  "스레드 표시 방식 {0}"
- ],
- [
-  "Duplicated as \"{0}\"",
-  "\"{0}\"(으)로 복제했습니다"
- ],
- [
-  "Deleted \"{0}\"",
-  "\"{0}\" 템플릿을 삭제했습니다"
- ],
- [
-  "Are you sure you want to delete &quot;{0}&quot;? This action cannot be undone.",
-  "&quot;{0}&quot; 템플릿을 삭제할까요? 삭제하면 되돌릴 수 없습니다."
- ],
- [
-  "Updated \"{0}\"",
-  "\"{0}\" 템플릿을 수정했습니다"
- ],
- [
-  "Created \"{0}\"",
-  "\"{0}\" 템플릿을 만들었습니다"
- ],
- [
-  "arg {0}",
-  "인수 {0}"
- ],
- [
-  "Password (min {0} characters)",
-  "비밀번호(최소 {0}자)"
- ],
- [
-  "Update {0} adapter?",
-  "{0} 어댑터를 업데이트할까요?"
- ],
- [
-  "Config error: {0}",
-  "설정 오류: {0}"
- ],
- [
-  "Finish signing in from the Terminal window, then click Check again to re-check {0}.",
-  "{0} 상태를 다시 확인하려면 터미널 창에서 로그인을 마친 뒤 '다시 확인'을 누르세요."
- ],
- [
-  "{0} of {1} used",
-  "{1}개 중 {0}개 사용 중"
- ],
- [
-  "You&apos;ve reached the limit of {0} hosted communities. Transfer one to free up a slot before creating another.",
-  "호스팅 커뮤니티는 최대 {0}개까지 만들 수 있습니다. 새로 만들려면 먼저 하나를 다른 사람에게 이전하세요."
- ],
- [
-  "Unarchive {0}?",
-  "{0} 보관을 해제할까요?"
- ],
- [
-  "Archive {0}?",
-  "{0} 보관할까요?"
- ],
- [
-  "Transfer {0} to another person. You become a regular member. The recipient needs a connected Buzz identity first, and this can&apos;t be undone.",
-  "{0} 커뮤니티를 다른 사람에게 넘깁니다. 넘긴 뒤에는 일반 멤버가 됩니다. 받는 사람이 먼저 Buzz 신원을 연결해 두어야 하며, 되돌릴 수 없습니다."
- ],
- [
-  "{0} Transfer ownership",
-  "{0} 소유권 이전"
- ],
- [
-  "Confirmation code {0}",
-  "확인 코드 {0}"
- ],
- [
-  "Verification code {0} {1} ready. Check that it matches on your mobile device, then confirm the codes match.",
-  "확인 코드 {0} {1}이(가) 준비되었습니다. 모바일 기기에 표시된 코드와 같은지 보고, 같으면 확인을 누르세요."
- ],
- [
-  "reported by {0} · {1}",
-  "신고자 {0} · {1}"
- ],
- [
-  "{0} prior action {1} against this target — {2}",
-  "이 대상에 대한 이전 조치 {0}건 — {2}"
- ],
- [
-  "by {0} · {1}",
-  "{0} 처리 · {1}"
- ],
- [
-  "{0} channel{1} set individually.",
-  "{0}개 채널을 따로 설정했습니다."
- ],
- [
-  "{0} Preview",
-  "{0} 미리 듣기"
- ],
- [
-  "{0} and its local audio file will be removed.",
-  "{0} 음성과 이 기기에 저장된 오디오 파일이 삭제됩니다."
- ],
- [
-  "Update available — v{0}",
-  "새 버전이 있습니다 (v{0})"
- ],
- [
-  "Update failed: {0}",
-  "업데이트하지 못했습니다: {0}"
- ],
- [
-  "Approver: {0}",
-  "승인자: {0}"
- ],
- [
-  "Expires: {0}",
-  "만료 시각: {0}"
- ],
- [
-  "Delete \"{0}\". This removes the current workflow and stops new triggers. Publishing its definition again, even an older version, can recreate it.",
-  "\"{0}\" 워크플로를 삭제합니다. 삭제하면 새 트리거가 더 이상 실행되지 않습니다. 이전 버전이라도 정의를 다시 게시하면 워크플로가 다시 만들어질 수 있습니다."
- ],
- [
-  "Couldn’t delete workflow. {0} Try again or cancel to keep editing.",
-  "워크플로를 삭제하지 못했습니다. {0} 다시 시도하거나, 취소하고 계속 편집하세요."
- ],
- [
-  "Current step {0}",
-  "현재 단계 {0}"
- ],
- [
-  "Cannot switch to form view: {0}",
-  "양식 보기로 전환할 수 없습니다: {0}"
- ],
- [
-  "Trigger: {0}",
-  "트리거: {0}"
- ],
- [
-  "Step {0}: {1}",
-  "단계 {0}: {1}"
- ],
- [
-  "Step {0}",
-  "단계 {0}"
- ],
- [
-  "The workflow was saved, but its webhook URL could not be loaded: {0}",
-  "워크플로는 저장했지만 웹훅 URL을 불러오지 못했습니다: {0}"
- ],
- [
-  "Could not retrieve your private key: {0}. You can continue and find it later in Settings &gt; Profile &gt; Identity.",
-  "개인 키를 가져오지 못했습니다: {0}. 그냥 계속해도 되고, 나중에 설정 > 프로필 > 신원에서 확인할 수 있습니다."
- ],
- [
-  "{0} Re-download backup",
-  "{0} 백업 다시 받기"
- ],
- [
-  "Joining {0}",
-  "{0}에 참여하는 중"
- ],
- [
-  "Couldn’t save model settings. {0} Try again.",
-  "모델 설정을 저장하지 못했습니다. {0} 다시 시도하세요."
- ],
- [
-  "Backup saved to {0}",
-  "백업 저장 위치: {0}"
- ],
- [
-  "I agree to the Buzz {0}{1}{2} .",
-  "Buzz {0}{1}{2}에 동의합니다."
- ],
- [
-  "You’ll connect to {0} once setup is finished.",
-  "설정을 마치면 {0}에 연결됩니다."
- ],
- [
-  "Could not reconnect to the relay. {0}",
-  "릴레이에 다시 연결하지 못했습니다. {0}"
- ],
- [
-  "Open {0} setup",
-  "{0} 설정 열기"
- ],
- [
-  "Buzz will open a sign-in window for {0}.",
-  "Buzz가 {0} 로그인 창을 엽니다."
- ],
- [
-  "Set up {0}",
-  "{0} 설정"
- ],
- [
-  "Follow the setup guide to install {0}. When you’re done, come back and check again.",
-  "설정 가이드를 따라 {0}을(를) 설치하세요. 끝나면 돌아와서 다시 확인하세요."
- ],
- [
-  "Connect {0}",
-  "{0} 연결"
- ],
- [
-  "Sign in to connect {0}. You can change this anytime.",
-  "로그인해서 {0}을(를) 연결하세요. 나중에 바꿀 수 있습니다."
- ],
- [
-  "{0} agent not found.",
-  "{0} 에이전트를 찾을 수 없습니다."
- ],
- [
-  "@everyone/@all can notify at most {0} members (this channel has {1}).",
-  "@everyone/@all은 최대 {0}명까지만 알릴 수 있습니다(이 채널 멤버 {1}명)."
- ],
- [
-  "Failed to delete message: {0}",
-  "메시지를 삭제하지 못했습니다: {0}"
- ],
- [
-  "The mention @{0} is ambiguous. Choose a recipient from the mention picker.",
-  "@{0}에 해당하는 대상이 여러 명입니다. 멘션 목록에서 직접 선택하세요."
- ],
- [
-  "Timed out waiting for {0}",
-  "미디어 처리 중 시간이 초과되었습니다({0})"
- ],
- [
-  "Could not load media for {0}",
-  "미디어를 불러오지 못했습니다({0})"
- ],
- [
-  "Audio fetch failed ({0})",
-  "오디오를 가져오지 못했습니다({0})"
- ],
- [
-  "{0} preview",
-  "{0} 미리보기"
- ],
- [
-  "{0} Save",
-  "{0} 저장"
- ],
- [
-  "Replying to {0}",
-  "{0}에게 답글"
- ],
- [
-  "Diff truncated. {0}",
-  "변경 내용이 길어서 일부만 보여 줍니다. {0}"
- ],
- [
-  "View full diff on {0}",
-  "{0}에서 전체 변경 내용 보기"
- ],
- [
-  "{0} attachment {1}",
-  "첨부 파일 {0}개"
- ],
- [
-  "Are you sure you want to send this message to {0}?",
-  "{0}에 이 메시지를 보낼까요?"
- ],
- [
-  "managed by {0} · not in channel",
-  "관리: {0} · 채널에 없음"
- ],
- [
-  "Failed to remove previews: {0}",
-  "미리보기를 제거하지 못했습니다: {0}"
- ],
- [
-  "{0} new message{1}",
-  "새 메시지 {0}개"
- ],
- [
-  "({0} new)",
-  "(새 답글 {0}개)"
- ],
- [
-  "last reply {0}",
-  "마지막 답글 {0}"
- ],
- [
-  "{0} {1} not in this channel. {2}",
-  "이 채널에 없는 사람: {0}. {2}"
- ],
- [
-  "{0} others",
-  "{0}명"
- ],
- [
-  "Open {0}",
-  "{0} 열기"
- ],
- [
-  "Could not start {0} — your message was sent, but the agent may not respond. {1}",
-  "{0}을(를) 시작하지 못했습니다. 메시지는 보냈지만 에이전트가 답하지 않을 수 있습니다. {1}"
- ],
- [
-  "Upload failed: {0}",
-  "업로드하지 못했습니다: {0}"
- ],
- [
-  "{0} in channel",
-  "{0}명 채널에 있음"
- ],
- [
-  "managed by {0}",
-  "관리: {0}"
- ],
- [
-  "Stop signal sent to {0}. It may take a moment to respond.",
-  "{0}에 중지 요청을 보냈습니다. 반영되기까지 잠시 걸릴 수 있습니다."
- ],
- [
-  "This publishes {0} as the current canvas for everyone in this channel. History is preserved.",
-  "이 채널의 모든 사람에게 보이는 캔버스를 다음 버전으로 되돌립니다: {0}. 이전 기록은 그대로 남습니다."
- ],
- [
-  "{0}'s revision from {1}",
-  "{0}님이 {1}에 저장한 버전"
- ],
- [
-  "Create {0}",
-  "{0} 만들기"
- ],
- [
-  "Create a new {0}",
-  "새 {0} 만들기"
- ],
- [
-  "New {0}",
-  "새 {0}"
- ],
- [
-  "Delete {0} from the community list. This action cannot be undone.",
-  "{0} 채널을 커뮤니티 목록에서 삭제합니다. 삭제한 뒤에는 되돌릴 수 없습니다."
- ],
- [
-  "Edit {0} channel",
-  "{0} 채널 편집"
- ],
- [
-  "Copied {0}",
-  "{0} 복사됨"
- ],
- [
-  "{0} more members",
-  "멤버 {0}명 더"
- ],
- [
-  "Current ({0})",
-  "현재 ({0})"
- ],
- [
-  "Choose who can send instructions to {0}.",
-  "{0}에게 지시할 수 있는 사람을 선택하세요."
- ],
- [
-  "Members · {0}",
-  "멤버 · {0}"
- ],
- [
-  "Add {0} ({1})",
-  "{0} 추가 ({1})"
- ],
- [
-  "Create with {0}",
-  "{0}와(과) 함께 만들기"
- ],
- [
-  "Talk through what you need. {0} will prepare a draft you can review and edit.",
-  "원하는 것을 이야기해 보세요. {0}이(가) 검토하고 고칠 수 있는 초안을 만들어 줍니다."
- ],
- [
-  "Expected ws:// or wss:// relay URL, got: {0}",
-  "릴레이 주소는 ws:// 또는 wss://로 시작해야 합니다. 입력한 값: {0}"
- ],
- [
-  "Moderation request failed ({0}): {1}",
-  "관리 요청을 처리하지 못했습니다({0}): {1}"
- ],
- [
-  "{0} is a preview feature. Enable it in Settings → Experiments to surface it in your sidebar.",
-  "{0}은(는) 미리보기 기능입니다. 사이드바에 표시하려면 설정 → 실험 기능에서 켜세요."
- ],
- [
-  "Open {0} {1}: {2}",
-  "{0} {1} 열기: {2}"
- ],
- [
-  "{0} needs configuration",
-  "{0}의 설정이 필요합니다"
- ],
- [
-  "Couldn't copy {0}.",
-  "{0}을(를) 복사하지 못했습니다."
- ],
- [
-  "Link previews set to {0}.",
-  "링크 미리보기를 {0}(으)로 설정했습니다."
- ],
- [
-  "This removes {0} for everyone.",
-  "모든 사람에게서 링크 미리보기가 사라집니다."
- ],
- [
-  "Archiving hides {0} from the space.",
-  "보관하면 이 커뮤니티에서 {0}을(를) 숨깁니다."
- ],
- [
-  "Verify {0}",
-  "{0} 인증"
- ],
- [
-  "Restarted {0}.",
-  "{0}을(를) 다시 시작했습니다."
- ],
- [
-  "Started {0}.",
-  "{0}을(를) 시작했습니다."
- ],
- [
-  "Deleted {0}.",
-  "{0}을(를) 삭제했습니다."
- ],
- [
-  "Removed {0} from My Agents.",
-  "내 에이전트에서 {0}을(를) 제거했습니다."
- ],
- [
-  "Added {0} to {1}.",
-  "{0}을(를) {1}에 추가했습니다."
- ],
- [
-  "{0} is already in {1}.",
-  "{0}은(는) 이미 {1}에 있습니다."
- ],
- [
-  "{0} was updated, but profile sync failed: {1}",
-  "{0}을(를) 업데이트했지만 프로필을 동기화하지 못했습니다: {1}"
- ],
- [
-  "Updated {0}.",
-  "{0}을(를) 업데이트했습니다."
- ],
- [
-  "{0} was created, but it did not start: {1}",
-  "{0}을(를) 만들었지만 시작하지 못했습니다: {1}"
- ],
- [
-  "Created and started {0}.",
-  "{0}을(를) 만들고 시작했습니다."
- ],
- [
-  "{0} was created, but profile sync failed: {1}",
-  "{0}을(를) 만들었지만 프로필을 동기화하지 못했습니다: {1}"
- ],
- [
-  "Last live {0}",
-  "마지막 접속 {0}"
- ],
- [
-  "{0} Message",
-  "메시지"
- ],
- [
-  "{0} Huddle",
-  "허들"
- ],
- [
-  "{0} failed: {1}",
-  "{0} 실패: {1}"
- ],
- [
-  "Exported {0}.",
-  "{0}을(를) 내보냈습니다."
- ],
- [
-  "You've reached the limit of {0} hosted communities.",
-  "호스팅 커뮤니티는 최대 {0}개까지 만들 수 있습니다."
- ],
- [
-  "Account: {0}",
-  "계정: {0}"
- ],
- [
-  "This device: {0}",
-  "이 기기: {0}"
- ],
- [
-  "{0}Builderlab did not return its relay address. Try connecting it again, or contact support if it does not appear in your communities.",
-  "Builderlab에서 릴레이 주소를 받지 못했습니다. 다시 연결해 보고, 커뮤니티 목록에 나타나지 않으면 지원팀에 문의하세요."
- ],
- [
-  "{0}onboarding is already in progress for another community. Go back and finish or restart that connection, then connect this community from your owned communities list.",
-  "다른 커뮤니티 연결이 아직 진행 중입니다. 먼저 그 연결을 마치거나 다시 시작한 뒤, 내 커뮤니티 목록에서 이 커뮤니티를 연결하세요."
- ],
- [
-  "Your Builderlab account {0} is ready. Connect this device’s Buzz identity to finish setup. Your private key stays on this device.",
-  "Builderlab 계정{0} 준비가 끝났습니다. 이 기기의 Buzz 신원을 연결하면 설정이 끝납니다. 개인 키는 이 기기 밖으로 나가지 않습니다."
- ],
- [
-  "{0} unread",
-  "읽지 않음 {0}"
- ],
- [
-  "In DM with {0}",
-  "{0} 님과의 DM"
- ],
- [
-  "Voice models: STT {0}, TTS {1}",
-  "음성 모델: STT {0}, TTS {1}"
- ],
- [
-  ", voice input: {0}",
-  ", 음성 입력: {0}"
- ],
- [
-  "Huddle active — {0} participant{1}",
-  "허들 진행 중 — 참가자 {0}명"
- ],
- [
-  "Joined {0}",
-  "{0} 참여"
- ],
- [
-  "Role changed to {0}",
-  "역할을 {0}(으)로 바꿨습니다"
- ],
- [
-  "Added {0}",
-  "{0}에 추가됨"
- ],
- [
-  "Remove {0}?",
-  "{0}을(를) 제거할까요?"
- ],
- [
-  "Default ({0})",
-  "기본({0})"
- ],
- [
-  "Leave \"{0}\"? You'll stop receiving its messages and can rejoin later.",
-  "\"{0}\" 채널에서 나갈까요? 나가면 메시지를 받지 않으며, 나중에 다시 참여할 수 있습니다."
- ],
- [
-  "What this {0} is for",
-  "이 {0}의 용도"
- ],
- [
-  "Add channel to {0}",
-  "{0}에 채널 추가"
- ],
- [
-  "unread notification{0}",
-  "읽지 않은 알림"
- ],
- [
-  "Saves kind {0} observer frames addressed to your pubkey. These are ephemeral — not stored by the relay — so local archiving is the only way to retain them.",
-  "에이전트가 작업하며 보내는 진행 상황(kind {0})을 저장합니다. 서버에는 남지 않아서 여기에 저장해야만 다시 볼 수 있습니다."
- ],
- [
-  "Saves kind {0} turn-metric events addressed to your pubkey. Stored as plaintext in your local archive so token-usage calculators can read them directly.",
-  "에이전트가 작업마다 보내는 사용량 기록(kind {0})을 저장합니다. 이 기기에 암호화 없이 저장되어, 토큰 사용량 계산 도구가 바로 읽을 수 있습니다."
- ],
- [
-  "Invalid tokens (ignored): {0}",
-  "잘못된 값(무시됨): {0}"
- ],
- [
-  "Channel subscriptions ({0})",
-  "채널별 보관 설정 ({0})"
- ],
- [
-  "{0} · kinds: {1}",
-  "{0} · 종류: {1}"
- ],
- [
-  "Serving your agent · {0} live",
-  "내 에이전트 실행 중 · 진행 중 {0}건"
- ],
- [
-  "Couldn't check shared compute: {0}",
-  "공유 상태를 확인하지 못했습니다: {0}"
- ],
- [
-  "{0} Buzz downloads remote models when sharing starts.",
-  "{0} 원격 모델은 공유를 시작할 때 Buzz가 다운로드합니다."
- ],
- [
-  "Recommended for this machine{0}.",
-  "이 컴퓨터에 맞는 추천 모델입니다{0}."
- ],
- [
-  "Couldn't load: {0}",
-  "불러오지 못했습니다: {0}"
- ],
- [
-  "Active{0}. {1}",
-  "작동 중{0}. {1}"
- ],
- [
-  "{0}{1} with relay members.",
-  "{1} · 릴레이 멤버와 공유 중"
- ],
- [
-  "Added :{0}:",
-  ":{0}: 이모지를 추가했습니다"
- ],
- [
-  "Removed :{0}:",
-  ":{0}: 이모지를 제거했습니다"
- ],
- [
-  "You already have :{0}: — saving will replace its image.",
-  "이미 :{0}: 이모지가 있습니다. 저장하면 이미지가 바뀝니다."
- ],
- [
-  "My emoji ({0})",
-  "내 이모지({0})"
- ],
- [
-  "Community emoji ({0})",
-  "커뮤니티 이모지({0})"
- ],
- [
-  "{0}{1} updates",
-  "{0}개 업데이트"
- ],
- [
-  "Agents {0}",
-  "에이전트 {0}"
- ],
- [
-  "You're timed out by community moderators — {0} left.",
-  "커뮤니티 관리자가 타임아웃을 걸었습니다. {0} 남았습니다."
- ],
- [
-  "Delete {0}?",
-  "{0}을(를) 삭제할까요?"
- ],
- [
-  "This will permanently delete this {0} and cannot be undone.",
-  "{0}을(를) 삭제하면 복구할 수 없습니다."
- ],
- [
-  "Delete {0}",
-  "{0} 삭제"
- ],
- [
-  "last {0}",
-  "최근 답글 {0}"
- ],
- [
-  "Message {0}",
-  "{0}에게 메시지"
- ],
- [
-  "{0} will replace {1} in the floating shortcut and message actions.",
-  "화면 위 바로가기와 메시지 메뉴에서 {1} 대신 {0}이(가) 표시됩니다."
- ],
- [
-  "{0} will appear in the floating shortcut and message actions.",
-  "화면 위 바로가기와 메시지 메뉴에 {0}이(가) 표시됩니다."
- ],
- [
-  "Search for {0}",
-  "{0} 검색"
- ],
- [
-  "Remove {0} search scope",
-  "{0} 검색 범위 제거"
- ],
- [
-  "Search in {0}",
-  "{0}에서 검색"
- ],
- [
-  "View all ({0})",
-  "모두 보기 ({0})"
- ],
- [
-  "Missing {0}: {1}",
-  "빠진 링크: {1}"
- ],
- [
-  "Could not read relay capabilities ({0})",
-  "릴레이 정보를 읽지 못했습니다({0})"
- ],
- [
-  "Archive failed: {0}",
-  "보관하지 못했습니다: {0}"
- ],
- [
-  "Unarchive failed: {0}",
-  "보관을 해제하지 못했습니다: {0}"
- ],
- [
-  "Save attachment ({0})",
-  "첨부 파일 저장 ({0})"
- ],
- [
-  "Feedback marked {0}",
-  "피드백 상태를 {0}(으)로 변경했습니다"
- ],
- [
-  "{0} attachment {1} not shown (display limit reached).",
-  "첨부 파일 {0}개는 표시 한도를 넘어 보여 주지 않습니다."
- ],
- [
-  "Cancel rejected: {0}",
-  "취소할 수 없습니다: {0}"
- ],
- [
-  "Report resolved: {0}",
-  "신고 처리 완료: {0}"
- ],
- [
-  "Moves this report back to the open queue for re-triage. {0}",
-  "이 신고를 처리 대기열로 되돌려 다시 분류합니다. {0}"
- ],
- [
-  "Reported message {0}",
-  "신고된 메시지 {0}"
- ],
- [
-  "Origin resolved from {0} .",
-  "{0}에서 가져온 주소입니다."
- ],
- [
-  "Wait {0}, render {1}",
-  "대기 {0}, 그리기 {1}"
- ],
- [
-  "Reconnect {0}",
-  "다시 연결 {0}"
- ],
- [
-  "All {0} settled",
-  "{0}개 모두 완료"
- ],
- [
-  "Copy community URL, {0}",
-  "커뮤니티 주소 복사, {0}"
- ],
- [
-  "Leave {0}?",
-  "{0}에서 나갈까요?"
- ],
- [
-  "Remove {0} from this device?",
-  "이 기기에서 {0}을(를) 지울까요?"
- ],
- [
-  "Buzz couldn’t clear the cache. {0}",
-  "저장된 데이터를 지우지 못했습니다. {0}"
- ],
- [
-  "Couldn’t copy {0}. Select it and copy manually.",
-  "{0}을(를) 복사하지 못했습니다. 직접 선택해서 복사해 주세요."
- ],
- [
-  "Argument {0}",
-  "인자 {0}"
- ],
- [
-  "Command {0}: {1} · input: {2} · output: up to {3} bytes",
-  "명령 {0}: {1} · 입력: {2} · 출력: 최대 {3}바이트"
- ],
- [
-  "Command {0}:",
-  "명령 {0}:"
- ],
- [
-  "Run {0}",
-  "{0} 실행"
- ],
- [
-  "HTTPS origin: {0}",
-  "HTTPS 주소: {0}"
- ],
- [
-  "HTTPS origin {0}",
-  "HTTPS 주소 {0}"
- ],
- [
-  "Connect to {0}",
-  "{0}에 연결"
- ],
- [
-  "Process {0}: {1}{2} and any further arguments · stdin, full user access",
-  "프로세스 {0}: {1}{2}와 추가 인자 · 표준 입력, 내 계정의 모든 권한"
- ],
- [
-  "Process {0}:",
-  "프로세스 {0}:"
- ],
- [
-  "Start {0}",
-  "{0} 시작"
- ],
- [
-  "Update {0}",
-  "{0} 업데이트"
- ],
- [
-  "Roll back {0}?",
-  "{0}을(를) 이전 버전으로 되돌릴까요?"
- ],
- [
-  "Loading your profile in {0}…",
-  "{0}의 내 프로필 불러오는 중…"
- ],
- [
-  "View {0} details",
-  "{0} 자세히 보기"
- ],
- [
-  "More actions for {0}",
-  "{0} 메뉴 더 보기"
- ],
- [
-  "Showing the last available configuration; retrying automatically. {0}",
-  "마지막 설정을 보여 주는 중이며 자동으로 다시 시도합니다. {0}"
- ],
- [
-  "Check the current settings before trying again. {0}",
-  "다시 시도하기 전에 지금 설정을 확인하세요. {0}"
- ],
- [
-  "Search Buzz ({0})",
-  "Buzz 검색 ({0})"
- ],
- [
-  "Your status: {0}",
-  "내 상태: {0}"
- ],
- [
-  "Availability: {0}{1}",
-  "상태: {0}{1}"
- ],
- [
-  "Set a status: {0}",
-  "상태 설정: {0}"
- ],
- [
-  "Remove author {0}",
-  "작성자 {0} 빼기"
- ],
- [
-  "Chat with {0}",
-  "{0}와(과) 대화"
- ],
- [
-  "Search {0} {1}",
-  "{0} {1} 검색"
- ],
- [
-  "Opening your conversation with {0}…",
-  "{0}와(과)의 대화 여는 중…"
- ],
- [
-  "Enable {0}",
-  "{0} 켜기"
- ],
- [
-  "Message search couldn’t finish{0}{1}",
-  "메시지 검색을 끝내지 못했습니다{0}{1}"
- ],
- [
-  "More messages couldn’t load{0}",
-  "메시지를 더 불러오지 못했습니다{0}"
- ],
- [
-  "Focus {0} pane",
-  "{0} 창으로 이동"
- ],
- [
-  "Include {0} so ordinary typing keeps working.",
-  "평소 타자에 방해되지 않게 {0}을(를) 함께 누르세요."
- ],
- [
-  "Saved. The message editor handles {0} itself while you are typing, so it wins there.",
-  "저장했습니다. 메시지를 입력하는 동안에는 입력창이 {0}을(를) 먼저 처리합니다."
- ],
- [
-  "New shortcut for {0}",
-  "{0} 새 단축키"
- ],
- [
-  "Cancel changing {0}",
-  "{0} 바꾸기 취소"
- ],
- [
-  "Change shortcut for {0}",
-  "{0} 단축키 바꾸기"
- ],
- [
-  "Reset shortcut for {0}",
-  "{0} 단축키 초기화"
- ],
- [
-  "Exit code {0}",
-  "종료 코드 {0}"
- ],
- [
-  "Stopped {0}",
-  "{0} 중지됨"
- ],
- [
-  "Stopping {0}",
-  "{0} 중지하는 중"
- ],
- [
-  "Couldn’t stop {0}. {1}",
-  "{0}을(를) 멈추지 못했습니다. {1}"
- ],
- [
-  "View activity for {0}",
-  "{0}의 활동 보기"
- ],
- [
-  "Dismiss error from {0}",
-  "{0}의 오류 닫기"
- ],
- [
-  "Stop {0}",
-  "{0} 중지"
- ],
- [
-  "Use {0} background",
-  "{0} 배경 쓰기"
- ],
- [
-  "Import {0}",
-  "{0} 가져오기"
- ],
- [
-  "Change harness from {0}",
-  "{0}에서 실행 도구 바꾸기"
- ],
- [
-  "Move {0} to {1}?",
-  "{0}을(를) {1}(으)로 옮길까요?"
- ],
- [
-  "Actions for {0}",
-  "{0} 메뉴"
- ],
- [
-  "Couldn't save team {0}. {1} in Teams.",
-  "팀 {0}을(를) 저장하지 못했습니다. 팀 화면에서 {1}"
- ],
- [
-  "Imported {0}; add them",
-  "{0} 가져옴. 멤버를 추가하세요"
- ],
- [
-  "Imported team {0}{1}.",
-  "팀 {0}을(를) 가져왔습니다{1}."
- ],
- [
-  "Couldn't import {0}: {1}",
-  "{0}을(를) 가져오지 못했습니다: {1}"
- ],
- [
-  "Kept out: {0}, in another community.",
-  "제외됨: {0}, 다른 커뮤니티에 있습니다."
- ],
- [
-  "Kept out: {0}, which another account on this device has.",
-  "제외됨: {0}, 이 기기의 다른 계정이 가지고 있습니다."
- ],
- [
-  "Import team {0}",
-  "팀 {0} 가져오기"
- ],
- [
-  "Builderlab request failed (HTTP {0}).",
-  "Builderlab 요청에 실패했습니다 (HTTP {0})."
- ],
- [
-  "Could not link your Buzz identity to Builderlab ({0}).",
-  "Buzz 계정을 Builderlab에 연결하지 못했습니다 ({0})."
- ],
- [
-  "HTTP {0}",
-  "HTTP {0}"
- ],
- [
-  "Agent setup was not confirmed ({0}). Retry setup in Agents.",
-  "에이전트 설정을 확인하지 못했습니다 ({0}). 에이전트 화면에서 다시 설정하세요."
- ],
- [
-  "Instructions must be empty or contain up to {0} characters of nonblank text.",
-  "지침은 비워 두거나 공백이 아닌 글자로 최대 {0}자까지 쓸 수 있습니다."
- ],
- [
-  "Builderlab is not signed in. {0}",
-  "Builderlab에 로그인하지 않았습니다. {0}"
- ],
- [
-  "Builderlab refused the sign-in for {0} (HTTP {1}). {2}",
-  "Builderlab이 {0} 로그인을 거부했습니다 (HTTP {1}). {2}"
- ],
- [
-  "Signed in as {0}.",
-  "{0}(으)로 로그인했습니다."
- ],
- [
-  "Builderlab sign-in failed (HTTP {0}). Try again.",
-  "Builderlab 로그인에 실패했습니다 (HTTP {0}). 다시 시도해 주세요."
- ],
- [
-  "Open unread thread from {0}: {1}",
-  "{0}의 안 읽은 스레드 열기: {1}"
- ],
- [
-  "Mark thread from {0} as read",
-  "{0}의 스레드를 읽음으로 표시"
- ],
- [
-  "Activity in {0}",
-  "{0}의 활동"
- ],
- [
-  "Open {0} for {1} in {2}",
-  "{2}에서 {1}의 {0} 열기"
- ],
- [
-  "Archives after {0} without activity.",
-  "{0} 동안 활동이 없으면 보관합니다."
- ],
- [
-  "Unarchive {0}",
-  "{0} 보관 풀기"
- ],
- [
-  "Archive {0}",
-  "{0} 보관"
- ],
- [
-  "Presence: {0}",
-  "접속 상태: {0}"
- ],
- [
-  "Open profile for {0} ({1}){2}{3}{4}",
-  "{0}({1}) 프로필 열기{2}{3}{4}"
- ],
- [
-  "Open owner profile: {0}",
-  "소유자 프로필 열기: {0}"
- ],
- [
-  "Add team {0}",
-  "팀 {0} 추가"
- ],
- [
-  "Remove {0} from {1}",
-  "{1}에서 {0} 내보내기"
- ],
- [
-  "Make {0}",
-  "{0}(으)로 지정"
- ],
- [
-  "Change this member’s role from {0} to {1}. {2}",
-  "이 멤버의 역할을 {0}에서 {1}(으)로 바꿉니다. {2}"
- ],
- [
-  "Admins can manage this {0} and its members.",
-  "관리자는 이 {0}과(와) 멤버를 관리할 수 있습니다."
- ],
- [
-  "This changes their authority in this {0}.",
-  "이 {0}에서의 권한이 바뀝니다."
- ],
- [
-  "Archived {0}s cannot add members.",
-  "보관된 {0}에는 멤버를 추가할 수 없습니다."
- ],
- [
-  "Remove #{0}",
-  "#{0} 빼기"
- ],
- [
-  "Not in this {0}",
-  "이 {0}에 없음"
- ],
- [
-  "Select #{0}",
-  "#{0} 선택"
- ],
- [
-  "Temporary channel. Cleans up after {0} without activity.",
-  "임시 채널입니다. {0} 동안 활동이 없으면 정리됩니다."
- ],
- [
-  "Remove {0} from DMs",
-  "DM에서 {0} 빼기"
- ],
- [
-  "Chat {0}",
-  "{0} 대화"
- ],
- [
-  "Conversation in {0}",
-  "{0}의 대화"
- ],
- [
-  "Adds {0}",
-  "{0} 추가"
- ],
- [
-  "Add agent {0}",
-  "에이전트 {0} 추가"
- ],
- [
-  "Filter {0}",
-  "{0} 필터"
- ],
- [
-  "No activity in the last {0}",
-  "최근 {0} 동안 활동 없음"
- ],
- [
-  "Sort {0}",
-  "{0} 정렬"
- ],
- [
-  "Move {0} into a personal workspace that syncs across Buzz.",
-  "{0}을(를) Buzz 전체에 동기화되는 개인 작업 공간으로 옮깁니다."
- ],
- [
-  "Rename {0}",
-  "{0} 이름 바꾸기"
- ],
- [
-  "New chat in {0}",
-  "{0}에 새 대화"
- ],
- [
-  "Show more chats in {0}",
-  "{0}의 대화 더 보기"
- ],
- [
-  "Show fewer chats in {0}",
-  "{0}의 대화 줄이기"
- ],
- [
-  "Marked unread{0}",
-  "안 읽음으로 표시됨{0}"
- ],
- [
-  "Moved to the {0} pane.",
-  "{0} 창으로 옮겼습니다."
- ],
- [
-  "Moved to position {0} of {1}.",
-  "{1}개 중 {0}번째로 옮겼습니다."
- ],
- [
-  "Moved to position {0} in the {1} pane.",
-  "{1} 창의 {0}번째로 옮겼습니다."
- ],
- [
-  "Thread · {0}",
-  "스레드 · {0}"
- ],
- [
-  "Shared in #{0}",
-  "#{0}에 공유함"
- ],
- [
-  "Claude exited ({0})",
-  "Claude가 종료됐습니다 ({0})"
- ],
- [
-  "Claude did not take the message: {0}",
-  "Claude가 메시지를 받지 못했습니다: {0}"
- ],
- [
-  "Claude did not stop: {0}",
-  "Claude가 멈추지 않았습니다: {0}"
- ],
- [
-  "Claude stopped ({0})",
-  "Claude가 멈췄습니다 ({0})"
- ],
- [
-  "Claude could not start over: {0}",
-  "Claude를 다시 시작하지 못했습니다: {0}"
- ],
- [
-  "Claude {0} is older than Buzz needs ({1}).",
-  "Claude {0}은(는) Buzz가 필요로 하는 버전({1})보다 낮습니다."
- ],
- [
-  "Claude {0} lists no checksum for {1}",
-  "Claude {0}에는 {1}용 체크섬이 없습니다"
- ],
- [
-  "Downloading Claude {0}…",
-  "Claude {0} 내려받는 중…"
- ],
- [
-  "Testing Claude {0}…",
-  "Claude {0} 시험하는 중…"
- ],
- [
-  "Claude {0} failed its test: {1}",
-  "Claude {0} 시험에 실패했습니다: {1}"
- ],
- [
-  "Claude {0} is installed.",
-  "Claude {0}이(가) 설치되었습니다."
- ],
- [
-  "Claude {0} is older than Buzz needs.",
-  "Claude {0}은(는) Buzz가 필요로 하는 버전보다 낮습니다."
- ],
- [
-  "Claude {0} needs you to sign in.",
-  "Claude {0}을(를) 쓰려면 로그인해야 합니다."
- ],
- [
-  "Claude {0} is ready{1}.",
-  "Claude {0}을(를) 쓸 수 있습니다{1}."
- ],
- [
-  "Thread {0}",
-  "스레드 {0}"
- ],
- [
-  "View transcript: {0}",
-  "대화 기록 보기: {0}"
- ],
- [
-  "The message above was not posted: {0}",
-  "위 메시지는 올라가지 않았습니다: {0}"
- ],
- [
-  "Couldn’t read the Claude Code history: {0}",
-  "Claude Code 기록을 읽지 못했습니다: {0}"
- ],
- [
-  "Codex exited ({0})",
-  "Codex가 종료됐습니다 ({0})"
- ],
- [
-  "Codex {0} timed out",
-  "Codex {0} 시간이 초과됐습니다"
- ],
- [
-  "Could not resolve the Codex workspace {0}.",
-  "Codex 작업 공간 {0}을(를) 찾지 못했습니다."
- ],
- [
-  "Steering was not accepted: {0}",
-  "방향 지시를 받지 못했습니다: {0}"
- ],
- [
-  "Steering was not accepted: {0}. Send another mention to continue.",
-  "방향 지시를 받지 못했습니다: {0}. 계속하려면 멘션을 다시 보내세요."
- ],
- [
-  "Codex could not finish: {0}.",
-  "Codex가 끝내지 못했습니다: {0}."
- ],
- [
-  "Codex {0} lists no checksum for {1}",
-  "Codex {0}에는 {1}용 체크섬이 없습니다"
- ],
- [
-  "Downloading Codex {0}…",
-  "Codex {0} 내려받는 중…"
- ],
- [
-  "Testing Codex {0}…",
-  "Codex {0} 시험하는 중…"
- ],
- [
-  "Codex {0} failed its test: {1}",
-  "Codex {0} 시험에 실패했습니다: {1}"
- ],
- [
-  "Codex {0} is installed.",
-  "Codex {0}이(가) 설치되었습니다."
- ],
- [
-  "CodeMode scripts could not be loaded. Showing app-server history only. {0}",
-  "CodeMode 스크립트를 불러오지 못했습니다. 앱 서버 기록만 보여 줍니다. {0}"
- ],
- [
-  "Diff: {0}",
-  "변경 내용: {0}"
- ],
- [
-  "Diff preview: {0}",
-  "변경 내용 미리보기: {0}"
- ],
- [
-  "Remove :{0}:",
-  ":{0}: 지우기"
- ],
- [
-  "My emojis ({0})",
-  "내 이모지 ({0})"
- ],
- [
-  "Choose {0}",
-  "{0} 고르기"
- ],
- [
-  "Feedback was not delivered. {0}",
-  "의견을 전달하지 못했습니다. {0}"
- ],
- [
-  "GitHub couldn’t load this object ({0}).",
-  "GitHub에서 불러오지 못했습니다 ({0})."
- ],
- [
-  "Linked {0}. The sidebar shows its state for this chat.",
-  "{0}을(를) 연결했습니다. 사이드바에 이 대화의 상태가 보입니다."
- ],
- [
-  "All {0} passed{1}",
-  "{0}개 모두 통과{1}"
- ],
- [
-  "Waiting on {0}",
-  "{0} 기다리는 중"
- ],
- [
-  "Pull request, {0}",
-  "풀 리퀘스트, {0}"
- ],
- [
-  "GitHub watch failed for {0}",
-  "{0} GitHub 감시에 실패했습니다"
- ],
- [
-  "Stopped watching {0}.",
-  "{0} 감시를 멈췄습니다."
- ],
- [
-  "Add {0} in Edit configuration, or run goose configure.",
-  "설정 수정에서 {0}을(를) 추가하거나 goose configure를 실행하세요."
- ],
- [
-  "Play {0}",
-  "{0} 재생"
- ],
- [
-  "Pause {0}",
-  "{0} 일시정지"
- ],
- [
-  "Seek {0}",
-  "{0} 이동"
- ],
- [
-  "Show {0} previous {1}",
-  "이전 {1} {0}개 보기"
- ],
- [
-  "Preview {0}",
-  "{0} 미리보기"
- ],
- [
-  "Remove chat attachment {0}",
-  "대화 첨부 {0} 빼기"
- ],
- [
-  "Model for {0}'s next run",
-  "{0}의 다음 실행에 쓸 모델"
- ],
- [
-  "Wait for the active turn to finish before {0}.",
-  "{0} 전에 진행 중인 차례가 끝날 때까지 기다리세요."
- ],
- [
-  "Download {0}",
-  "{0} 받기"
- ],
- [
-  "Image zoom: {0}%. Zoom to {1}%",
-  "이미지 확대: {0}%. {1}%로 확대"
- ],
- [
-  "Send a message to {0}",
-  "{0}에게 메시지 보내기"
- ],
- [
-  "Remove explicit mention of {0} ({1})",
-  "{0}({1}) 직접 멘션 빼기"
- ],
- [
-  "Remove mention {0} {1}",
-  "멘션 {0} {1} 빼기"
- ],
- [
-  "Observed unread replies{0}. Not an exact total.",
-  "확인된 안 읽은 답글{0}. 정확한 총수는 아닙니다."
- ],
- [
-  "View thread: {0} {1}{2}{3}{4}",
-  "스레드 보기: {0} {1}{2}{3}{4}"
- ],
- [
-  "View thread: {0}",
-  "스레드 보기: {0}"
- ],
- [
-  "Thread — {0}",
-  "스레드 — {0}"
- ],
- [
-  "View all {0} {1}, starting at {2} 4",
-  "{0} {1} 모두 보기, {2} 4부터"
- ],
- [
-  "Open image {0} of {1}",
-  "이미지 {0}/{1} 열기"
- ],
- [
-  "View all {0} {1}, starting at item 4",
-  "{0} {1} 모두 보기, 4번째부터"
- ],
- [
-  "Open video {0} of {1}",
-  "동영상 {0}/{1} 열기"
- ],
- [
-  "Reply in thread to {0}",
-  "{0}에게 스레드로 답하기"
- ],
- [
-  "View {0} {1}{2}",
-  "{0} {1}{2} 보기"
- ],
- [
-  "Open {0} for {1}",
-  "{1}의 {0} 열기"
- ],
- [
-  "Activity: {0} working",
-  "활동: {0} 작업 중"
- ],
- [
-  "Activity: {0} agents working",
-  "활동: 에이전트 {0}개 작업 중"
- ],
- [
-  "Seek to {0}, {1}",
-  "{0}, {1}(으)로 이동"
- ],
- [
-  "Playback speed: {0}x",
-  "재생 속도: {0}배"
- ],
- [
-  "React {0} at current frame",
-  "지금 장면에 {0} 반응"
- ],
- [
-  "View workflow owner {0} profile",
-  "워크플로 소유자 {0} 프로필 보기"
- ],
- [
-  "Attach at most {0} files per message.",
-  "메시지 하나에 파일은 {0}개까지 첨부할 수 있습니다."
- ],
- [
-  "Message failed to send: {0}",
-  "메시지를 보내지 못했습니다: {0}"
- ],
- [
-  "Delivery not yet confirmed. {0}",
-  "전달이 아직 확인되지 않았습니다. {0}"
- ],
- [
-  "Share gives {0} {1}",
-  "공유하면 {0}에게 {1}"
- ],
- [
-  "Share gives {0}, including agents, {1}",
-  "공유하면 에이전트를 포함한 {0}에게 {1}"
- ],
- [
-  "Import {0}?",
-  "{0}을(를) 가져올까요?"
- ],
- [
-  "Connect to {0} with your Buzz identity.",
-  "내 Buzz 계정으로 {0}에 연결합니다."
- ],
- [
-  "Your profile in {0}",
-  "{0}의 내 프로필"
- ],
- [
-  "Couldn't select Personal space after leaving {0}",
-  "{0}에서 나간 뒤 개인 공간을 고르지 못했습니다"
- ],
- [
-  "Community switcher: {0}",
-  "커뮤니티 전환: {0}"
- ],
- [
-  "This sends a leave request to the community’s relay, then removes {0} from this device along with its saved drafts and reading positions. Rejoining may need a new invite.",
-  "커뮤니티 서버에 나가기 요청을 보낸 뒤, 이 기기에서 {0}과(와) 저장된 초안, 읽던 위치를 지웁니다. 다시 들어오려면 새 초대가 필요할 수 있습니다."
- ],
- [
-  "Switch to {0}",
-  "{0}(으)로 전환"
- ],
- [
-  "Waiting for {0} to connect.",
-  "{0} 연결을 기다리는 중입니다."
- ],
- [
-  "Shorten the description to {0} characters before saving.",
-  "저장하기 전에 소개를 {0}자 이내로 줄이세요."
- ],
- [
-  "Community request failed ({0})",
-  "커뮤니티 요청에 실패했습니다 ({0})"
- ],
- [
-  "You were no longer a member of {0}, so it was removed from this device.",
-  "이미 {0}의 멤버가 아니어서 이 기기에서 지웠습니다."
- ],
- [
-  "You’re currently banned from {0}, so the leave was refused. It was removed from this device and can be added again by its URL if access is restored.",
-  "{0}에서 차단된 상태라 나가기가 거부됐습니다. 이 기기에서는 지웠고, 접근이 풀리면 주소로 다시 추가할 수 있습니다."
- ],
- [
-  "Left {0}.",
-  "{0}에서 나갔습니다."
- ],
- [
-  "Couldn’t remove {0} from this device{1}. Try again.",
-  "이 기기에서 {0}을(를) 지우지 못했습니다{1}. 다시 시도해 주세요."
- ],
- [
-  "The relay no longer had a membership for {0}, but this device couldn’t finish removing it{1}. Try again.",
-  "서버에는 {0}의 멤버 정보가 없지만 이 기기에서 지우는 일을 끝내지 못했습니다{1}. 다시 시도해 주세요."
- ],
- [
-  "The leave was refused because you’re currently banned from {0}, and this device couldn’t finish removing it{1}. Try again.",
-  "{0}에서 차단된 상태라 나가기가 거부됐고, 이 기기에서 지우는 일도 끝내지 못했습니다{1}. 다시 시도해 주세요."
- ],
- [
-  "Left {0}, but this device couldn’t finish cleaning up{1}. Leave it again to finish.",
-  "{0}에서 나갔지만 이 기기의 정리를 끝내지 못했습니다{1}. 다시 나가기를 눌러 마무리하세요."
- ],
- [
-  "The relay owner can’t leave {0}.",
-  "서버 소유자는 {0}에서 나갈 수 없습니다."
- ],
- [
-  "Couldn’t leave {0}. Check your connection and try again.",
-  "{0}에서 나가지 못했습니다. 연결을 확인하고 다시 시도해 주세요."
- ],
- [
-  "Couldn't clear {0} for {1} on this device",
-  "이 기기에서 {1}의 {0}을(를) 지우지 못했습니다"
- ],
- [
-  "Use a name of {0} characters or fewer, without line breaks.",
-  "줄바꿈 없이 {0}자 이하로 이름을 쓰세요."
- ],
- [
-  "Couldn't start \"{0}\": {1}",
-  "\"{0}\"을(를) 시작하지 못했습니다: {1}"
- ],
- [
-  "Workspace: {0}",
-  "작업 공간: {0}"
- ],
- [
-  "Worktree location: {0}",
-  "작업 폴더(worktree) 위치: {0}"
- ],
- [
-  "Save {0}",
-  "{0} 저장"
- ],
- [
-  "Chat: {0}",
-  "대화: {0}"
- ],
- [
-  "Message #{0}",
-  "#{0}에 메시지 보내기"
- ],
- [
-  "Open draft for {0}",
-  "{0}의 초안 열기"
- ],
- [
-  "DM with {0}",
-  "{0}와(과)의 DM"
- ],
- [
-  "DM · {0}",
-  "DM · {0}"
- ],
- [
-  "Open {0} in {1}",
-  "{1}에서 {0} 열기"
- ],
- [
-  "Actions for {0} in {1}",
-  "{1}의 {0} 메뉴"
- ],
- [
-  "Couldn’t save. Your changes are still here. {0}",
-  "저장하지 못했습니다. 고친 내용은 그대로 있습니다. {0}"
- ],
- [
-  "Status for {0}",
-  "{0} 상태"
- ],
- [
-  "Assignee for {0}",
-  "{0} 담당자"
- ],
- [
-  "Assignee for {0}{1}",
-  "{0} 담당자{1}"
- ],
- [
-  "Done {0}",
-  "완료 {0}"
- ],
- [
-  "Due {0}",
-  "기한 {0}"
- ],
- [
-  "Open message from {0}",
-  "{0}의 메시지 열기"
- ],
- [
-  "Open conversation: {0}",
-  "대화 열기: {0}"
- ],
- [
-  "Open conversation{0}",
-  "대화 열기{0}"
- ],
- [
-  "More actions: {0}",
-  "메뉴 더 보기: {0}"
- ],
- [
-  "Reminder due · #{0}",
-  "리마인더 시간 · #{0}"
- ],
- [
-  "Overdue · {0}",
-  "기한 지남 · {0}"
- ],
- [
-  "Move {0} to section",
-  "{0}을(를) 섹션으로 옮기기"
- ],
- [
-  "Channel setup couldn’t finish: {0}",
-  "채널 설정을 마치지 못했습니다: {0}"
- ],
- [
-  "Couldn’t {0} {1}",
-  "{1}을(를) {0}하지 못했습니다"
- ],
- [
-  "No matching channels with a known visible type; other memberships could not be classified.{0}",
-  "종류를 알 수 있는 맞는 채널이 없습니다. 다른 참여 정보는 분류하지 못했습니다.{0}"
- ],
- [
-  "Copy {0}: {1}",
-  "{0} 복사: {1}"
- ],
- [
-  "Couldn’t switch {0}. Your previous device is still selected.",
-  "{0}을(를) 바꾸지 못했습니다. 이전 장치가 그대로 선택되어 있습니다."
- ],
- [
-  "Couldn’t update the Huddle window: {0}",
-  "허들 창을 바꾸지 못했습니다: {0}"
- ],
- [
-  "Couldn’t open Huddle chat: {0}",
-  "허들 채팅을 열지 못했습니다: {0}"
- ],
- [
-  "In this Huddle: {0}",
-  "이 허들에 있는 사람: {0}"
- ],
- [
-  "Open Huddle window for {0}",
-  "{0} 허들 창 열기"
- ],
- [
-  "Join active huddle ({0} {1})",
-  "진행 중인 허들 참여 ({0} {1})"
- ],
- [
-  "Adds {0} to {1} when you send",
-  "보낼 때 {0}을(를) {1}에 추가합니다"
- ],
- [
-  "Saved team · {0} agents",
-  "저장된 팀 · 에이전트 {0}명"
- ],
- [
-  "Playback speed {0} times; change to {1} times",
-  "재생 속도 {0}배, {1}배로 바꾸기"
- ]
+  ["{0}'s card is ready", "{0} 카드가 완성됐습니다"],
+  ["Minting {0}'s card failed", "{0} 카드를 만들지 못했습니다"],
+  ["{0} (unavailable)", "{0} (사용할 수 없음)"],
+  [
+    "Add {0} to a channel so desktop chat can `@mention` it. Running agents pick up new channels automatically via membership notifications.",
+    "채널에 추가하면 데스크톱 채팅에서 {0} 에이전트를 `@멘션`으로 부를 수 있습니다. 실행 중인 에이전트는 새 채널을 자동으로 인식합니다."
+  ],
+  ["Agents ({0})", "에이전트 ({0})"],
+  [
+    "This team references {0} agent {1} that {2} no longer in My Agents. Add them back or edit the team before deploying.",
+    "이 팀에 속한 에이전트 {0}명이 더 이상 내 에이전트 목록에 없습니다. 배포하기 전에 다시 추가하거나 팀을 수정하세요."
+  ],
+  ["Deploy {0} {1}", "에이전트 {0}개 배포"],
+  ["Create {0}'s card", "{0} 카드 만들기"],
+  [
+    "Saved {0}'s card. Share it — the card IS the agent.",
+    "{0} 카드를 저장했습니다. 공유해 보세요. 카드가 곧 에이전트입니다."
+  ],
+  ["Sent {0}'s card.", "{0} 카드를 보냈습니다."],
+  ["{0}'s card", "{0} 카드"],
+  [
+    "Couldn’t load your minted cards: {0}",
+    "만든 카드를 불러오지 못했습니다: {0}"
+  ],
+  ["Edit {0}", "{0} 편집"],
+  ["Copy {0}", "{0} 복사"],
+  ["{0} Advanced ({1})", "{0} 고급 ({1})"],
+  ["Remove {0}", "{0} 제거"],
+  ["Add {0}", "{0} 추가"],
+  [
+    "Saved. Restarted {0} agent{1}.{2}",
+    "저장했습니다. 에이전트 {0}개를 재시작했습니다.{2}"
+  ],
+  ["{0} Save defaults", "{0} 기본값 저장"],
+  [
+    "{0} Visit Settings &gt; Agents to set it up.",
+    "{0} 설정 &gt; 에이전트에서 설정하세요."
+  ],
+  ["LLM provider {0}", "LLM 제공자 {0}"],
+  ["{0} (current)", "{0} (현재)"],
+  [
+    "{0} saved while stopped.",
+    "{0} 에이전트를 저장했습니다. 지금은 중지 상태입니다."
+  ],
+  ["{0} started.", "{0} 에이전트를 시작했습니다."],
+  [
+    "{0} was saved locally, but relay sync failed: {1}. Remote users may still see the previous name or access policy until Buzz retries the sync.",
+    "{0} 설정은 이 기기에 저장했지만, 릴레이와 동기화하지 못했습니다({1}). Buzz가 다시 시도하기 전까지 다른 사용자에게는 이전 이름이나 접근 설정이 보일 수 있습니다."
+  ],
+  ["Ran {0} tool calls", "도구 {0}번 사용함"],
+  ["ACP wire source: {0}", "ACP 데이터 출처: {0}"],
+  ["Export {0}", "{0} 내보내기"],
+  [
+    "{0} {1} memory entr {2}",
+    "이 스냅샷에는 {1} 메모리 {0}개가 들어 있습니다."
+  ],
+  ["Respond-to allowlist ({0} entr {1})", "응답 대상 허용 목록 ({0}개)"],
+  [
+    "Memory partially restored: {0} of {1} entr {2} written. The agent exists but some memory entries failed to publish.",
+    "메모리를 일부만 복원했습니다. {1}개 중 {0}개를 저장했고, 나머지는 저장하지 못했습니다. 에이전트는 만들어졌습니다."
+  ],
+  ["{0} memory entr {1} restored.", "메모리 {0}개를 복원했습니다."],
+  ["Profile sync: {0}", "프로필 동기화에 실패했습니다: {0}"],
+  [
+    "Minting {0}’s card… (takes a few minutes)",
+    "{0} 카드를 만드는 중… (몇 분 걸립니다)"
+  ],
+  ["{0}’s card is ready — view it", "{0} 카드가 완성됐습니다 — 보기"],
+  ["Minting {0}’s card failed", "{0} 카드를 만들지 못했습니다"],
+  [
+    "Uses the {0} template's runtime{1}. Editing the template and respawning propagates the new runtime.",
+    "{0} 템플릿의 런타임을 그대로 씁니다{1}. 템플릿을 수정한 뒤 에이전트를 다시 만들면 새 런타임이 적용됩니다."
+  ],
+  ["Model {0}", "모델 {0}"],
+  ["Inherited from {0}", "{0}에서 물려받음"],
+  ["Working in #{0} · {1}", "#{0}에서 작업 중 · {1}"],
+  ["{0} event{1}", "이벤트 {0}개"],
+  ["Duplicate {0}", "{0} 복제"],
+  ["{0} only", "{0}만"],
+  ["{0} + core memory", "{0} + 핵심 메모리"],
+  ["{0} + all memories", "{0} + 전체 메모리"],
+  [
+    "{0}—and anyone with the file link—can view it.",
+    "{0}와(과) 파일 링크를 가진 사람은 누구나 볼 수 있습니다."
+  ],
+  ["Sent a copy of {0}", "{0} 사본을 보냈습니다"],
+  ["Share {0}", "{0} 공유"],
+  [
+    "Anyone you share this {0} with will receive a copy they can add and use. Changes you make later won’t sync.",
+    "공유받은 사람은 이 {0}의 사본을 받아 추가해 쓸 수 있습니다. 이후에 바꾼 내용은 반영되지 않습니다."
+  ],
+  ["Remove {0} member{1}?", "멤버 {0}명을 제거할까요?"],
+  [
+    "{0} will be removed from this team. Do you also want to remove the {1} completely?",
+    "이 팀에서 {0}을(를) 뺍니다. {1}도 완전히 제거할까요?"
+  ],
+  ["Keep {0}", "{0} 유지"],
+  ["{0} selected", "{0}명 선택됨"],
+  [
+    "{0} entr {1} not a valid npub or 64-char hex public key and will be ignored.",
+    "{0}개는 올바른 npub 또는 64자리 16진수 공개 키가 아니어서 제외됩니다."
+  ],
+  ["{0} valid pubkey{1} ready.", "유효한 공개 키 {0}개가 준비되었습니다."],
+  ["{0} chars → {1} chars", "{0}자 → {1}자"],
+  ["and {0} more", "외 {0}개"],
+  [
+    "Delete \"{0}\". Already-deployed agents are not affected, but this team template will no longer be available.",
+    "\"{0}\" 팀을 삭제합니다. 이미 배포한 에이전트는 그대로지만, 이 팀 템플릿은 더 이상 쓸 수 없습니다."
+  ],
+  [
+    "This team references {0} agent {1} that {2} no longer in My Agents. Save to remove them, or add them back to My Agents first.",
+    "이 팀에 들어 있는 에이전트 {0}개가 더 이상 내 에이전트에 없습니다. 저장하면 팀에서 빠지며, 먼저 내 에이전트에 다시 추가할 수도 있습니다."
+  ],
+  ["Linked from {0}", "{0}에서 연결됨"],
+  ["Members ({0})", "멤버 ({0})"],
+  [
+    ", but {0} member{1} failed to publish {2}.",
+    ". 다만 멤버 {0}명의 프로필은 게시하지 못했습니다."
+  ],
+  ["successfully with {0} member{1}.", ". 멤버 {0}명이 포함되어 있습니다."],
+  [
+    "Memory partially restored: {0} of {1} entr {2} written across all members.",
+    "메모리를 일부만 복원했습니다. 전체 {1}개 중 {0}개가 멤버들에게 기록되었습니다."
+  ],
+  [
+    "{0} memory entr {1} restored across all members.",
+    "메모리 {0}개를 모든 멤버에게 복원했습니다."
+  ],
+  [
+    "{0} agent {1} in this team {2} no longer in your agents. Edit the team to fix it before deploying or sharing.",
+    "이 팀의 에이전트 {0}개가 내 에이전트에 없습니다. 배포하거나 공유하기 전에 팀을 편집해서 고치세요."
+  ],
+  ["Runtime not available: {0}", "런타임을 쓸 수 없습니다: {0}"],
+  ["{0} copy", "{0} 사본"],
+  ["Could not probe provider: {0}", "제공자에 연결하지 못했습니다: {0}"],
+  ["{0} couldn’t be added to #{1}. {2}", "#{1}에 {0} 추가에 실패했습니다. {2}"],
+  ["Adding {0} to #{1}…", "#{1}에 {0} 추가하는 중…"],
+  ["Added {0} to #{1}", "#{1}에 {0}을(를) 추가했습니다"],
+  [
+    "You already have a project named \"{0}\".",
+    "이미 \"{0}\" 프로젝트가 있습니다."
+  ],
+  [
+    "A project named \"{0}\" already exists. Open that one instead of creating another.",
+    "\"{0}\" 프로젝트가 이미 있습니다. 새로 만들지 말고 기존 프로젝트를 여세요."
+  ],
+  [
+    "A project cannot contain more than {0} extra channels.",
+    "프로젝트에는 채널을 최대 {0}개까지 더 추가할 수 있습니다."
+  ],
+  [
+    "Could not fetch project deletion records: {0} — refresh to retry.",
+    "프로젝트 삭제 기록을 가져오지 못했습니다: {0} — 새로고침한 뒤 다시 시도하세요."
+  ],
+  [
+    "A project cannot contain more than {0} repositories.",
+    "프로젝트에는 저장소를 최대 {0}개까지 넣을 수 있습니다."
+  ],
+  [
+    "This project already contains \"{0}\" (it was added by another session).",
+    "\"{0}\"은(는) 이미 이 프로젝트에 있습니다. 다른 세션에서 추가된 것입니다."
+  ],
+  [
+    "Choose an existing repository to add to {0}.",
+    "{0}에 추가할 기존 저장소를 선택하세요."
+  ],
+  ["Create a task in {0}", "{0}에 작업 만들기"],
+  ["discussed {0} in", "— {0}을(를) 논의한 채널:"],
+  ["created {0} from", "— {0}을(를) 만든 채널:"],
+  ["Open #{0}", "#{0} 열기"],
+  ["Show {0} more {1}", "대화 {0}개 더 보기"],
+  ["and {0} others", "외 {0}명"],
+  [
+    "Showing the latest {0} mentions; totals may be higher.",
+    "최근 멘션 {0}개만 표시합니다. 실제로는 더 많을 수 있습니다."
+  ],
+  ["Assigned to {0}", "담당자: {0}"],
+  ["Unassign {0}", "{0} 담당 해제"],
+  ["{0} — assigned", "{0} — 담당 중"],
+  ["{0} Assign to me", "{0} 내가 맡기"],
+  ["{0} Assign", "{0} 담당자 지정"],
+  [
+    "Merge {0} into {1} and push the result to the repository. The remote will reject the operation if the branch changed or conflicts.",
+    "{0} 브랜치를 {1} 브랜치에 병합하고 결과를 저장소에 푸시합니다. 그 사이 브랜치가 바뀌었거나 충돌이 있으면 원격 저장소에서 거부됩니다."
+  ],
+  [
+    "Prepare the local checkout, then switch to {0} with the commands shown. After resolving and committing, push the target branch and retry the merge.",
+    "로컬 저장소를 준비한 뒤, 안내된 명령으로 {0} 브랜치로 전환하세요. 충돌을 해결하고 커밋한 다음 대상 브랜치를 푸시하고 병합을 다시 시도하세요."
+  ],
+  ["{0} more", "외 {0}개"],
+  ["Create “{0}”", "“{0}” 만들기"],
+  ["View {0}", "{0} 보기"],
+  ["More options for {0}", "{0} 더보기"],
+  [
+    "Delete {0} from Projects for everyone. This can only be done for projects you own and cannot be undone.",
+    "{0} 프로젝트를 모든 사용자의 프로젝트 목록에서 삭제합니다. 내가 소유한 프로젝트만 삭제할 수 있으며, 삭제하면 되돌릴 수 없습니다."
+  ],
+  ["Channel \"#{0}\" created.", "\"#{0}\" 채널을 만들었습니다."],
+  [
+    "Temporary · {0}. Cleans up automatically after that period of inactivity.",
+    "임시 · {0}. 이 기간 동안 활동이 없으면 자동으로 정리됩니다."
+  ],
+  [
+    "Your agent requested a new channel in {0}. Review the details before creating it.",
+    "에이전트가 {0}에 새 채널을 만들어 달라고 요청했습니다. 만들기 전에 내용을 확인하세요."
+  ],
+  ["Project \"{0}\" created.", "\"{0}\" 프로젝트를 만들었습니다."],
+  ["Committed by {0}{1}", "커밋한 사람: {0}{1}"],
+  ["Select {0}", "{0} 선택"],
+  [
+    "Showing commits from {0} of {1} repositories. {2} {3} not be loaded.",
+    "저장소 {1}개 중 {0}개의 커밋만 표시합니다. {2}개 저장소는 불러오지 못했습니다."
+  ],
+  ["Show {0}", "{0} 보기"],
+  ["Created by {0}", "작성자: {0}"],
+  [
+    "Large diff truncated — showing the first {0} lines. Use a local checkout to review the full change.",
+    "diff가 커서 앞의 {0}줄만 표시합니다. 전체 변경 사항은 로컬 저장소에서 확인하세요."
+  ],
+  [
+    "Could not load changed files for this {0}.",
+    "이 {0}의 변경된 파일을 불러오지 못했습니다."
+  ],
+  [
+    "No changed files are available for this {0} yet.",
+    "이 {0}에는 아직 변경된 파일이 없습니다."
+  ],
+  ["{0} changed files", "변경된 파일 {0}개"],
+  ["{0} files changed", "파일 {0}개 변경됨"],
+  ["View commit {0}", "커밋 {0} 보기"],
+  ["Show {0} earlier {1}", "이전 활동 {0}개 보기"],
+  ["Last changed {0}", "마지막 변경: {0}"],
+  ["Code hosted on {0}", "코드 저장 위치: {0}"],
+  ["{0} Fetch", "{0} 페치"],
+  ["{0} Pull {1}", "{0} 풀 {1}"],
+  ["{0} Push {1}", "{0} 푸시 {1}"],
+  ["Repository \"{0}\" created.", "\"{0}\" 저장소를 만들었습니다."],
+  ["Repository \"{0}\" added.", "\"{0}\" 저장소를 추가했습니다."],
+  [
+    "Repository access set to #{0}.",
+    "#{0} 채널을 저장소 접근 채널로 지정했습니다."
+  ],
+  [
+    "Repository files · {0} tracked files",
+    "저장소 파일 · 추적 중인 파일 {0}개"
+  ],
+  ["Showing {0} of {1} entries.", "{1}개 중 {0}개 표시 중"],
+  ["Show next {0}", "다음 {0}개 더 보기"],
+  ["Open repository on {0}", "{0}에서 저장소 열기"],
+  ["{0} Pull{1}", "{0} 풀{1}"],
+  ["{0} Push", "{0} 푸시"],
+  ["{0} Ask", "{0} 질문"],
+  ["{0} all {1}", "{1} 전체 {0}"],
+  ["View task {0}", "작업 보기: {0}"],
+  ["Chat with an agent about {0}", "{0}에 대해 에이전트와 채팅"],
+  ["View review {0}", "리뷰 보기: {0}"],
+  ["Search {0}", "{0} 검색"],
+  ["Cloning {0}…", "{0} 클론 중…"],
+  ["Cloned to {0}", "{0}에 클론했습니다"],
+  [
+    "A repository named \"{0}\" already exists (as a standalone repository or in another project). Choose a different name to avoid overwriting it.",
+    "\"{0}\" 저장소가 이미 있습니다(단독 저장소이거나 다른 프로젝트 소속). 덮어쓰지 않도록 다른 이름을 입력하세요."
+  ],
+  [
+    "This relay does not support multi-repository projects (event kind {0}).",
+    "이 릴레이는 저장소가 여러 개인 프로젝트를 지원하지 않습니다(event kind {0})."
+  ],
+  [
+    "v{0} available — download from GitHub. Switch to AppImage for automatic updates.",
+    "{0} 버전이 나왔습니다. GitHub에서 다운로드하세요. 자동 업데이트를 쓰려면 AppImage로 바꿔 설치하세요."
+  ],
+  ["Thread layout {0}", "스레드 표시 방식 {0}"],
+  ["Duplicated as \"{0}\"", "\"{0}\"(으)로 복제했습니다"],
+  ["Deleted \"{0}\"", "\"{0}\" 템플릿을 삭제했습니다"],
+  [
+    "Are you sure you want to delete &quot;{0}&quot;? This action cannot be undone.",
+    "&quot;{0}&quot; 템플릿을 삭제할까요? 삭제하면 되돌릴 수 없습니다."
+  ],
+  ["Updated \"{0}\"", "\"{0}\" 템플릿을 수정했습니다"],
+  ["Created \"{0}\"", "\"{0}\" 템플릿을 만들었습니다"],
+  ["arg {0}", "인수 {0}"],
+  ["Password (min {0} characters)", "비밀번호(최소 {0}자)"],
+  ["Update {0} adapter?", "{0} 어댑터를 업데이트할까요?"],
+  ["Config error: {0}", "설정 오류: {0}"],
+  [
+    "Finish signing in from the Terminal window, then click Check again to re-check {0}.",
+    "{0} 상태를 다시 확인하려면 터미널 창에서 로그인을 마친 뒤 '다시 확인'을 누르세요."
+  ],
+  ["{0} of {1} used", "{1}개 중 {0}개 사용 중"],
+  [
+    "You&apos;ve reached the limit of {0} hosted communities. Transfer one to free up a slot before creating another.",
+    "호스팅 커뮤니티는 최대 {0}개까지 만들 수 있습니다. 새로 만들려면 먼저 하나를 다른 사람에게 이전하세요."
+  ],
+  ["Unarchive {0}?", "{0} 보관을 해제할까요?"],
+  ["Archive {0}?", "{0} 보관할까요?"],
+  [
+    "Transfer {0} to another person. You become a regular member. The recipient needs a connected Buzz identity first, and this can&apos;t be undone.",
+    "{0} 커뮤니티를 다른 사람에게 넘깁니다. 넘긴 뒤에는 일반 멤버가 됩니다. 받는 사람이 먼저 Buzz 신원을 연결해 두어야 하며, 되돌릴 수 없습니다."
+  ],
+  ["{0} Transfer ownership", "{0} 소유권 이전"],
+  ["Confirmation code {0}", "확인 코드 {0}"],
+  [
+    "Verification code {0} {1} ready. Check that it matches on your mobile device, then confirm the codes match.",
+    "확인 코드 {0} {1}이(가) 준비되었습니다. 모바일 기기에 표시된 코드와 같은지 보고, 같으면 확인을 누르세요."
+  ],
+  ["reported by {0} · {1}", "신고자 {0} · {1}"],
+  [
+    "{0} prior action {1} against this target — {2}",
+    "이 대상에 대한 이전 조치 {0}건 — {2}"
+  ],
+  ["by {0} · {1}", "{0} 처리 · {1}"],
+  ["{0} channel{1} set individually.", "{0}개 채널을 따로 설정했습니다."],
+  ["{0} Preview", "{0} 미리 듣기"],
+  [
+    "{0} and its local audio file will be removed.",
+    "{0} 음성과 이 기기에 저장된 오디오 파일이 삭제됩니다."
+  ],
+  ["Update available — v{0}", "새 버전이 있습니다 (v{0})"],
+  ["Update failed: {0}", "업데이트하지 못했습니다: {0}"],
+  ["Approver: {0}", "승인자: {0}"],
+  ["Expires: {0}", "만료 시각: {0}"],
+  [
+    "Delete \"{0}\". This removes the current workflow and stops new triggers. Publishing its definition again, even an older version, can recreate it.",
+    "\"{0}\" 워크플로를 삭제합니다. 삭제하면 새 트리거가 더 이상 실행되지 않습니다. 이전 버전이라도 정의를 다시 게시하면 워크플로가 다시 만들어질 수 있습니다."
+  ],
+  [
+    "Couldn’t delete workflow. {0} Try again or cancel to keep editing.",
+    "워크플로를 삭제하지 못했습니다. {0} 다시 시도하거나, 취소하고 계속 편집하세요."
+  ],
+  ["Current step {0}", "현재 단계 {0}"],
+  ["Cannot switch to form view: {0}", "양식 보기로 전환할 수 없습니다: {0}"],
+  ["Trigger: {0}", "트리거: {0}"],
+  ["Step {0}: {1}", "단계 {0}: {1}"],
+  ["Step {0}", "단계 {0}"],
+  [
+    "The workflow was saved, but its webhook URL could not be loaded: {0}",
+    "워크플로는 저장했지만 웹훅 URL을 불러오지 못했습니다: {0}"
+  ],
+  [
+    "Could not retrieve your private key: {0}. You can continue and find it later in Settings &gt; Profile &gt; Identity.",
+    "개인 키를 가져오지 못했습니다: {0}. 그냥 계속해도 되고, 나중에 설정 > 프로필 > 신원에서 확인할 수 있습니다."
+  ],
+  ["{0} Re-download backup", "{0} 백업 다시 받기"],
+  ["Joining {0}", "{0}에 참여하는 중"],
+  [
+    "Couldn’t save model settings. {0} Try again.",
+    "모델 설정을 저장하지 못했습니다. {0} 다시 시도하세요."
+  ],
+  ["Backup saved to {0}", "백업 저장 위치: {0}"],
+  ["I agree to the Buzz {0}{1}{2} .", "Buzz {0}{1}{2}에 동의합니다."],
+  [
+    "You’ll connect to {0} once setup is finished.",
+    "설정을 마치면 {0}에 연결됩니다."
+  ],
+  [
+    "Could not reconnect to the relay. {0}",
+    "릴레이에 다시 연결하지 못했습니다. {0}"
+  ],
+  ["Open {0} setup", "{0} 설정 열기"],
+  [
+    "Buzz will open a sign-in window for {0}.",
+    "Buzz가 {0} 로그인 창을 엽니다."
+  ],
+  ["Set up {0}", "{0} 설정"],
+  [
+    "Follow the setup guide to install {0}. When you’re done, come back and check again.",
+    "설정 가이드를 따라 {0}을(를) 설치하세요. 끝나면 돌아와서 다시 확인하세요."
+  ],
+  ["Connect {0}", "{0} 연결"],
+  [
+    "Sign in to connect {0}. You can change this anytime.",
+    "로그인해서 {0}을(를) 연결하세요. 나중에 바꿀 수 있습니다."
+  ],
+  ["{0} agent not found.", "{0} 에이전트를 찾을 수 없습니다."],
+  [
+    "@everyone/@all can notify at most {0} members (this channel has {1}).",
+    "@everyone/@all은 최대 {0}명까지만 알릴 수 있습니다(이 채널 멤버 {1}명)."
+  ],
+  ["Failed to delete message: {0}", "메시지를 삭제하지 못했습니다: {0}"],
+  [
+    "The mention @{0} is ambiguous. Choose a recipient from the mention picker.",
+    "@{0}에 해당하는 대상이 여러 명입니다. 멘션 목록에서 직접 선택하세요."
+  ],
+  ["Timed out waiting for {0}", "미디어 처리 중 시간이 초과되었습니다({0})"],
+  ["Could not load media for {0}", "미디어를 불러오지 못했습니다({0})"],
+  ["Audio fetch failed ({0})", "오디오를 가져오지 못했습니다({0})"],
+  ["{0} preview", "{0} 미리보기"],
+  ["{0} Save", "{0} 저장"],
+  ["Replying to {0}", "{0}에게 답글"],
+  ["Diff truncated. {0}", "변경 내용이 길어서 일부만 보여 줍니다. {0}"],
+  ["View full diff on {0}", "{0}에서 전체 변경 내용 보기"],
+  ["{0} attachment {1}", "첨부 파일 {0}개"],
+  [
+    "Are you sure you want to send this message to {0}?",
+    "{0}에 이 메시지를 보낼까요?"
+  ],
+  ["managed by {0} · not in channel", "관리: {0} · 채널에 없음"],
+  ["Failed to remove previews: {0}", "미리보기를 제거하지 못했습니다: {0}"],
+  ["{0} new message{1}", "새 메시지 {0}개"],
+  ["({0} new)", "(새 답글 {0}개)"],
+  ["last reply {0}", "마지막 답글 {0}"],
+  ["{0} {1} not in this channel. {2}", "이 채널에 없는 사람: {0}. {2}"],
+  ["{0} others", "{0}명"],
+  ["Open {0}", "{0} 열기"],
+  [
+    "Could not start {0} — your message was sent, but the agent may not respond. {1}",
+    "{0}을(를) 시작하지 못했습니다. 메시지는 보냈지만 에이전트가 답하지 않을 수 있습니다. {1}"
+  ],
+  ["Upload failed: {0}", "업로드하지 못했습니다: {0}"],
+  ["{0} in channel", "{0}명 채널에 있음"],
+  ["managed by {0}", "관리: {0}"],
+  [
+    "Stop signal sent to {0}. It may take a moment to respond.",
+    "{0}에 중지 요청을 보냈습니다. 반영되기까지 잠시 걸릴 수 있습니다."
+  ],
+  [
+    "This publishes {0} as the current canvas for everyone in this channel. History is preserved.",
+    "이 채널의 모든 사람에게 보이는 캔버스를 다음 버전으로 되돌립니다: {0}. 이전 기록은 그대로 남습니다."
+  ],
+  ["{0}'s revision from {1}", "{0}님이 {1}에 저장한 버전"],
+  ["Create {0}", "{0} 만들기"],
+  ["Create a new {0}", "새 {0} 만들기"],
+  ["New {0}", "새 {0}"],
+  [
+    "Delete {0} from the community list. This action cannot be undone.",
+    "{0} 채널을 커뮤니티 목록에서 삭제합니다. 삭제한 뒤에는 되돌릴 수 없습니다."
+  ],
+  ["Edit {0} channel", "{0} 채널 편집"],
+  ["Copied {0}", "{0} 복사됨"],
+  ["{0} more members", "멤버 {0}명 더"],
+  ["Current ({0})", "현재 ({0})"],
+  [
+    "Choose who can send instructions to {0}.",
+    "{0}에게 지시할 수 있는 사람을 선택하세요."
+  ],
+  ["Members · {0}", "멤버 · {0}"],
+  ["Add {0} ({1})", "{0} 추가 ({1})"],
+  ["Create with {0}", "{0}와(과) 함께 만들기"],
+  [
+    "Talk through what you need. {0} will prepare a draft you can review and edit.",
+    "원하는 것을 이야기해 보세요. {0}이(가) 검토하고 고칠 수 있는 초안을 만들어 줍니다."
+  ],
+  [
+    "Expected ws:// or wss:// relay URL, got: {0}",
+    "릴레이 주소는 ws:// 또는 wss://로 시작해야 합니다. 입력한 값: {0}"
+  ],
+  [
+    "Moderation request failed ({0}): {1}",
+    "관리 요청을 처리하지 못했습니다({0}): {1}"
+  ],
+  [
+    "{0} is a preview feature. Enable it in Settings → Experiments to surface it in your sidebar.",
+    "{0}은(는) 미리보기 기능입니다. 사이드바에 표시하려면 설정 → 실험 기능에서 켜세요."
+  ],
+  ["Open {0} {1}: {2}", "{0} {1} 열기: {2}"],
+  ["{0} needs configuration", "{0}의 설정이 필요합니다"],
+  ["Couldn't copy {0}.", "{0}을(를) 복사하지 못했습니다."],
+  ["Link previews set to {0}.", "링크 미리보기를 {0}(으)로 설정했습니다."],
+  [
+    "This removes {0} for everyone.",
+    "모든 사람에게서 링크 미리보기가 사라집니다."
+  ],
+  [
+    "Archiving hides {0} from the space.",
+    "보관하면 이 커뮤니티에서 {0}을(를) 숨깁니다."
+  ],
+  ["Verify {0}", "{0} 인증"],
+  ["Restarted {0}.", "{0}을(를) 다시 시작했습니다."],
+  ["Started {0}.", "{0}을(를) 시작했습니다."],
+  ["Deleted {0}.", "{0}을(를) 삭제했습니다."],
+  ["Removed {0} from My Agents.", "내 에이전트에서 {0}을(를) 제거했습니다."],
+  ["Added {0} to {1}.", "{0}을(를) {1}에 추가했습니다."],
+  ["{0} is already in {1}.", "{0}은(는) 이미 {1}에 있습니다."],
+  [
+    "{0} was updated, but profile sync failed: {1}",
+    "{0}을(를) 업데이트했지만 프로필을 동기화하지 못했습니다: {1}"
+  ],
+  ["Updated {0}.", "{0}을(를) 업데이트했습니다."],
+  [
+    "{0} was created, but it did not start: {1}",
+    "{0}을(를) 만들었지만 시작하지 못했습니다: {1}"
+  ],
+  ["Created and started {0}.", "{0}을(를) 만들고 시작했습니다."],
+  [
+    "{0} was created, but profile sync failed: {1}",
+    "{0}을(를) 만들었지만 프로필을 동기화하지 못했습니다: {1}"
+  ],
+  ["Last live {0}", "마지막 접속 {0}"],
+  ["{0} Message", "메시지"],
+  ["{0} Huddle", "허들"],
+  ["{0} failed: {1}", "{0} 실패: {1}"],
+  ["Exported {0}.", "{0}을(를) 내보냈습니다."],
+  [
+    "You've reached the limit of {0} hosted communities.",
+    "호스팅 커뮤니티는 최대 {0}개까지 만들 수 있습니다."
+  ],
+  ["Account: {0}", "계정: {0}"],
+  ["This device: {0}", "이 기기: {0}"],
+  [
+    "{0}Builderlab did not return its relay address. Try connecting it again, or contact support if it does not appear in your communities.",
+    "Builderlab에서 릴레이 주소를 받지 못했습니다. 다시 연결해 보고, 커뮤니티 목록에 나타나지 않으면 지원팀에 문의하세요."
+  ],
+  [
+    "{0}onboarding is already in progress for another community. Go back and finish or restart that connection, then connect this community from your owned communities list.",
+    "다른 커뮤니티 연결이 아직 진행 중입니다. 먼저 그 연결을 마치거나 다시 시작한 뒤, 내 커뮤니티 목록에서 이 커뮤니티를 연결하세요."
+  ],
+  [
+    "Your Builderlab account {0} is ready. Connect this device’s Buzz identity to finish setup. Your private key stays on this device.",
+    "Builderlab 계정{0} 준비가 끝났습니다. 이 기기의 Buzz 신원을 연결하면 설정이 끝납니다. 개인 키는 이 기기 밖으로 나가지 않습니다."
+  ],
+  ["{0} unread", "읽지 않음 {0}"],
+  ["In DM with {0}", "{0} 님과의 DM"],
+  ["Voice models: STT {0}, TTS {1}", "음성 모델: STT {0}, TTS {1}"],
+  [", voice input: {0}", ", 음성 입력: {0}"],
+  ["Huddle active — {0} participant{1}", "허들 진행 중 — 참가자 {0}명"],
+  ["Joined {0}", "{0} 참여"],
+  ["Role changed to {0}", "역할을 {0}(으)로 바꿨습니다"],
+  ["Added {0}", "{0}에 추가됨"],
+  ["Remove {0}?", "{0}을(를) 제거할까요?"],
+  ["Default ({0})", "기본({0})"],
+  [
+    "Leave \"{0}\"? You'll stop receiving its messages and can rejoin later.",
+    "\"{0}\" 채널에서 나갈까요? 나가면 메시지를 받지 않으며, 나중에 다시 참여할 수 있습니다."
+  ],
+  ["What this {0} is for", "이 {0}의 용도"],
+  ["Add channel to {0}", "{0}에 채널 추가"],
+  ["unread notification{0}", "읽지 않은 알림"],
+  [
+    "Saves kind {0} observer frames addressed to your pubkey. These are ephemeral — not stored by the relay — so local archiving is the only way to retain them.",
+    "에이전트가 작업하며 보내는 진행 상황(kind {0})을 저장합니다. 서버에는 남지 않아서 여기에 저장해야만 다시 볼 수 있습니다."
+  ],
+  [
+    "Saves kind {0} turn-metric events addressed to your pubkey. Stored as plaintext in your local archive so token-usage calculators can read them directly.",
+    "에이전트가 작업마다 보내는 사용량 기록(kind {0})을 저장합니다. 이 기기에 암호화 없이 저장되어, 토큰 사용량 계산 도구가 바로 읽을 수 있습니다."
+  ],
+  ["Invalid tokens (ignored): {0}", "잘못된 값(무시됨): {0}"],
+  ["Channel subscriptions ({0})", "채널별 보관 설정 ({0})"],
+  ["{0} · kinds: {1}", "{0} · 종류: {1}"],
+  ["Serving your agent · {0} live", "내 에이전트 실행 중 · 진행 중 {0}건"],
+  [
+    "Couldn't check shared compute: {0}",
+    "공유 상태를 확인하지 못했습니다: {0}"
+  ],
+  [
+    "{0} Buzz downloads remote models when sharing starts.",
+    "{0} 원격 모델은 공유를 시작할 때 Buzz가 다운로드합니다."
+  ],
+  ["Recommended for this machine{0}.", "이 컴퓨터에 맞는 추천 모델입니다{0}."],
+  ["Couldn't load: {0}", "불러오지 못했습니다: {0}"],
+  ["Active{0}. {1}", "작동 중{0}. {1}"],
+  ["{0}{1} with relay members.", "{1} · 릴레이 멤버와 공유 중"],
+  ["Added :{0}:", ":{0}: 이모지를 추가했습니다"],
+  ["Removed :{0}:", ":{0}: 이모지를 제거했습니다"],
+  [
+    "You already have :{0}: — saving will replace its image.",
+    "이미 :{0}: 이모지가 있습니다. 저장하면 이미지가 바뀝니다."
+  ],
+  ["My emoji ({0})", "내 이모지({0})"],
+  ["Community emoji ({0})", "커뮤니티 이모지({0})"],
+  ["{0}{1} updates", "{0}개 업데이트"],
+  ["Agents {0}", "에이전트 {0}"],
+  [
+    "You're timed out by community moderators — {0} left.",
+    "커뮤니티 관리자가 타임아웃을 걸었습니다. {0} 남았습니다."
+  ],
+  ["Delete {0}?", "{0}을(를) 삭제할까요?"],
+  [
+    "This will permanently delete this {0} and cannot be undone.",
+    "{0}을(를) 삭제하면 복구할 수 없습니다."
+  ],
+  ["Delete {0}", "{0} 삭제"],
+  ["last {0}", "최근 답글 {0}"],
+  ["Message {0}", "{0}에게 메시지"],
+  [
+    "{0} will replace {1} in the floating shortcut and message actions.",
+    "화면 위 바로가기와 메시지 메뉴에서 {1} 대신 {0}이(가) 표시됩니다."
+  ],
+  [
+    "{0} will appear in the floating shortcut and message actions.",
+    "화면 위 바로가기와 메시지 메뉴에 {0}이(가) 표시됩니다."
+  ],
+  ["Search for {0}", "{0} 검색"],
+  ["Remove {0} search scope", "{0} 검색 범위 제거"],
+  ["Search in {0}", "{0}에서 검색"],
+  ["View all ({0})", "모두 보기 ({0})"],
+  ["Missing {0}: {1}", "빠진 링크: {1}"],
+  [
+    "Could not read relay capabilities ({0})",
+    "릴레이 정보를 읽지 못했습니다({0})"
+  ],
+  ["Archive failed: {0}", "보관하지 못했습니다: {0}"],
+  ["Unarchive failed: {0}", "보관을 해제하지 못했습니다: {0}"],
+  ["Save attachment ({0})", "첨부 파일 저장 ({0})"],
+  ["Feedback marked {0}", "피드백 상태를 {0}(으)로 변경했습니다"],
+  [
+    "{0} attachment {1} not shown (display limit reached).",
+    "첨부 파일 {0}개는 표시 한도를 넘어 보여 주지 않습니다."
+  ],
+  ["Cancel rejected: {0}", "취소할 수 없습니다: {0}"],
+  ["Report resolved: {0}", "신고 처리 완료: {0}"],
+  [
+    "Moves this report back to the open queue for re-triage. {0}",
+    "이 신고를 처리 대기열로 되돌려 다시 분류합니다. {0}"
+  ],
+  ["Reported message {0}", "신고된 메시지 {0}"],
+  ["Origin resolved from {0} .", "{0}에서 가져온 주소입니다."],
+  ["Wait {0}, render {1}", "대기 {0}, 그리기 {1}"],
+  ["Reconnect {0}", "다시 연결 {0}"],
+  ["All {0} settled", "{0}개 모두 완료"],
+  ["Copy community URL, {0}", "커뮤니티 주소 복사, {0}"],
+  ["Leave {0}?", "{0}에서 나갈까요?"],
+  ["Remove {0} from this device?", "이 기기에서 {0}을(를) 지울까요?"],
+  [
+    "Buzz couldn’t clear the cache. {0}",
+    "저장된 데이터를 지우지 못했습니다. {0}"
+  ],
+  [
+    "Couldn’t copy {0}. Select it and copy manually.",
+    "{0}을(를) 복사하지 못했습니다. 직접 선택해서 복사해 주세요."
+  ],
+  ["Argument {0}", "인자 {0}"],
+  [
+    "Command {0}: {1} · input: {2} · output: up to {3} bytes",
+    "명령 {0}: {1} · 입력: {2} · 출력: 최대 {3}바이트"
+  ],
+  ["Command {0}:", "명령 {0}:"],
+  ["Run {0}", "{0} 실행"],
+  ["HTTPS origin: {0}", "HTTPS 주소: {0}"],
+  ["HTTPS origin {0}", "HTTPS 주소 {0}"],
+  ["Connect to {0}", "{0}에 연결"],
+  [
+    "Process {0}: {1}{2} and any further arguments · stdin, full user access",
+    "프로세스 {0}: {1}{2}와 추가 인자 · 표준 입력, 내 계정의 모든 권한"
+  ],
+  ["Process {0}:", "프로세스 {0}:"],
+  ["Start {0}", "{0} 시작"],
+  ["Update {0}", "{0} 업데이트"],
+  ["Roll back {0}?", "{0}을(를) 이전 버전으로 되돌릴까요?"],
+  ["Loading your profile in {0}…", "{0}의 내 프로필 불러오는 중…"],
+  ["View {0} details", "{0} 자세히 보기"],
+  ["More actions for {0}", "{0} 메뉴 더 보기"],
+  [
+    "Showing the last available configuration; retrying automatically. {0}",
+    "마지막 설정을 보여 주는 중이며 자동으로 다시 시도합니다. {0}"
+  ],
+  [
+    "Check the current settings before trying again. {0}",
+    "다시 시도하기 전에 지금 설정을 확인하세요. {0}"
+  ],
+  ["Search Buzz ({0})", "Buzz 검색 ({0})"],
+  ["Your status: {0}", "내 상태: {0}"],
+  ["Availability: {0}{1}", "상태: {0}{1}"],
+  ["Set a status: {0}", "상태 설정: {0}"],
+  ["Remove author {0}", "작성자 {0} 빼기"],
+  ["Chat with {0}", "{0}와(과) 대화"],
+  ["Search {0} {1}", "{0} {1} 검색"],
+  ["Opening your conversation with {0}…", "{0}와(과)의 대화 여는 중…"],
+  ["Enable {0}", "{0} 켜기"],
+  [
+    "Message search couldn’t finish{0}{1}",
+    "메시지 검색을 끝내지 못했습니다{0}{1}"
+  ],
+  ["More messages couldn’t load{0}", "메시지를 더 불러오지 못했습니다{0}"],
+  ["Focus {0} pane", "{0} 창으로 이동"],
+  [
+    "Include {0} so ordinary typing keeps working.",
+    "평소 타자에 방해되지 않게 {0}을(를) 함께 누르세요."
+  ],
+  [
+    "Saved. The message editor handles {0} itself while you are typing, so it wins there.",
+    "저장했습니다. 메시지를 입력하는 동안에는 입력창이 {0}을(를) 먼저 처리합니다."
+  ],
+  ["New shortcut for {0}", "{0} 새 단축키"],
+  ["Cancel changing {0}", "{0} 바꾸기 취소"],
+  ["Change shortcut for {0}", "{0} 단축키 바꾸기"],
+  ["Reset shortcut for {0}", "{0} 단축키 초기화"],
+  ["Exit code {0}", "종료 코드 {0}"],
+  ["Stopped {0}", "{0} 중지됨"],
+  ["Stopping {0}", "{0} 중지하는 중"],
+  ["Couldn’t stop {0}. {1}", "{0}을(를) 멈추지 못했습니다. {1}"],
+  ["View activity for {0}", "{0}의 활동 보기"],
+  ["Dismiss error from {0}", "{0}의 오류 닫기"],
+  ["Stop {0}", "{0} 중지"],
+  ["Use {0} background", "{0} 배경 쓰기"],
+  ["Import {0}", "{0} 가져오기"],
+  ["Change harness from {0}", "{0}에서 실행 도구 바꾸기"],
+  ["Move {0} to {1}?", "{0}을(를) {1}(으)로 옮길까요?"],
+  ["Actions for {0}", "{0} 메뉴"],
+  [
+    "Couldn't save team {0}. {1} in Teams.",
+    "팀 {0}을(를) 저장하지 못했습니다. 팀 화면에서 {1}"
+  ],
+  ["Imported {0}; add them", "{0} 가져옴. 멤버를 추가하세요"],
+  ["Imported team {0}{1}.", "팀 {0}을(를) 가져왔습니다{1}."],
+  ["Couldn't import {0}: {1}", "{0}을(를) 가져오지 못했습니다: {1}"],
+  [
+    "Kept out: {0}, in another community.",
+    "제외됨: {0}, 다른 커뮤니티에 있습니다."
+  ],
+  [
+    "Kept out: {0}, which another account on this device has.",
+    "제외됨: {0}, 이 기기의 다른 계정이 가지고 있습니다."
+  ],
+  ["Import team {0}", "팀 {0} 가져오기"],
+  [
+    "Builderlab request failed (HTTP {0}).",
+    "Builderlab 요청에 실패했습니다 (HTTP {0})."
+  ],
+  [
+    "Could not link your Buzz identity to Builderlab ({0}).",
+    "Buzz 계정을 Builderlab에 연결하지 못했습니다 ({0})."
+  ],
+  ["HTTP {0}", "HTTP {0}"],
+  [
+    "Agent setup was not confirmed ({0}). Retry setup in Agents.",
+    "에이전트 설정을 확인하지 못했습니다 ({0}). 에이전트 화면에서 다시 설정하세요."
+  ],
+  [
+    "Instructions must be empty or contain up to {0} characters of nonblank text.",
+    "지침은 비워 두거나 공백이 아닌 글자로 최대 {0}자까지 쓸 수 있습니다."
+  ],
+  [
+    "Builderlab is not signed in. {0}",
+    "Builderlab에 로그인하지 않았습니다. {0}"
+  ],
+  [
+    "Builderlab refused the sign-in for {0} (HTTP {1}). {2}",
+    "Builderlab이 {0} 로그인을 거부했습니다 (HTTP {1}). {2}"
+  ],
+  ["Signed in as {0}.", "{0}(으)로 로그인했습니다."],
+  [
+    "Builderlab sign-in failed (HTTP {0}). Try again.",
+    "Builderlab 로그인에 실패했습니다 (HTTP {0}). 다시 시도해 주세요."
+  ],
+  ["Open unread thread from {0}: {1}", "{0}의 안 읽은 스레드 열기: {1}"],
+  ["Mark thread from {0} as read", "{0}의 스레드를 읽음으로 표시"],
+  ["Activity in {0}", "{0}의 활동"],
+  ["Open {0} for {1} in {2}", "{2}에서 {1}의 {0} 열기"],
+  [
+    "Archives after {0} without activity.",
+    "{0} 동안 활동이 없으면 보관합니다."
+  ],
+  ["Unarchive {0}", "{0} 보관 풀기"],
+  ["Archive {0}", "{0} 보관"],
+  ["Presence: {0}", "접속 상태: {0}"],
+  ["Open profile for {0} ({1}){2}{3}{4}", "{0}({1}) 프로필 열기{2}{3}{4}"],
+  ["Open owner profile: {0}", "소유자 프로필 열기: {0}"],
+  ["Add team {0}", "팀 {0} 추가"],
+  ["Remove {0} from {1}", "{1}에서 {0} 내보내기"],
+  ["Make {0}", "{0}(으)로 지정"],
+  [
+    "Change this member’s role from {0} to {1}. {2}",
+    "이 멤버의 역할을 {0}에서 {1}(으)로 바꿉니다. {2}"
+  ],
+  [
+    "Admins can manage this {0} and its members.",
+    "관리자는 이 {0}과(와) 멤버를 관리할 수 있습니다."
+  ],
+  [
+    "This changes their authority in this {0}.",
+    "이 {0}에서의 권한이 바뀝니다."
+  ],
+  [
+    "Archived {0}s cannot add members.",
+    "보관된 {0}에는 멤버를 추가할 수 없습니다."
+  ],
+  ["Remove #{0}", "#{0} 빼기"],
+  ["Not in this {0}", "이 {0}에 없음"],
+  ["Select #{0}", "#{0} 선택"],
+  [
+    "Temporary channel. Cleans up after {0} without activity.",
+    "임시 채널입니다. {0} 동안 활동이 없으면 정리됩니다."
+  ],
+  ["Remove {0} from DMs", "DM에서 {0} 빼기"],
+  ["Chat {0}", "{0} 대화"],
+  ["Conversation in {0}", "{0}의 대화"],
+  ["Adds {0}", "{0} 추가"],
+  ["Add agent {0}", "에이전트 {0} 추가"],
+  ["Filter {0}", "{0} 필터"],
+  ["No activity in the last {0}", "최근 {0} 동안 활동 없음"],
+  ["Sort {0}", "{0} 정렬"],
+  [
+    "Move {0} into a personal workspace that syncs across Buzz.",
+    "{0}을(를) Buzz 전체에 동기화되는 개인 작업 공간으로 옮깁니다."
+  ],
+  ["Rename {0}", "{0} 이름 바꾸기"],
+  ["New chat in {0}", "{0}에 새 대화"],
+  ["Show more chats in {0}", "{0}의 대화 더 보기"],
+  ["Show fewer chats in {0}", "{0}의 대화 줄이기"],
+  ["Marked unread{0}", "안 읽음으로 표시됨{0}"],
+  ["Moved to the {0} pane.", "{0} 창으로 옮겼습니다."],
+  ["Moved to position {0} of {1}.", "{1}개 중 {0}번째로 옮겼습니다."],
+  ["Moved to position {0} in the {1} pane.", "{1} 창의 {0}번째로 옮겼습니다."],
+  ["Thread · {0}", "스레드 · {0}"],
+  ["Shared in #{0}", "#{0}에 공유함"],
+  ["Claude exited ({0})", "Claude가 종료됐습니다 ({0})"],
+  [
+    "Claude did not take the message: {0}",
+    "Claude가 메시지를 받지 못했습니다: {0}"
+  ],
+  ["Claude did not stop: {0}", "Claude가 멈추지 않았습니다: {0}"],
+  ["Claude stopped ({0})", "Claude가 멈췄습니다 ({0})"],
+  [
+    "Claude could not start over: {0}",
+    "Claude를 다시 시작하지 못했습니다: {0}"
+  ],
+  [
+    "Claude {0} is older than Buzz needs ({1}).",
+    "Claude {0}은(는) Buzz가 필요로 하는 버전({1})보다 낮습니다."
+  ],
+  [
+    "Claude {0} lists no checksum for {1}",
+    "Claude {0}에는 {1}용 체크섬이 없습니다"
+  ],
+  ["Downloading Claude {0}…", "Claude {0} 내려받는 중…"],
+  ["Testing Claude {0}…", "Claude {0} 시험하는 중…"],
+  ["Claude {0} failed its test: {1}", "Claude {0} 시험에 실패했습니다: {1}"],
+  ["Claude {0} is installed.", "Claude {0}이(가) 설치되었습니다."],
+  [
+    "Claude {0} is older than Buzz needs.",
+    "Claude {0}은(는) Buzz가 필요로 하는 버전보다 낮습니다."
+  ],
+  [
+    "Claude {0} needs you to sign in.",
+    "Claude {0}을(를) 쓰려면 로그인해야 합니다."
+  ],
+  ["Claude {0} is ready{1}.", "Claude {0}을(를) 쓸 수 있습니다{1}."],
+  ["Thread {0}", "스레드 {0}"],
+  ["View transcript: {0}", "대화 기록 보기: {0}"],
+  [
+    "The message above was not posted: {0}",
+    "위 메시지는 올라가지 않았습니다: {0}"
+  ],
+  [
+    "Couldn’t read the Claude Code history: {0}",
+    "Claude Code 기록을 읽지 못했습니다: {0}"
+  ],
+  ["Codex exited ({0})", "Codex가 종료됐습니다 ({0})"],
+  ["Codex {0} timed out", "Codex {0} 시간이 초과됐습니다"],
+  [
+    "Could not resolve the Codex workspace {0}.",
+    "Codex 작업 공간 {0}을(를) 찾지 못했습니다."
+  ],
+  ["Steering was not accepted: {0}", "방향 지시를 받지 못했습니다: {0}"],
+  [
+    "Steering was not accepted: {0}. Send another mention to continue.",
+    "방향 지시를 받지 못했습니다: {0}. 계속하려면 멘션을 다시 보내세요."
+  ],
+  ["Codex could not finish: {0}.", "Codex가 끝내지 못했습니다: {0}."],
+  [
+    "Codex {0} lists no checksum for {1}",
+    "Codex {0}에는 {1}용 체크섬이 없습니다"
+  ],
+  ["Downloading Codex {0}…", "Codex {0} 내려받는 중…"],
+  ["Testing Codex {0}…", "Codex {0} 시험하는 중…"],
+  ["Codex {0} failed its test: {1}", "Codex {0} 시험에 실패했습니다: {1}"],
+  ["Codex {0} is installed.", "Codex {0}이(가) 설치되었습니다."],
+  [
+    "CodeMode scripts could not be loaded. Showing app-server history only. {0}",
+    "CodeMode 스크립트를 불러오지 못했습니다. 앱 서버 기록만 보여 줍니다. {0}"
+  ],
+  ["Diff: {0}", "변경 내용: {0}"],
+  ["Diff preview: {0}", "변경 내용 미리보기: {0}"],
+  ["Remove :{0}:", ":{0}: 지우기"],
+  ["My emojis ({0})", "내 이모지 ({0})"],
+  ["Choose {0}", "{0} 고르기"],
+  ["Feedback was not delivered. {0}", "의견을 전달하지 못했습니다. {0}"],
+  [
+    "GitHub couldn’t load this object ({0}).",
+    "GitHub에서 불러오지 못했습니다 ({0})."
+  ],
+  [
+    "Linked {0}. The sidebar shows its state for this chat.",
+    "{0}을(를) 연결했습니다. 사이드바에 이 대화의 상태가 보입니다."
+  ],
+  ["All {0} passed{1}", "{0}개 모두 통과{1}"],
+  ["Waiting on {0}", "{0} 기다리는 중"],
+  ["Pull request, {0}", "풀 리퀘스트, {0}"],
+  ["GitHub watch failed for {0}", "{0} GitHub 감시에 실패했습니다"],
+  ["Stopped watching {0}.", "{0} 감시를 멈췄습니다."],
+  [
+    "Add {0} in Edit configuration, or run goose configure.",
+    "설정 수정에서 {0}을(를) 추가하거나 goose configure를 실행하세요."
+  ],
+  ["Play {0}", "{0} 재생"],
+  ["Pause {0}", "{0} 일시정지"],
+  ["Seek {0}", "{0} 이동"],
+  ["Show {0} previous {1}", "이전 {1} {0}개 보기"],
+  ["Preview {0}", "{0} 미리보기"],
+  ["Remove chat attachment {0}", "대화 첨부 {0} 빼기"],
+  ["Model for {0}'s next run", "{0}의 다음 실행에 쓸 모델"],
+  [
+    "Wait for the active turn to finish before {0}.",
+    "{0} 전에 진행 중인 차례가 끝날 때까지 기다리세요."
+  ],
+  ["Download {0}", "{0} 받기"],
+  ["Image zoom: {0}%. Zoom to {1}%", "이미지 확대: {0}%. {1}%로 확대"],
+  ["Send a message to {0}", "{0}에게 메시지 보내기"],
+  ["Remove explicit mention of {0} ({1})", "{0}({1}) 직접 멘션 빼기"],
+  ["Remove mention {0} {1}", "멘션 {0} {1} 빼기"],
+  [
+    "Observed unread replies{0}. Not an exact total.",
+    "확인된 안 읽은 답글{0}. 정확한 총수는 아닙니다."
+  ],
+  ["View thread: {0} {1}{2}{3}{4}", "스레드 보기: {0} {1}{2}{3}{4}"],
+  ["View thread: {0}", "스레드 보기: {0}"],
+  ["Thread — {0}", "스레드 — {0}"],
+  ["View all {0} {1}, starting at {2} 4", "{0} {1} 모두 보기, {2} 4부터"],
+  ["Open image {0} of {1}", "이미지 {0}/{1} 열기"],
+  ["View all {0} {1}, starting at item 4", "{0} {1} 모두 보기, 4번째부터"],
+  ["Open video {0} of {1}", "동영상 {0}/{1} 열기"],
+  ["Reply in thread to {0}", "{0}에게 스레드로 답하기"],
+  ["View {0} {1}{2}", "{0} {1}{2} 보기"],
+  ["Open {0} for {1}", "{1}의 {0} 열기"],
+  ["Activity: {0} working", "활동: {0} 작업 중"],
+  ["Activity: {0} agents working", "활동: 에이전트 {0}개 작업 중"],
+  ["Seek to {0}, {1}", "{0}, {1}(으)로 이동"],
+  ["Playback speed: {0}x", "재생 속도: {0}배"],
+  ["React {0} at current frame", "지금 장면에 {0} 반응"],
+  ["View workflow owner {0} profile", "워크플로 소유자 {0} 프로필 보기"],
+  [
+    "Attach at most {0} files per message.",
+    "메시지 하나에 파일은 {0}개까지 첨부할 수 있습니다."
+  ],
+  ["Message failed to send: {0}", "메시지를 보내지 못했습니다: {0}"],
+  ["Delivery not yet confirmed. {0}", "전달이 아직 확인되지 않았습니다. {0}"],
+  ["Share gives {0} {1}", "공유하면 {0}에게 {1}"],
+  [
+    "Share gives {0}, including agents, {1}",
+    "공유하면 에이전트를 포함한 {0}에게 {1}"
+  ],
+  ["Import {0}?", "{0}을(를) 가져올까요?"],
+  [
+    "Connect to {0} with your Buzz identity.",
+    "내 Buzz 계정으로 {0}에 연결합니다."
+  ],
+  ["Your profile in {0}", "{0}의 내 프로필"],
+  [
+    "Couldn't select Personal space after leaving {0}",
+    "{0}에서 나간 뒤 개인 공간을 고르지 못했습니다"
+  ],
+  ["Community switcher: {0}", "커뮤니티 전환: {0}"],
+  [
+    "This sends a leave request to the community’s relay, then removes {0} from this device along with its saved drafts and reading positions. Rejoining may need a new invite.",
+    "커뮤니티 서버에 나가기 요청을 보낸 뒤, 이 기기에서 {0}과(와) 저장된 초안, 읽던 위치를 지웁니다. 다시 들어오려면 새 초대가 필요할 수 있습니다."
+  ],
+  ["Switch to {0}", "{0}(으)로 전환"],
+  ["Waiting for {0} to connect.", "{0} 연결을 기다리는 중입니다."],
+  [
+    "Shorten the description to {0} characters before saving.",
+    "저장하기 전에 소개를 {0}자 이내로 줄이세요."
+  ],
+  ["Community request failed ({0})", "커뮤니티 요청에 실패했습니다 ({0})"],
+  [
+    "You were no longer a member of {0}, so it was removed from this device.",
+    "이미 {0}의 멤버가 아니어서 이 기기에서 지웠습니다."
+  ],
+  [
+    "You’re currently banned from {0}, so the leave was refused. It was removed from this device and can be added again by its URL if access is restored.",
+    "{0}에서 차단된 상태라 나가기가 거부됐습니다. 이 기기에서는 지웠고, 접근이 풀리면 주소로 다시 추가할 수 있습니다."
+  ],
+  ["Left {0}.", "{0}에서 나갔습니다."],
+  [
+    "Couldn’t remove {0} from this device{1}. Try again.",
+    "이 기기에서 {0}을(를) 지우지 못했습니다{1}. 다시 시도해 주세요."
+  ],
+  [
+    "The relay no longer had a membership for {0}, but this device couldn’t finish removing it{1}. Try again.",
+    "서버에는 {0}의 멤버 정보가 없지만 이 기기에서 지우는 일을 끝내지 못했습니다{1}. 다시 시도해 주세요."
+  ],
+  [
+    "The leave was refused because you’re currently banned from {0}, and this device couldn’t finish removing it{1}. Try again.",
+    "{0}에서 차단된 상태라 나가기가 거부됐고, 이 기기에서 지우는 일도 끝내지 못했습니다{1}. 다시 시도해 주세요."
+  ],
+  [
+    "Left {0}, but this device couldn’t finish cleaning up{1}. Leave it again to finish.",
+    "{0}에서 나갔지만 이 기기의 정리를 끝내지 못했습니다{1}. 다시 나가기를 눌러 마무리하세요."
+  ],
+  [
+    "The relay owner can’t leave {0}.",
+    "서버 소유자는 {0}에서 나갈 수 없습니다."
+  ],
+  [
+    "Couldn’t leave {0}. Check your connection and try again.",
+    "{0}에서 나가지 못했습니다. 연결을 확인하고 다시 시도해 주세요."
+  ],
+  [
+    "Couldn't clear {0} for {1} on this device",
+    "이 기기에서 {1}의 {0}을(를) 지우지 못했습니다"
+  ],
+  [
+    "Use a name of {0} characters or fewer, without line breaks.",
+    "줄바꿈 없이 {0}자 이하로 이름을 쓰세요."
+  ],
+  ["Couldn't start \"{0}\": {1}", "\"{0}\"을(를) 시작하지 못했습니다: {1}"],
+  ["Workspace: {0}", "작업 공간: {0}"],
+  ["Worktree location: {0}", "작업 폴더(worktree) 위치: {0}"],
+  ["Save {0}", "{0} 저장"],
+  ["Chat: {0}", "대화: {0}"],
+  ["Message #{0}", "#{0}에 메시지 보내기"],
+  ["Open draft for {0}", "{0}의 초안 열기"],
+  ["DM with {0}", "{0}와(과)의 DM"],
+  ["DM · {0}", "DM · {0}"],
+  ["Open {0} in {1}", "{1}에서 {0} 열기"],
+  ["Actions for {0} in {1}", "{1}의 {0} 메뉴"],
+  [
+    "Couldn’t save. Your changes are still here. {0}",
+    "저장하지 못했습니다. 고친 내용은 그대로 있습니다. {0}"
+  ],
+  ["Status for {0}", "{0} 상태"],
+  ["Assignee for {0}", "{0} 담당자"],
+  ["Assignee for {0}{1}", "{0} 담당자{1}"],
+  ["Done {0}", "완료 {0}"],
+  ["Due {0}", "기한 {0}"],
+  ["Open message from {0}", "{0}의 메시지 열기"],
+  ["Open conversation: {0}", "대화 열기: {0}"],
+  ["Open conversation{0}", "대화 열기{0}"],
+  ["More actions: {0}", "메뉴 더 보기: {0}"],
+  ["Reminder due · #{0}", "리마인더 시간 · #{0}"],
+  ["Overdue · {0}", "기한 지남 · {0}"],
+  ["Move {0} to section", "{0}을(를) 섹션으로 옮기기"],
+  ["Channel setup couldn’t finish: {0}", "채널 설정을 마치지 못했습니다: {0}"],
+  ["Couldn’t {0} {1}", "{1}을(를) {0}하지 못했습니다"],
+  [
+    "No matching channels with a known visible type; other memberships could not be classified.{0}",
+    "종류를 알 수 있는 맞는 채널이 없습니다. 다른 참여 정보는 분류하지 못했습니다.{0}"
+  ],
+  ["Copy {0}: {1}", "{0} 복사: {1}"],
+  [
+    "Couldn’t switch {0}. Your previous device is still selected.",
+    "{0}을(를) 바꾸지 못했습니다. 이전 장치가 그대로 선택되어 있습니다."
+  ],
+  [
+    "Couldn’t update the Huddle window: {0}",
+    "허들 창을 바꾸지 못했습니다: {0}"
+  ],
+  ["Couldn’t open Huddle chat: {0}", "허들 채팅을 열지 못했습니다: {0}"],
+  ["In this Huddle: {0}", "이 허들에 있는 사람: {0}"],
+  ["Open Huddle window for {0}", "{0} 허들 창 열기"],
+  ["Join active huddle ({0} {1})", "진행 중인 허들 참여 ({0} {1})"],
+  ["Adds {0} to {1} when you send", "보낼 때 {0}을(를) {1}에 추가합니다"],
+  ["Saved team · {0} agents", "저장된 팀 · 에이전트 {0}명"],
+  [
+    "Playback speed {0} times; change to {1} times",
+    "재생 속도 {0}배, {1}배로 바꾸기"
+  ],
+  ["Unresolved {0}", "확인 안 된 {0}"],
+  ["Clear {0}", "{0} 지우기"],
+  ["Close {0} tab", "{0} 탭 닫기"],
+  ["Actions for {0} tab", "{0} 탭 메뉴"],
+  ["Manage members and access to {0}.", "{0}의 멤버와 접근 권한을 관리합니다."],
+  ["Could not load members: {0}", "멤버를 불러오지 못했습니다: {0}"],
+  ["Verification code {0}. {1}", "확인 코드 {0}. {1}"],
+  ["Open {0} by {1}", "{1}의 {0} 열기"],
+  ["Open {0} folder", "{0} 폴더 열기"],
+  ["Saved as {0}", "{0}(으)로 저장됨"],
+  ["View {0} profile", "{0} 프로필 보기"],
+  ["Turn {0}", "차례 {0}"],
+  ["Permission options: {0}", "허용 선택지: {0}"],
+  ["View {0} activity", "{0} 활동 보기"],
+  [
+    "Older history isn't available from this relay (limit {0} revisions).",
+    "이 서버에서는 더 오래된 기록을 볼 수 없습니다 (최대 {0}개 버전)."
+  ],
+  [
+    "Couldn't confirm the revert was saved ({0}). It may still arrive; check the history before trying again.",
+    "되돌리기 저장을 확인하지 못했습니다 ({0}). 곧 반영될 수 있으니 다시 시도하기 전에 기록을 확인하세요."
+  ],
+  ["Not reverted: {0}", "되돌리지 못했습니다: {0}"],
+  [
+    "Couldn't check whether it's archived: {0}",
+    "보관됐는지 확인하지 못했습니다: {0}"
+  ],
+  ["Done, {0}", "완료, {0}"],
+  ["Memory {0} copied.", "기억 {0}을(를) 복사했습니다."],
+  ["Couldn’t copy the memory {0}.", "기억 {0}을(를) 복사하지 못했습니다."],
+  ["This {0}", "이 {0}"],
+  ["Last active {0}", "마지막 활동 {0}"],
+  ["Mode: {0}", "모드: {0}"],
+  [
+    "A {0} frame was too large and was elided by the agent.",
+    "{0} 프레임이 너무 커서 에이전트가 줄였습니다."
+  ],
+  ["Team {0} isn't available: {1}", "팀 {0}을(를) 쓸 수 없습니다: {1}"],
+  ["Every {0}", "{0}마다"],
+  ["Kind {0} events", "종류 {0} 이벤트"],
+  ["Question: {0}", "질문: {0}"],
+  ["Guidance: {0}", "안내: {0}"],
+  ["Yes means: {0}", "'예'의 뜻: {0}"],
+  ["No means: {0}", "'아니요'의 뜻: {0}"],
+  ["Boundaries: {0}", "경계: {0}"],
+  ["Running {0} tools", "도구 {0}개 실행 중"],
+  ["Running {0}", "{0} 실행 중"],
+  ["Reading {0}", "{0} 읽는 중"],
+  ["Writing {0}", "{0} 쓰는 중"],
+  ["Editing {0}", "{0} 고치는 중"],
+  ["Searching for {0}", "{0} 찾는 중"],
+  ["Listing files in {0}", "{0}의 파일 목록 보는 중"],
+  ["Viewing {0}", "{0} 보는 중"],
+  ["Finding {0}", "{0} 찾는 중"],
+  ["Searching the web for {0}", "웹에서 {0} 검색 중"],
+  ["Subagent · {0}", "하위 에이전트 · {0}"],
+  [
+    "Agent type {0} could not list its models",
+    "에이전트 종류 {0}의 모델 목록을 가져오지 못했습니다"
+  ],
+  [
+    "The relay did not confirm removal from {0} channel{1}. Retry.",
+    "서버가 {0}개 채널{1}에서 빠졌는지 확인하지 못했습니다. 다시 시도하세요."
+  ],
+  [
+    "Agent {0} could not resume its turns",
+    "에이전트 {0}이(가) 하던 일을 다시 시작하지 못했습니다"
+  ],
+  ["Agent {0} could not catch up", "에이전트 {0}이(가) 따라잡지 못했습니다"],
+  [
+    "Agent {0} could not classify an event",
+    "에이전트 {0}이(가) 이벤트를 분류하지 못했습니다"
+  ],
+  ["Agent run failed: {0}", "에이전트 실행에 실패했습니다: {0}"],
+  [
+    "The turn ran past its {0}s deadline and was stopped",
+    "차례가 제한 시간({0}초)을 넘겨 멈췄습니다"
+  ],
+  [
+    "You are on the team {0}. Its members, you included:",
+    "당신은 {0} 팀입니다. 당신을 포함한 팀 멤버:"
+  ],
+  [
+    "Public channel search couldn’t finish{0}",
+    "공개 채널 검색을 끝내지 못했습니다{0}"
+  ],
+  ["Close {0} panel", "{0} 패널 닫기"],
+  ["Use at most {0} channel labels.", "채널 라벨은 {0}개까지 쓸 수 있습니다."],
+  [
+    "The request may have taken effect. Refresh channels before trying again. {0}",
+    "요청이 이미 반영됐을 수 있습니다. 다시 시도하기 전에 채널을 새로 고치세요. {0}"
+  ],
+  [
+    "Community emoji unavailable. Retry message preparation or open the emoji picker. {0}",
+    "커뮤니티 이모지를 쓸 수 없습니다. 메시지 준비를 다시 시도하거나 이모지 선택창을 여세요. {0}"
+  ],
+  ["Relay read failed ({0})", "서버에서 읽지 못했습니다 ({0})"],
+  ["GIF request failed ({0})", "GIF 요청에 실패했습니다 ({0})"],
+  [
+    "Relay requests paused; retry in {0}s",
+    "서버 요청을 잠시 멈췄습니다. {0}초 뒤 다시 시도하세요"
+  ],
+  ["Relay request failed ({0})", "서버 요청에 실패했습니다 ({0})"],
+  [
+    "Could not load the outbox: {0}",
+    "보내는 중 목록을 불러오지 못했습니다: {0}"
+  ],
+  ["Relay rejected the message ({0})", "서버가 메시지를 받지 않았습니다 ({0})"],
+  [
+    "Relay delivery could not be confirmed ({0})",
+    "서버 전달을 확인하지 못했습니다 ({0})"
+  ],
+  ["Workflow · owned by {0}", "워크플로 · 소유자 {0}"],
+  ["Version {0}", "버전 {0}"],
+  ["Duration: {0}", "유지 기간: {0}"],
+  ["Preview {0} identity", "{0} 계정 미리보기"]
 ]

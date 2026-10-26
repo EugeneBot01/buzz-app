@@ -438,9 +438,7 @@ export function MessageMarkdown({
         {prepared.content}
       </div>
     );
-  // Team: message text is user content; the Korean UI translator skips it.
   return (
-    <div data-no-translate="" style={{ display: "contents" }}>
     <PreparedMessageMarkdown
       row={row}
       prepared={prepared}
@@ -457,7 +455,6 @@ export function MessageMarkdown({
       interactive={interactive}
       staticMentions={staticMentions}
     />
-    </div>
   );
 }
 
@@ -706,7 +703,14 @@ function PreparedMessageMarkdown({
       <MarkdownBody protectedContent={protectedContent} />
     </MessageComponentsContext>
   );
-  return largeEmoji ? markdown : <div className={styles.text}>{markdown}</div>;
+  // Team: message text is user content; the Korean UI translator skips it.
+  return largeEmoji ? (
+    markdown
+  ) : (
+    <div className={styles.text} data-no-translate="">
+      {markdown}
+    </div>
+  );
 }
 
 const MarkdownBody = memo(function MarkdownBody({
