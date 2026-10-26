@@ -1745,6 +1745,84 @@ pub(crate) async fn media_download<R: tauri::Runtime>(
     Ok(())
 }
 
+/// Team build: the ArtCraft app that opens a document, by file extension.
+fn team_app_for(ext: &str) -> Option<&'static str> {
+    match ext {
+        "docx" | "doc" | "odt" | "rtf" => Some("WordCraft"),
+        "xlsx" | "xls" | "xlsm" | "ods" | "csv" | "tsv" => Some("GridCraft"),
+        "pptx" | "ppt" | "odp" => Some("DeckCraft"),
+        "pdf" => Some("PdfCraft"),
+        _ => None,
+    }
+}
+
+/// Team build: document and picture types "열기" may hand to another app.
+/// Anything else (a script, an app bundle, an installer) is refused, because
+/// the system would run it instead of showing it.
+const TEAM_OPENABLE_EXTENSIONS: &[&str] = &[
+    "docx", "doc", "odt", "rtf", "xlsx", "xls", "xlsm", "ods", "csv", "tsv", "pptx", "ppt",
+    "odp", "pdf", "txt", "md", "png", "jpg", "jpeg", "gif", "webp", "hwp", "hwpx",
+];
+
+fn team_installed_app(name: &str) -> Option<std::path::PathBuf> {
+    let mut candidates = vec![std::path::PathBuf::from(format!("/Applications/{name}.app"))];
+    if let Some(home) = std::env::var_os("HOME") {
+        candidates.push(
+            std::path::PathBuf::from(home)
+                .join("Applications")
+                .join(format!("{name}.app")),
+        );
+    }
+    candidates.into_iter().find(|path| path.is_dir())
+}
+
+/// Team build: save an attachment to a fresh temporary folder and open it in
+/// its ArtCraft app when installed, else the Mac's default app for the type.
+/// Returns the app it used, or "default".
+#[tauri::command]
+pub(crate) async fn team_media_open(
+    host: tauri::State<'_, IdentityHost>,
+    source: String,
+    name: String,
+) -> Result<String> {
+    let url = download_target(&source).ok_or("Invalid media URL")?;
+    let filename = download_name(&name, &url).to_owned();
+    let ext = filename
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !TEAM_OPENABLE_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(format!("이 종류의 파일(.{ext})은 여기서 열 수 없어요. 다운로드해서 여세요."));
+    }
+    let response = fetch_media(host.inner(), url, None)
+        .await
+        .map_err(|_| "Media download failed")?;
+    let body = response.into_body();
+    tauri::async_runtime::spawn_blocking(move || {
+        // A fresh folder per open, so two files with the same name never collide.
+        let directory = std::env::temp_dir()
+            .join("buzz-team-opened")
+            .join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&directory).map_err(|_| "Could not prepare the file")?;
+        let path = save_download(&directory, &filename, &body)?;
+        let app = team_app_for(&ext).and_then(|name| team_installed_app(name).map(|p| (name, p)));
+        let mut command = std::process::Command::new("/usr/bin/open");
+        if let Some((_, app_path)) = &app {
+            command.arg("-a").arg(app_path);
+        }
+        let status = command
+            .arg(&path)
+            .status()
+            .map_err(|_| "Could not open the file")?;
+        if !status.success() {
+            return Err("Could not open the file".to_owned());
+        }
+        Ok(app.map_or_else(|| "default".to_owned(), |(name, _)| name.to_owned()))
+    })
+    .await
+    .map_err(|_| "Opening was interrupted".to_owned())?
+}
+
 /// `buzz-media://localhost/<percent-encoded relay media URL>`, the shape of
 /// `convertFileSrc(url, "buzz-media")` on every desktop platform.
 fn media_request(

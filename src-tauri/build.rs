@@ -108,6 +108,7 @@ fn main() {
             "relay_upload",
             "relay_upload_cancel",
             "media_download",
+            "team_media_open",
             "media_copy_image",
             "media_stream_base",
             "get_os_idle_seconds",

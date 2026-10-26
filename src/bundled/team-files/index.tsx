@@ -18,6 +18,7 @@ import { isNativeMediaSource } from "../../features/messages/attachment-source";
 import { PaperclipIcon } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
+import { OpenFileButton } from "../../team/files/OpenButton";
 import {
   collectFiles,
   fileName,
@@ -202,6 +203,7 @@ function FilesPanel({
             key={file.attachment.url}
             file={file}
             author={profiles.get(file.author)?.name}
+            source={session.media(file.attachment.url)}
             onSave={() => save(session, file)}
           />
         ))}
@@ -238,10 +240,12 @@ function FilesPanel({
 function FileRow({
   file,
   author,
+  source,
   onSave,
 }: {
   file: ChannelFile;
   author: string | undefined;
+  source: string | undefined;
   onSave(): Promise<void>;
 }) {
   const [status, setStatus] = useState("");
@@ -274,6 +278,7 @@ function FileRow({
       >
         다운로드
       </Button>
+      <OpenFileButton source={source} name={file.attachment.name} />
     </li>
   );
 }

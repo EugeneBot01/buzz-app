@@ -13,6 +13,7 @@ import {
 import styles from "./Messages.module.css";
 import { downloadNativeMedia } from "./native-download";
 import { useState } from "react";
+import { OpenFileButton } from "../../team/files/OpenButton";
 
 export function formatFileSize(size: number): string {
   if (size < 1024) return `${size} B`;
@@ -118,6 +119,7 @@ export function FileAttachment({
         >
           {content}
         </button>
+        <OpenFileButton source={source} name={attachment.name} />
         {downloadError && <span role="alert">Download failed</span>}
       </>
     );

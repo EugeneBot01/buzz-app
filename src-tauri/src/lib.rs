@@ -70,7 +70,7 @@ use identity::{
 };
 use relay::{huddle_close, huddle_open, huddle_pcm, huddle_touch, Huddles};
 use relay::{
-    media_copy_image, media_download, media_stream_base, relay_agent_library,
+    media_copy_image, media_download, media_stream_base, team_media_open, relay_agent_library,
     relay_agent_log_proof, relay_agent_memories_read, relay_agent_observer, relay_agent_resolve,
     relay_channel_publish, relay_channel_sign, relay_decode_read_state, relay_decode_reminders,
     relay_decode_sidebar, relay_direct_message, relay_git_authorization, relay_http,
@@ -543,6 +543,7 @@ fn commands<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Sen
         relay_upload,
         relay_upload_cancel,
         media_download,
+        team_media_open,
         media_copy_image,
         media_stream_base,
         get_os_idle_seconds,
