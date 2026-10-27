@@ -161,9 +161,19 @@ jobs:
           set -euo pipefail
           version=$(ls -a bin | sed -n 's/^\.rust-\(.*\)\.pkg$/\1/p' | head -1)
           [[ -n "$version" ]] || { echo "::error::Hermit Rust version not found"; exit 1; }
-          rustup toolchain install "$version" --profile minimal --target "$TARGET" aarch64-apple-darwin
-          echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          # Use rustup's own home, apart from the CARGO_HOME Hermit sets.
+          export RUSTUP_HOME="$HOME/.rustup" CARGO_HOME="$HOME/.rustup-cargo"
+          if [[ ! -x "$CARGO_HOME/bin/rustup" ]]; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --no-modify-path --profile minimal --default-toolchain none
+          fi
+          "$CARGO_HOME/bin/rustup" toolchain install "$version" --profile minimal \
+            --target "$TARGET" --target aarch64-apple-darwin
+          {
+            echo "RUSTUP_HOME=$RUSTUP_HOME"
+            echo "RUSTUP_TOOLCHAIN=$version"
+          } >> "$GITHUB_ENV"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
 
       - name: Check the Intel toolchain
         if: matrix.target != ''
