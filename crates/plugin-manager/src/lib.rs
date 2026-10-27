@@ -325,6 +325,41 @@ pub fn bundled_manifests() -> Vec<Manifest> {
             "../../../src/bundled/relay-notes/manifest.json"
         ))
         .expect("relay notes manifest"),
+        // Buzz Team: team-calendar.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-calendar/manifest.json"
+        ))
+        .expect("team-calendar manifest"),
+        // Buzz Team: team-mentions.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-mentions/manifest.json"
+        ))
+        .expect("team-mentions manifest"),
+        // Buzz Team: team-welcome.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-welcome/manifest.json"
+        ))
+        .expect("team-welcome manifest"),
+        // Buzz Team: team-sections.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-sections/manifest.json"
+        ))
+        .expect("team-sections manifest"),
+        // Buzz Team: team-files.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-files/manifest.json"
+        ))
+        .expect("team-files manifest"),
+        // Buzz Team: team-agent-status.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-agent-status/manifest.json"
+        ))
+        .expect("team-agent-status manifest"),
+        // Buzz Team: team-shortcuts.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-shortcuts/manifest.json"
+        ))
+        .expect("team-shortcuts manifest"),
     ]
 }
 /// New bundles must opt in to the default-on policy.
@@ -358,6 +393,13 @@ fn enabled_by_default(id: &str) -> bool {
             | "block.builderlab"
             | "buzz.moderation"
             | "buzz.relay-staff"
+            | "buzz.team.calendar"
+            | "buzz.team.group-mentions"
+            | "buzz.team.welcome"
+            | "buzz.team.sections"
+            | "buzz.team.files"
+            | "buzz.team.agent-status"
+            | "buzz.team.shortcuts"
     )
 }
 /// Bundled ids that older profiles may still hold as installed plugins.
