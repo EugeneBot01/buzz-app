@@ -10,6 +10,8 @@ import teamAgentStatusManifest from "./team-agent-status/manifest.json";
 import * as teamAgentStatus from "./team-agent-status";
 import teamShortcutsManifest from "./team-shortcuts/manifest.json";
 import * as teamShortcuts from "./team-shortcuts";
+import teamMcpManifest from "./team-mcp/manifest.json";
+import * as teamMcp from "./team-mcp";
 import teamMentionsManifest from "./team-mentions/manifest.json";
 import * as teamMentions from "./team-mentions";
 import voiceNotesManifest from "./voice-notes/manifest.json";
@@ -280,6 +282,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...teamShortcutsManifest, apiVersion: 1 },
     module: teamShortcuts,
+    enabledByDefault: true,
+  },
+  // Team: MCP connections for Claude agents.
+  {
+    manifest: { ...teamMcpManifest, apiVersion: 1 },
+    module: teamMcp,
     enabledByDefault: true,
   },
 ];

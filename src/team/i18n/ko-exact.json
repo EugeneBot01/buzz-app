@@ -3856,5 +3856,7 @@
   "Agent status line": "에이전트 상태 줄",
   "Shows above the composer which of a channel's agents can answer right now.": "입력창 위에 채널의 에이전트 중 지금 답할 수 있는 에이전트를 보여 줍니다.",
   "Channel shortcuts": "채널 바로가기",
-  "Pin Notion, Drive, Figma and other links at the top of a channel for everyone in it.": "노션·드라이브·피그마 같은 링크를 채널 위쪽에 걸어 두고 채널 사람 모두가 같이 봅니다."
+  "Pin Notion, Drive, Figma and other links at the top of a channel for everyone in it.": "노션·드라이브·피그마 같은 링크를 채널 위쪽에 걸어 두고 채널 사람 모두가 같이 봅니다.",
+  "MCP connections": "MCP 연결",
+  "Connect Notion, Figma, Adobe and other MCP tools once; Buzz's Claude agents and your terminal Claude use them.": "노션·피그마·어도비 같은 MCP 도구를 한 번 연결하면 Buzz의 Claude 에이전트와 터미널의 Claude가 같이 씁니다."
 }

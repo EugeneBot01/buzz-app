@@ -1,0 +1,10 @@
+{
+  "id": "buzz.team.mcp",
+  "name": "MCP connections",
+  "apiVersion": 1,
+  "description": "Connect Notion, Figma, Adobe and other MCP tools once; Buzz's Claude agents and your terminal Claude use them.",
+  "discovery": { "category": "agents", "tags": ["coding-agents"] },
+  "host": {
+    "processes": [{ "id": "mcp-sh", "program": "bash", "args": ["-c"] }]
+  }
+}
