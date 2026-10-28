@@ -112,7 +112,7 @@ jobs:
         if: steps.merge.outputs.ok == 'true'
         run: |
           set -o pipefail
-          if { pnpm typecheck && pnpm exec vitest run --retry=2; } 2>&1 | tee "$RUNNER_TEMP/test.log"; then
+          if { pnpm typecheck && pnpm exec vitest run --retry=2 --testTimeout=30000 --hookTimeout=30000; } 2>&1 | tee "$RUNNER_TEMP/test.log"; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"

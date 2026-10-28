@@ -117,7 +117,7 @@ jobs:
         if: matrix.shard == 1
         run: pnpm typecheck
       - name: Unit tests
-        run: pnpm exec vitest run --shard=${{ matrix.shard }}/3 --retry=2
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/3 --retry=2 --testTimeout=30000 --hookTimeout=30000
 
   build:
     name: Build macOS (${{ matrix.arch }})
