@@ -36,7 +36,7 @@ export function shortcutTitle(url: string) {
   const host = new URL(url).hostname.replace(/^www\./, "");
   const known: Record<string, string> = {
     "notion.so": "Notion",
-    "www.notion.so": "Notion",
+    "meet.google.com": "구글 미트",
     "drive.google.com": "Drive",
     "docs.google.com": "Google Docs",
     "figma.com": "Figma",

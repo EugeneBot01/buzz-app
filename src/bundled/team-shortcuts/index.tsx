@@ -250,6 +250,14 @@ function ShortcutsPanel({
         <Button type="submit" variant="subtle" disabled={!url.trim()}>
           추가
         </Button>
+        <a
+          href="https://meet.google.com/new"
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-muted underline hover:text-ink"
+        >
+          새 구글 미트 방 만들러 가기
+        </a>
       </form>
       <div className="flex items-center gap-3">
         <Button

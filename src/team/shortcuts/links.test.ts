@@ -21,6 +21,12 @@ it("accepts only https addresses, adding https when missing", () => {
 it("names known sites", () => {
   expect(shortcutTitle("https://www.notion.so/a")).toBe("Notion");
   expect(shortcutTitle("https://www.figma.com/file/x")).toBe("Figma");
+  expect(shortcutTitle("https://meet.google.com/abc-defg-hij")).toBe(
+    "구글 미트",
+  );
+  expect(safeShortcutUrl("meet.google.com/abc-defg-hij")).toBe(
+    "https://meet.google.com/abc-defg-hij",
+  );
   expect(shortcutTitle("https://example.org/a")).toBe("example");
 });
 
