@@ -1,4 +1,5 @@
 /** lucide-react names used by the calendar, drawn with the app's icons. */
+import type { ComponentType } from "react";
 import {
   ArrowLeftIcon,
   CalendarIcon,
@@ -13,20 +14,21 @@ import {
 type Props = { className?: string };
 const size = (className?: string) =>
   className?.includes("h-3") ? 12 : className?.includes("h-5") ? 20 : 16;
+// The app's icons are components (not plain functions), so render them as elements.
 const wrap =
-  (Icon: (props: { size?: number; "aria-hidden"?: boolean }) => unknown) =>
+  (Icon: ComponentType<{ size?: number; "aria-hidden"?: boolean }>) =>
   ({ className }: Props) => (
     <span className={className} style={{ display: "inline-flex" }}>
-      {Icon({ size: size(className), "aria-hidden": true }) as never}
+      <Icon size={size(className)} aria-hidden={true} />
     </span>
   );
 
-export const ArrowLeft = wrap(ArrowLeftIcon as never);
-export const CalendarPlus = wrap(CalendarIcon as never);
-export const ChevronLeft = wrap(CaretLeftIcon as never);
-export const ChevronRight = wrap(CaretRightIcon as never);
-export const ClipboardPaste = wrap(CopyIcon as never);
-export const Copy = wrap(CopyIcon as never);
-export const Pencil = wrap(PencilSimpleIcon as never);
-export const Plus = wrap(PlusIcon as never);
-export const Trash2 = wrap(TrashIcon as never);
+export const ArrowLeft = wrap(ArrowLeftIcon);
+export const CalendarPlus = wrap(CalendarIcon);
+export const ChevronLeft = wrap(CaretLeftIcon);
+export const ChevronRight = wrap(CaretRightIcon);
+export const ClipboardPaste = wrap(CopyIcon);
+export const Copy = wrap(CopyIcon);
+export const Pencil = wrap(PencilSimpleIcon);
+export const Plus = wrap(PlusIcon);
+export const Trash2 = wrap(TrashIcon);
