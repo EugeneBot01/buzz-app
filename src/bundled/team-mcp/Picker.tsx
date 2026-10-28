@@ -331,7 +331,12 @@ export function McpPicker({
   host,
   disabled,
   insertText,
-}: Pick<ComposerToolProps, "disabled" | "insertText"> & { host: Host }) {
+  onManage,
+}: Pick<ComposerToolProps, "disabled" | "insertText"> & {
+  host: Host;
+  /** Opens Settings → MCP connections, where servers are added. */
+  onManage(): void;
+}) {
   const run = useMemo(() => makeRun(host), [host]);
   const [open, setOpen] = useState(false);
   const [entry, setEntry] = useState<Entry>();
@@ -362,7 +367,18 @@ export function McpPicker({
           className="flex w-[360px] max-w-full flex-col gap-3"
           data-no-translate=""
         >
-          <h2 className="text-sm font-semibold">MCP 도구</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">MCP 도구</h2>
+            <Button
+              variant="subtle"
+              onClick={() => {
+                setOpen(false);
+                onManage();
+              }}
+            >
+              + MCP 추가·관리
+            </Button>
+          </div>
           {entry ? (
             <div className="flex flex-col gap-2">
               <Button variant="ghost" onClick={() => setEntry(undefined)}>

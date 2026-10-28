@@ -13,6 +13,7 @@ import { scopeOf } from "../reminders/react";
 import { readTeamDocs, teamRelayUrl } from "../../team/relay/community";
 import {
   MAX_SHORTCUTS,
+  isMeet,
   SHORTCUTS_TAG,
   encodeShortcuts,
   latestShortcuts,
@@ -109,9 +110,25 @@ function makeLauncher(relay: RelayData) {
     pressed,
   }: ChannelLauncherProps) {
     const { entry } = useShortcuts(relay, context.channelId);
+    // The channel's saved Meet room, else a way to start a new one.
+    const meet = entry.links.find((link) => isMeet(link.url));
+    const others = entry.links.filter((link) => link !== meet);
     return (
       <span className="flex items-center gap-1" data-no-translate="">
-        {entry.links.slice(0, 5).map((link) => (
+        <a
+          href={meet?.url ?? "https://meet.google.com/new"}
+          target="_blank"
+          rel="noreferrer"
+          title={
+            meet
+              ? "이 채널의 구글 미트 방으로 들어가기"
+              : "구글 미트 새 방 만들기 (만든 주소는 🔗에 저장해 두세요)"
+          }
+          className="rounded-md border border-line px-2 py-0.5 text-xs text-ink hover:bg-hover"
+        >
+          📹 {meet ? "구글 미트" : "새 미트"}
+        </a>
+        {others.slice(0, 4).map((link) => (
           <a
             key={link.url}
             href={link.url}
@@ -254,10 +271,14 @@ function ShortcutsPanel({
           href="https://meet.google.com/new"
           target="_blank"
           rel="noreferrer"
-          className="text-xs text-muted underline hover:text-ink"
+          className="rounded-md border border-line px-3 py-1.5 text-center text-sm text-ink hover:bg-hover"
         >
-          새 구글 미트 방 만들러 가기
+          📹 새 구글 미트 방 만들기
         </a>
+        <p className="text-xs text-muted">
+          만든 방 주소를 위 칸에 붙여 넣고 추가 → 저장하면, 채널 위쪽 📹 버튼이
+          그 방으로 바로 들어가요.
+        </p>
       </form>
       <div className="flex items-center gap-3">
         <Button

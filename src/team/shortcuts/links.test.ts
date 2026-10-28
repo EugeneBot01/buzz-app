@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   decodeShortcuts,
   encodeShortcuts,
+  isMeet,
   latestShortcuts,
   safeShortcutUrl,
   shortcutTitle,
@@ -61,4 +62,10 @@ it("keeps the newest document from a channel member", () => {
   expect(latestShortcuts(events, new Set(["me", "you"]))?.links[0]?.title).toBe(
     "new",
   );
+});
+
+it("recognises Google Meet rooms", () => {
+  expect(isMeet("https://meet.google.com/abc-defg-hij")).toBe(true);
+  expect(isMeet("https://notmeet.google.com.evil.com/x")).toBe(false);
+  expect(isMeet("nope")).toBe(false);
 });

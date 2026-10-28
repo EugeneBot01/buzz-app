@@ -56,7 +56,12 @@ function fakeHost() {
 it("lists a connected server, its tools, runs one and offers the result", async () => {
   const insertText = vi.fn(() => true);
   render(
-    <McpPicker host={fakeHost()} disabled={false} insertText={insertText} />,
+    <McpPicker
+      host={fakeHost()}
+      disabled={false}
+      insertText={insertText}
+      onManage={() => {}}
+    />,
   );
   fireEvent.click(screen.getByRole("button", { name: "MCP 도구" }));
   fireEvent.click(await screen.findByRole("button", { name: /^fake/ }));
@@ -84,7 +89,29 @@ it("asks to connect something first when nothing is connected", async () => {
       };
     },
   } as unknown as Host;
-  render(<McpPicker host={host} disabled={false} insertText={() => true} />);
+  render(
+    <McpPicker
+      host={host}
+      disabled={false}
+      insertText={() => true}
+      onManage={() => {}}
+    />,
+  );
   fireEvent.click(screen.getByRole("button", { name: "MCP 도구" }));
   expect(await screen.findByText(/연결된 MCP가 없어요/)).toBeInTheDocument();
+});
+
+it("offers a way to add servers from inside the popup", async () => {
+  const manage = vi.fn();
+  render(
+    <McpPicker
+      host={fakeHost()}
+      disabled={false}
+      insertText={() => true}
+      onManage={manage}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "MCP 도구" }));
+  fireEvent.click(await screen.findByRole("button", { name: /MCP 추가·관리/ }));
+  expect(manage).toHaveBeenCalledOnce();
 });

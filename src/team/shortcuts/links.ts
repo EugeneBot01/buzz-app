@@ -96,3 +96,12 @@ export function latestShortcuts(
   }
   return best?.doc ?? null;
 }
+
+/** Whether an address is a Google Meet room (or its `/new` page). */
+export function isMeet(url: string) {
+  try {
+    return new URL(url).hostname === "meet.google.com";
+  } catch {
+    return false;
+  }
+}

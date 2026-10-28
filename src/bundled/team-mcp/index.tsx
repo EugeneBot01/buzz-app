@@ -12,10 +12,17 @@ import {
   type AddSpec,
   type McpServer,
 } from "../../team/mcp/servers";
+import { scopeOf } from "../reminders/react";
 import { McpPicker } from "./Picker";
 import { makeRun, type Run } from "./run";
 
-export const inject = ["settingsCards", "host", "conversation"];
+export const inject = [
+  "settingsCards",
+  "host",
+  "conversation",
+  "navigation",
+  "relay",
+];
 
 const failureText = (code: number | null, stderr: string) =>
   code === 127
@@ -270,6 +277,20 @@ export const apply: PluginModule["apply"] = (ctx) => {
     isTauri() && /Mac/i.test(navigator.platform)
       ? makeRun(ctx.host)
       : undefined;
+  /** Settings → MCP connections, in the community the person is in. */
+  const openSettings = () => {
+    const connection = ctx.relay.snapshot();
+    const scope =
+      connection.status === "ready" ? scopeOf(connection) : undefined;
+    void ctx.navigation.open({
+      version: 1,
+      kind: "settings",
+      section: "buzz.team.mcp/mcp",
+      scope: scope
+        ? { viewer: scope.viewer, communityOrigin: scope.communityOrigin }
+        : null,
+    });
+  };
   ctx.settingsCards.register({
     id: "mcp",
     title: "MCP connections",
@@ -279,6 +300,8 @@ export const apply: PluginModule["apply"] = (ctx) => {
     ctx.conversation.registerTool({
       id: "mcp-tools",
       title: "MCP tools",
-      component: (props) => <McpPicker {...props} host={ctx.host} />,
+      component: (props) => (
+        <McpPicker {...props} host={ctx.host} onManage={openSettings} />
+      ),
     });
 };
