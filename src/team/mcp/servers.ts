@@ -211,3 +211,73 @@ export const PRESETS: readonly McpPreset[] = [
     },
   },
 ];
+
+// ---- running a server so a person can use its tools ----
+
+type RawEntry = Readonly<{
+  type?: unknown;
+  url?: unknown;
+  command?: unknown;
+  args?: unknown;
+  env?: unknown;
+  headers?: unknown;
+}>;
+
+/** The servers by name, as Claude Code stores them. */
+export function parseEntries(json: string): Record<string, RawEntry> {
+  try {
+    const raw: unknown = JSON.parse(json);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return Object.fromEntries(
+      Object.entries(raw).filter(
+        (entry): entry is [string, RawEntry] =>
+          !!entry[1] && typeof entry[1] === "object",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+/** One word for `sh`, however odd its characters. */
+export const shellQuote = (text: string) =>
+  `'${text.replaceAll("'", `'\\''`)}'`;
+
+const strings = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+const pairs = (value: unknown): [string, string][] =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? Object.entries(value).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      )
+    : [];
+
+/**
+ * The shell line that starts a server on stdio. A remote server goes through
+ * `mcp-remote`, which speaks stdio to Buzz, talks to the address, and opens a
+ * browser for sign-in the first time. Null when the entry names neither.
+ */
+export function launchLine(entry: RawEntry): string | null {
+  if (typeof entry.url === "string" && entry.url) {
+    if (validateUrl(entry.url)) return null;
+    const parts = ["npx", "-y", "mcp-remote", entry.url];
+    if (entry.url.startsWith("http://")) parts.push("--allow-http");
+    if (entry.type === "sse") parts.push("--transport", "sse-only");
+    for (const [name, value] of pairs(entry.headers))
+      parts.push("--header", `${name}:${value}`);
+    return `exec ${parts.map(shellQuote).join(" ")}`;
+  }
+  if (typeof entry.command === "string" && entry.command) {
+    const env = pairs(entry.env)
+      .filter(([name]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+      .map(([name, value]) => `export ${name}=${shellQuote(value)};`)
+      .join(" ");
+    const command = [entry.command, ...strings(entry.args)]
+      .map(shellQuote)
+      .join(" ");
+    return `${env ? `${env} ` : ""}exec ${command}`;
+  }
+  return null;
+}

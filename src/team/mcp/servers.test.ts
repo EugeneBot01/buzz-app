@@ -74,3 +74,46 @@ it("ships presets that obey their own rules", () => {
     else expect(validateCommand(spec.commandLine)).toBeNull();
   }
 });
+
+import { launchLine, parseEntries, shellQuote } from "./servers";
+
+it("quotes anything safely for sh", () => {
+  expect(shellQuote("it's")).toBe(`'it'\\''s'`);
+  expect(shellQuote("a b; rm -rf /")).toBe("'a b; rm -rf /'");
+});
+
+it("starts a command server with its environment", () => {
+  expect(
+    launchLine({
+      command: "npx",
+      args: ["-y", "x-mcp"],
+      env: { TOKEN: "a'b", "bad name": "no" },
+    }),
+  ).toBe(`export TOKEN='a'\\''b'; exec 'npx' '-y' 'x-mcp'`);
+});
+
+it("reaches a remote server through mcp-remote", () => {
+  expect(launchLine({ type: "http", url: "https://mcp.notion.com/mcp" })).toBe(
+    "exec 'npx' '-y' 'mcp-remote' 'https://mcp.notion.com/mcp'",
+  );
+  expect(
+    launchLine({ type: "sse", url: "https://mcp.atlassian.com/v1/sse" }),
+  ).toContain("'--transport' 'sse-only'");
+  expect(launchLine({ url: "http://127.0.0.1:3845/mcp" })).toContain(
+    "'--allow-http'",
+  );
+  expect(
+    launchLine({
+      url: "https://a.com/mcp",
+      headers: { Authorization: "Bearer x" },
+    }),
+  ).toContain("'--header' 'Authorization:Bearer x'");
+});
+
+it("refuses what it cannot start safely", () => {
+  expect(launchLine({ url: "http://evil.example.com/mcp" })).toBeNull();
+  expect(launchLine({})).toBeNull();
+  expect(parseEntries('{"a":{"command":"x"},"b":5}')).toEqual({
+    a: { command: "x" },
+  });
+});

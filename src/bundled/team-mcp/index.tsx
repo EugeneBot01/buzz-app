@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import type { PluginModule } from "../../plugins/api";
-import type { Host } from "../../features/host/service";
 import { Button } from "../../shared/design-system/ui/Button";
 import {
   PRESETS,
@@ -13,39 +12,10 @@ import {
   type AddSpec,
   type McpServer,
 } from "../../team/mcp/servers";
-import script from "./mcp.sh?raw";
+import { McpPicker } from "./Picker";
+import { makeRun, type Run } from "./run";
 
-export const inject = ["settingsCards", "host"];
-
-const TIMEOUT_MS = 90_000;
-
-type Run = (args: readonly string[]) => Promise<{
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}>;
-
-function makeRun(host: Host): Run | undefined {
-  const spawn = host.spawn?.bind(host);
-  if (!spawn) return undefined;
-  return async (args) => {
-    let stdout = "";
-    let stderr = "";
-    const child = await spawn("mcp-sh", {
-      args: [script, "mcp.sh", ...args],
-      onStdout: (data) => {
-        stdout += data;
-      },
-      onStderr: (data) => {
-        stderr += data;
-      },
-    });
-    const timer = setTimeout(() => void child.kill(), TIMEOUT_MS);
-    const code = await child.exited;
-    clearTimeout(timer);
-    return { code, stdout, stderr };
-  };
-}
+export const inject = ["settingsCards", "host", "conversation"];
 
 const failureText = (code: number | null, stderr: string) =>
   code === 127
@@ -305,4 +275,10 @@ export const apply: PluginModule["apply"] = (ctx) => {
     title: "MCP connections",
     component: () => <McpSettings run={run} />,
   });
+  if (run)
+    ctx.conversation.registerTool({
+      id: "mcp-tools",
+      title: "MCP tools",
+      component: (props) => <McpPicker {...props} host={ctx.host} />,
+    });
 };

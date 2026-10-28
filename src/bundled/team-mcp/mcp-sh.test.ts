@@ -92,6 +92,16 @@ it("refuses bad names, addresses and transports before running anything", async 
   await expect(readFile(log, "utf8")).rejects.toThrow();
 });
 
+it("serves a command line with Homebrew and ~/.local/bin on PATH", async () => {
+  const { dir } = await home(false);
+  expect((await bash(dir, "serve", "echo hello")).stdout.trim()).toBe("hello");
+  const path = (await bash(dir, "serve", "echo $PATH")).stdout.trim();
+  expect(path.startsWith("/opt/homebrew/bin:/usr/local/bin:")).toBe(true);
+  expect(path).toContain(`${dir}/.local/bin`);
+  const error = await failure(bash(dir, "serve", ""));
+  expect(error?.code).toBe(2);
+});
+
 it("says so when Claude is not installed", async () => {
   const { dir } = await home(false);
   const error = await failure(bash(dir, "remove", "notion"));

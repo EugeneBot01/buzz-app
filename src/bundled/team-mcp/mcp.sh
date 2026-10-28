@@ -6,6 +6,7 @@
 #   add-remote NAME http|sse URL      connects a remote server
 #   add-command NAME "COMMAND LINE"   connects a server started by a command
 #   remove NAME                       disconnects a server
+#   serve "COMMAND LINE"               runs an MCP server for Buzz to talk to
 #
 # Values arrive as arguments and are never spliced into a shell string, except
 # a command line, which is run by `sh -c` when Claude starts that server.
@@ -78,6 +79,14 @@ remove)
   valid_name "$name" || { echo "Invalid name" >&2; exit 2; }
   claude=$(find_claude) || { echo "Claude is not installed" >&2; exit 127; }
   exec "$claude" mcp remove -s user "$name"
+  ;;
+serve)
+  line="${1:-}"
+  [ -n "$line" ] || { echo "Missing command" >&2; exit 2; }
+  # A desktop app starts with a short PATH; add where npx and friends live.
+  PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+  export PATH
+  exec /bin/sh -c "$line"
   ;;
 *)
   echo "Unknown step: $step" >&2
