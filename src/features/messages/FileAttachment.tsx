@@ -1,5 +1,8 @@
 import {
   ArrowUpRightIcon,
+  ArrowsClockwiseIcon,
+  CheckIcon,
+  CircleNotchIcon,
   DownloadIcon,
 } from "../../shared/design-system/icons/index";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -11,8 +14,8 @@ import {
   safeOpenUrl,
 } from "./attachment-source";
 import styles from "./Messages.module.css";
-import { downloadNativeMedia } from "./native-download";
-import { useState } from "react";
+import { useNativeDownload, type DownloadState } from "./use-native-download";
+import type { ReactNode } from "react";
 import { OpenFileButton } from "../../team/files/OpenButton";
 
 export function formatFileSize(size: number): string {
@@ -41,7 +44,6 @@ export function FileAttachment({
   source: string | undefined;
   onOpenLink(url: string): boolean;
 }) {
-  const [downloadError, setDownloadError] = useState(false);
   const displayName = attachment.name ?? mimeLabel(attachment.mime) ?? "File";
   const nativeSource = source ? isNativeMediaSource(source) : false;
   const proxySource = source ? isProxySource(source) || nativeSource : false;
@@ -54,7 +56,7 @@ export function FileAttachment({
       />
     );
 
-  const content = (
+  const content = (state: DownloadState = "idle") => (
     <>
       <span className={fileIconStyles.slot}>
         <FileTypeIcon name={attachment.name} mime={attachment.mime} />
@@ -62,16 +64,32 @@ export function FileAttachment({
       <span className={styles.fileAttachmentBody}>
         <span className={styles.fileAttachmentName}>{displayName}</span>
         <span className={styles.fileAttachmentMeta}>
-          {source
-            ? attachment.size
-              ? formatFileSize(attachment.size)
-              : proxySource
-                ? "Download file"
-                : "Open file"
-            : "File unavailable"}
+          {state === "pending"
+            ? "Downloading…"
+            : state === "saved"
+              ? "Saved to Downloads"
+              : state === "failed"
+                ? "Couldn’t download · Retry"
+                : source
+                  ? attachment.size
+                    ? formatFileSize(attachment.size)
+                    : proxySource
+                      ? "Download file"
+                      : "Open file"
+                  : "File unavailable"}
         </span>
       </span>
-      {proxySource ? (
+      {state === "pending" ? (
+        <CircleNotchIcon
+          size={20}
+          className="motion-safe:animate-spin"
+          aria-hidden="true"
+        />
+      ) : state === "saved" ? (
+        <CheckIcon size={20} aria-hidden="true" />
+      ) : state === "failed" ? (
+        <ArrowsClockwiseIcon size={20} aria-hidden="true" />
+      ) : proxySource ? (
         <DownloadIcon size={20} aria-hidden="true" />
       ) : (
         <ArrowUpRightIcon size={20} aria-hidden="true" />
@@ -99,28 +117,21 @@ export function FileAttachment({
           if (onOpenLink(source)) event.preventDefault();
         }}
       >
-        {content}
+        {content()}
       </a>
     );
   if (nativeSource)
     return (
       <>
-        <button
-          type="button"
-          className={styles.fileAttachment}
-          aria-label={`Download ${displayName}`}
-          title={displayName}
-          onClick={() => {
-            setDownloadError(false);
-            void downloadNativeMedia(source, attachment.name ?? "").catch(() =>
-              setDownloadError(true),
-            );
-          }}
+        <NativeFileDownload
+          key={JSON.stringify([source, attachment.name])}
+          source={source}
+          name={attachment.name ?? ""}
+          displayName={displayName}
         >
           {content}
-        </button>
+        </NativeFileDownload>
         <OpenFileButton source={source} name={attachment.name} />
-        {downloadError && <span role="alert">Download failed</span>}
       </>
     );
   return (
@@ -131,8 +142,49 @@ export function FileAttachment({
       aria-label={`Download ${displayName}`}
       title={displayName}
     >
-      {content}
+      {content()}
     </a>
+  );
+}
+
+/** A source/name change mounts a fresh download lifetime, retiring old results. */
+function NativeFileDownload({
+  source,
+  name,
+  displayName,
+  children,
+}: {
+  source: string;
+  name: string;
+  displayName: string;
+  children(state: DownloadState): ReactNode;
+}) {
+  const { state, download } = useNativeDownload(source, name);
+  const announcement =
+    state === "pending"
+      ? `Downloading ${displayName}`
+      : state === "saved"
+        ? `Saved ${displayName} to Downloads`
+        : state === "failed"
+          ? `Couldn’t download ${displayName}. Try again.`
+          : "";
+  return (
+    <>
+      <button
+        type="button"
+        className={styles.fileAttachment}
+        aria-label={`${state === "failed" ? "Retry download" : "Download"} ${displayName}`}
+        aria-disabled={state === "pending"}
+        aria-busy={state === "pending"}
+        title={displayName}
+        onClick={() => void download()}
+      >
+        {children(state)}
+      </button>
+      <span className="sr-only" role={state === "failed" ? "alert" : "status"}>
+        {announcement}
+      </span>
+    </>
   );
 }
 

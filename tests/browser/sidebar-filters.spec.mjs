@@ -78,7 +78,7 @@ test("section filters save activity windows and recover hidden channels", async 
     const trigger = page.getByRole("menuitem", { name: "Filter", exact: true });
     await trigger.hover();
     await expect(
-      page.getByRole("menu", { name: "Filter", exact: true }),
+      page.getByRole("menu", { name: "Filter Channels", exact: true }),
     ).toBeVisible();
   };
   const active = async () => {
@@ -354,8 +354,9 @@ test("failed activity reads explain the filter and recover on Retry", async ({
     await gate;
     app.report.sidebarActivityFailures ??= [];
     app.report.sidebarActivityFailures.push(route.request().url());
+    // A denial: a transient failure would retry quietly first.
     await route.fulfill({
-      status: 502,
+      status: 403,
       contentType: "application/json",
       body: JSON.stringify({ error: "Activity unavailable" }),
     });

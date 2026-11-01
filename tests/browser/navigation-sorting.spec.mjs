@@ -40,7 +40,7 @@ test("section sort applies immediately, rolls back on failure, and persists retr
       .focus();
     await page.keyboard.press("ArrowRight");
     await expect(
-      page.getByRole("menu", { name: "Sort", exact: true }),
+      page.getByRole("menu", { name: "Sort Channels", exact: true }),
     ).toBeVisible();
   }
   await page.screenshot({
@@ -48,7 +48,7 @@ test("section sort applies immediately, rolls back on failure, and persists retr
     clip: { x: 0, y: 0, width: 540, height: 460 },
   });
   await openSort();
-  const menu = page.getByRole("menu", { name: "Sort", exact: true });
+  const menu = page.getByRole("menu", { name: "Sort Channels", exact: true });
   await expect(
     menu.getByRole("menuitemradio", { name: "A–Z" }),
   ).toHaveAttribute("aria-checked", "true");
@@ -194,7 +194,7 @@ test("section sort applies immediately, rolls back on failure, and persists retr
     .getByRole("menuitem", { name: "Sort", exact: true })
     .focus();
   await page.keyboard.press("ArrowRight");
-  const workMenu = page.getByRole("menu", { name: "Sort", exact: true });
+  const workMenu = page.getByRole("menu", { name: "Sort Work", exact: true });
   await expect(
     workMenu.getByRole("menuitemradio", { name: "A–Z" }),
   ).toHaveAttribute("aria-checked", "true");
@@ -231,7 +231,7 @@ test("section sort applies immediately, rolls back on failure, and persists retr
     .focus();
   await page.keyboard.press("ArrowRight");
   await expect(
-    menu.getByRole("menuitemradio", { name: "Recent" }),
+    workMenu.getByRole("menuitemradio", { name: "Recent" }),
   ).toHaveAttribute("aria-checked", "true");
   expect(app.report.unexpected).toEqual([]);
 });
@@ -253,8 +253,9 @@ test("retires Recent failures on A–Z and recovers selected ordering on retry",
       await failureGate;
       app.report.sidebarActivityFailures ??= [];
       app.report.sidebarActivityFailures.push(route.request().url());
+      // A denial: a transient failure would retry quietly first.
       await route.fulfill({
-        status: 502,
+        status: 403,
         contentType: "application/json",
         body: JSON.stringify({ error: "activity read failed" }),
       });
@@ -269,7 +270,7 @@ test("retires Recent failures on A–Z and recovers selected ordering on retry",
     rows.evaluateAll((elements) => elements.map((el) => el.dataset.channelId));
   await expect(rows.first()).toBeVisible();
   const alphaOrder = await order();
-  const menu = page.getByRole("menu", { name: "Sort", exact: true });
+  const menu = page.getByRole("menu", { name: "Sort Channels", exact: true });
   async function openSort() {
     await channels
       .getByRole("button", { name: "More actions for Channels" })
@@ -485,8 +486,10 @@ test.describe("sorting with lifecycle visibility", () => {
     await expect.poll(ids).toEqual(["willow", "maple", "cedar"]);
     // Archive removes the sidebar row, not the selected conversation.
     await expect(page).toHaveURL(conversationUrl);
-    await expect(composer).toBeVisible();
-    await expect(composer).toBeDisabled();
+    await expect(
+      page.getByRole("region", { name: "Archived channel", exact: true }),
+    ).toHaveText("This channel is archived");
+    await expect(composer).toHaveCount(0);
 
     const dm = sidebar.locator(`[data-channel-id="${hiddenId}"]`);
     await dm.click({ button: "right" });
@@ -503,8 +506,10 @@ test.describe("sorting with lifecycle visibility", () => {
     await page.reload();
     await expect.poll(ids).toEqual(["willow", "maple", "cedar"]);
     await expect(page).toHaveURL(conversationUrl);
-    await expect(composer).toBeVisible();
-    await expect(composer).toBeDisabled();
+    await expect(
+      page.getByRole("region", { name: "Archived channel", exact: true }),
+    ).toHaveText("This channel is archived");
+    await expect(composer).toHaveCount(0);
     // Opening Sort proves saved preference decoding and sidebar startup settled.
     await channels
       .getByRole("button", { name: "More actions for Channels" })

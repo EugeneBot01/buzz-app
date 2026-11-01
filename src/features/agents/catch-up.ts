@@ -5,6 +5,7 @@
 import type { Agent } from "./service";
 import type { EventData, ReadFilter } from "../relay/events";
 import type { AgentStore } from "./store";
+import { AGENT_KEY, type AgentKey } from "./membership";
 
 export const CATCH_UP_KEY = "buzz.agents.catch-up.v1";
 /** Events in one read, as Janet's catch-up pages are. */
@@ -18,12 +19,15 @@ export const CATCH_UP_BYTES = 8 * 1024 * 1024;
  * delivered or skipped. While a window (`through`, `upper`] is being
  * delivered, `after` is the last event delivered of it, in delivery order:
  * oldest first, ties by id. A restart goes on after it, up to `upper`.
- * `heard` are later ones already heard live, which catch-up skips too. */
+ * `heard` are later ones already heard live, which catch-up skips too.
+ * `hidden` marks one moved while no plugin showed Attention: once one does,
+ * even after a restart, it starts from then. */
 export type Checkpoint = Readonly<{
   through: number;
   upper?: number;
   after?: Readonly<{ created_at: number; id: string }>;
   heard?: readonly Readonly<{ created_at: number; id: string }>[];
+  hidden?: true;
 }>;
 /** Live events each stream keeps as heard past its checkpoint. A tick moves
  * the checkpoint past them every few seconds while the app listens; past
@@ -47,9 +51,10 @@ const ID = /^[0-9a-f]{64}$/;
 export const oldestFirst = (a: Position, b: Position) =>
   a.created_at - b.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-/** The key of a watch's stream in one channel, or in every channel. */
-export const streamKey = (pubkey: string, slug: string, channel?: string) =>
-  JSON.stringify([pubkey, slug, channel ?? null]);
+/** The key of a membership's watch's stream in one channel, or in every
+ * channel. */
+export const streamKey = (agent: AgentKey, slug: string, channel?: string) =>
+  JSON.stringify([agent, slug, channel ?? null]);
 /** Whether `event` of a stream is past its checkpoint: not delivered or
  * skipped yet. */
 export const undelivered = (checkpoint: Checkpoint, event: Position) =>
@@ -57,17 +62,19 @@ export const undelivered = (checkpoint: Checkpoint, event: Position) =>
   (!checkpoint.after || oldestFirst(event, checkpoint.after) > 0) &&
   !checkpoint.heard?.some(({ id }) => id === event.id);
 
-/** Each agent's catch-up progress has its own key, so programs that run
- * different agents and share this storage never write over each other's
- * progress. */
+/** Each agent membership's catch-up progress has its own key, so programs
+ * that run different agents and share this storage never write over each
+ * other's progress. */
 export const CATCH_UP_PREFIX = "buzz.agents.catch-up.v1:";
-export const catchUpKey = (pubkey: string) => `${CATCH_UP_PREFIX}${pubkey}`;
+export const catchUpKey = (agent: AgentKey) => `${CATCH_UP_PREFIX}${agent}`;
 
-/** The agent a stream key belongs to, or undefined for a malformed key. */
-function ownerOf(key: string): string | undefined {
+/** The membership a stream key belongs to, or undefined for a malformed key. */
+function ownerOf(key: string): AgentKey | undefined {
   try {
-    const [pubkey] = JSON.parse(key) as unknown[];
-    return typeof pubkey === "string" && ID.test(pubkey) ? pubkey : undefined;
+    const [agent] = JSON.parse(key) as unknown[];
+    return typeof agent === "string" && AGENT_KEY.test(agent)
+      ? agent
+      : undefined;
   } catch {
     return undefined;
   }
@@ -75,7 +82,7 @@ function ownerOf(key: string): string | undefined {
 
 /** A valid checkpoint, with its fields in one order; undefined otherwise. */
 function checkpointOf(value: unknown): Checkpoint | undefined {
-  const { through, upper, after, heard } = (value ?? {}) as Checkpoint;
+  const { through, upper, after, heard, hidden } = (value ?? {}) as Checkpoint;
   if (
     !time(through) ||
     (upper !== undefined && !(time(upper) && upper > through))
@@ -104,12 +111,13 @@ function checkpointOf(value: unknown): Checkpoint | undefined {
     ...(upper !== undefined ? { upper } : {}),
     ...(after ? { after: { created_at: after.created_at, id: after.id } } : {}),
     ...(live.length ? { heard: live } : {}),
+    ...(hidden === true ? { hidden } : {}),
   };
 }
 
-/** The valid checkpoints of one stored value, of `pubkey`'s streams only when
+/** The valid checkpoints of one stored value, of `agent`'s streams only when
  * it is given. */
-function parseStreams(text: string | null, pubkey?: string) {
+function parseStreams(text: string | null, agent?: string) {
   let stored: unknown;
   try {
     stored = JSON.parse(text ?? "null");
@@ -123,7 +131,7 @@ function parseStreams(text: string | null, pubkey?: string) {
   if (!streams || typeof streams !== "object") return {};
   const checkpoints: Record<string, Checkpoint> = {};
   for (const [key, value] of Object.entries(streams)) {
-    if (pubkey !== undefined && ownerOf(key) !== pubkey) continue;
+    if (agent !== undefined && ownerOf(key) !== agent) continue;
     const checkpoint = checkpointOf(value);
     if (checkpoint) checkpoints[key] = checkpoint;
   }
@@ -147,14 +155,14 @@ export function readCheckpoints(storage: AgentStore): Checkpoints {
   const own: Record<string, Checkpoints> = {};
   for (const key of storage.keys()) {
     if (!key.startsWith(CATCH_UP_PREFIX)) continue;
-    const pubkey = key.slice(CATCH_UP_PREFIX.length);
-    own[pubkey] = parseStreams(storage.get(key), pubkey);
+    const agent = key.slice(CATCH_UP_PREFIX.length);
+    own[agent] = parseStreams(storage.get(key), agent);
   }
   return Object.assign(
     Object.fromEntries(
       Object.entries(legacy).filter(([key]) => {
-        const pubkey = ownerOf(key);
-        return pubkey !== undefined && !own[pubkey];
+        const agent = ownerOf(key);
+        return agent !== undefined && !own[agent];
       }),
     ),
     ...Object.values(own),
@@ -165,12 +173,12 @@ export function readCheckpoints(storage: AgentStore): Checkpoints {
 function byAgent(checkpoints: Checkpoints) {
   const agents = new Map<string, Record<string, Checkpoint>>();
   for (const [key, value] of Object.entries(checkpoints)) {
-    const pubkey = ownerOf(key);
+    const agent = ownerOf(key);
     const checkpoint = checkpointOf(value);
-    if (pubkey === undefined || !checkpoint) continue;
-    const streams = agents.get(pubkey) ?? {};
+    if (agent === undefined || !checkpoint) continue;
+    const streams = agents.get(agent) ?? {};
     streams[key] = checkpoint;
-    agents.set(pubkey, streams);
+    agents.set(agent, streams);
   }
   return agents;
 }
@@ -188,12 +196,12 @@ export async function writeCheckpoints(
   const next = byAgent(checkpoints);
   const last = byAgent(saved);
   const writes: Promise<void>[] = [];
-  for (const pubkey of new Set([...next.keys(), ...last.keys()])) {
-    const streams = next.get(pubkey);
-    const before = last.get(pubkey);
+  for (const agent of new Set([...next.keys(), ...last.keys()])) {
+    const streams = next.get(agent);
+    const before = last.get(agent);
     const text = streams && serialize(streams);
     if (text === (before && serialize(before))) continue;
-    writes.push(storage.set(catchUpKey(pubkey), text ?? null));
+    writes.push(storage.set(catchUpKey(agent), text ?? null));
   }
   await Promise.all(writes);
 }
@@ -208,8 +216,8 @@ export async function splitLegacyCheckpoints(storage: AgentStore) {
   const agents = byAgent(readCheckpoints(storage));
   try {
     await Promise.all(
-      [...agents].map(([pubkey, streams]) =>
-        storage.add(catchUpKey(pubkey), serialize(streams)),
+      [...agents].map(([agent, streams]) =>
+        storage.add(catchUpKey(agent), serialize(streams)),
       ),
     );
     await storage.set(CATCH_UP_KEY, null);
@@ -223,7 +231,7 @@ export async function splitLegacyCheckpoints(storage: AgentStore) {
 /** The agent's streams: one for each channel of each event watch whose kinds
  * are exactly [9], enabled or not. Other kinds have reconnect replay only, as
  * in Janet. */
-export function streamsOf(agent: Pick<Agent, "pubkey" | "attention">) {
+export function streamsOf(agent: Pick<Agent, "key" | "attention">) {
   const streams: Stream[] = [];
   for (const { slug, value } of Object.values(agent.attention)) {
     if (value.type !== "event") continue;
@@ -232,7 +240,7 @@ export function streamsOf(agent: Pick<Agent, "pubkey" | "attention">) {
       ? [undefined]
       : value.channels)
       streams.push({
-        key: streamKey(agent.pubkey, slug, channel),
+        key: streamKey(agent.key, slug, channel),
         slug,
         ...(channel ? { channel } : {}),
         since: value.since,

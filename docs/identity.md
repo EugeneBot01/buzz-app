@@ -10,8 +10,8 @@ adopting its public identity. It never generates a replacement after an import,
 read or write failure. Denied/unavailable/corrupt storage is not first run.
 
 One native owner keeps the key in memory after successful restore. The new
-create-only secure-storage item is service `dev.local.buzz.foundation.identity` in release
-builds, or `dev.local.buzz.foundation.identity.debug` with Rust debug assertions,
+create-only secure-storage item is service `xyz.block.buzz.desktop.identity` in release
+builds, or `xyz.block.buzz.desktop.identity.debug` with Rust debug assertions,
 account `human`. Debug worktrees share the debug item, not the release identity;
 ports and frontend dev mode do not isolate it. macOS keeps its existing default
 file Keychain/security-framework implementation. Windows uses Credential Manager;
@@ -46,11 +46,46 @@ old Buzz service/account and copy the selected agent key into this app's separat
 agent namespace; it never writes the old blob.
 No user key belongs in release configuration.
 
+## Local restore helper on macOS
+
+macOS builds with Rust debug assertions accept `BUZZ_DEV_CREDENTIAL_HELPER` as an
+absolute executable path. When set, only `read_human()` uses this helper.
+The helper replaces both the normal read and the copy from the previous service.
+Its setup must select the intended saved identity, including its service name.
+Exit 10 declares that identity absent; it does not start a Keychain migration.
+Release builds ignore it. With no setting, the normal Keychain read is unchanged.
+Import, creation, deletion, agent keys, and session records keep their own owners.
+
+The helper receives a fresh Unix socket as stdout and no stdin. It must return
+exactly 63 bytes of nsec text with no newline, then close stdout and exit zero.
+The native identity owner still validates the nsec checksum and scalar. Exit 10
+means absent, 11 means denied, and 12 means corrupt. Other failures stop restore.
+Only absence permits identity creation. The app clears the returned buffer when
+its owner releases it. It does not log helper output or stderr.
+
+Normal reads have a five-second limit. For first approval only, set
+`BUZZ_DEV_CREDENTIAL_HELPER_AUTHORIZE=1`. This passes `--authorize` and allows
+two minutes. Remove that setting after approval. A failed helper never triggers
+a second credential read.
+
+The helper is trusted local code. Keep its setup and signing keys outside this
+repository. It must read only the exact debug human item in the default Keychain
+and disable Keychain dialogs during normal reads. Before it sends a key, it must
+verify the socket peer's audit token, parent PID, and live code signature against
+the configured app identifier and certificate. A PID check alone is insufficient.
+Reject pipes and sockets created before exec. Sign both processes with hardened
+runtime and without entitlements that allow code injection. These access controls
+need native tests; the app hook does not supply them.
+
+The certificate check trusts access to its signing key. Another program that can
+use that key and app identifier can satisfy the same requirement. Approval to use
+the signing key across rebuilds therefore extends trust to those programs.
+
 ## Automatic backup and optional recovery
 
 Desktop builds configured with `BUZZ_NSEC_BACKUP_SERVICE_URL` and
 `BUZZ_NSEC_BACKUP_NAMESPACE` back up a local identity only after an explicit saved
-automatic-backup choice, Builderlab or Hosted communities login, and matching key
+automatic-backup choice, Builderlab login, and matching key
 binding. Unset, self-managed, corrupt or mismatched consent prevents all backup
 requests, including retries. These are paired
 native build-process inputs; unset leaves the feature disabled. The service URL
@@ -67,12 +102,23 @@ events retry them, including a coalesced follow-up when an event arrives during 
 active pass. Upload success requires a matching stored receipt. Backup
 failure never replaces or deletes the local identity.
 
+The main WebView can observe the uploader through `identity.backup`, which
+registers on first read and stays out of identity snapshots. Its status says
+whether Builderlab backup can run in this build and whether the latest pass is
+idle, running, complete, waiting for consent, a session or a key binding, or
+failed with a named kind; no service response body reaches the renderer. A login
+handoff or retry resolves to the number of the pass it starts, or to none, so a
+caller can wait for that pass's own outcome. A pass superseded by a key install
+reports nothing; reloading the window mid-pass reports idle.
+
 When secure storage confirms absence, native recovery commands support explicit
 browser sign-in. The session and recovered keys remain native; the renderer sees
 only validated public identities and attempt-scoped handles. Recovery prefers the
 account's current associated identity. A previous identity requires explicit
 selection and does not change the account association. Failed mapping requests,
-unavailable endpoints, failed backups and an empty successful result remain distinct.
+unavailable endpoints, an account refused recovery (outside a private
+organization, or without Buzz access), failed backups and an empty successful
+result remain distinct.
 Installation uses the existing create-only secure store; cancel, reload, signout
 or a competing create/import prevents stale installation.
 Remembering recovered completion is best effort; retry-file failure does not block
@@ -131,7 +177,7 @@ this app's data, local data, WebView storage, caches and plugin storage. It cann
 reach the clipboard, exported keys or relay data, and the dialog says so. Sign out
 is unavailable with the development broker (`BUZZ_DEV_VIEWER`). Development
 builds can sign out but not wipe: they have their own human key, but share agent
-keys and plugin storage with the installed app, so the native command refuses
+keys with the installed app, so the native command refuses
 wipe. The dialog asks the native side (`sign_out_wipe_refusal`) whether wipe is
 available and, when it isn't, disables wipe up front with the reason; this holds
 for any Rust debug build, including a debug bundle with a production frontend. A development-build sign-out signs out every
@@ -144,10 +190,76 @@ shared in the user data folder (created first if a first launch finds none)
 before it looks for a pending sign-out:
 
 - a **key lock** named for its human key store (`.<service>.instance.lock`), shared
-  by every copy using that key whatever its identifier; and
+  by every copy using that key whatever its identifier. Like the sign-out marker,
+  record and backup folder, it keeps the store's service from before 1.0
+  (`dev.local.buzz.foundation.identity`), so files older builds wrote are still
+  found; and
 - the **all-Buzz lock** (`.dev.local.buzz.foundation.instance.lock`), named for
   the storage all builds share (the default plugin folder and the agent key
-  service), not for the app identifier.
+  service), not for the app identifier. It keeps the identifier Buzz used before
+  1.0, so those builds and later ones exclude each other.
+
+Before 1.0, Buzz's identifier was `dev.local.buzz.foundation`. Before taking these
+locks, a launch as `xyz.block.buzz.desktop` renames what the old identifier names:
+app data (with plugin storage), config, local data, caches, macOS WebKit storage,
+their sign-out trash and a pending sign-out marker, so the update keeps
+everything and finishes a sign-out the old build committed. It takes the all-Buzz
+lock alone and waits for every agent ownership lock, so it never moves storage
+another copy or a stopping agent still uses. If any legacy path sits beside its
+new-identifier counterpart, after a rollback for instance, the launch moves
+nothing, finishes no pending sign-out, and exits naming every such pair; neither copy
+is safely the one to keep, and an erase would miss the legacy one. A failure exits
+with a native alert, and the next launch moves what is left. Development launches
+(`just desktop`, `just desktop-bundle`) use `xyz.block.buzz.desktop.dev`, so they
+keep their own app data and plugin storage and never take or block the installed
+app's. The first one copies the installed app's app data (without the release-only
+`archive`), config, local data and macOS WebKit storage, each from
+`xyz.block.buzz.desktop`, else `dev.local.buzz.foundation`, under the same locks,
+so the installed app must be closed once, and takes a pending development
+sign-out marker. It refuses while the installed app has a sign-out pending, so it
+never copies storage being erased. A linked folder copies what it links to; links
+inside are left out, so the copy shares nothing with the installed app's storage,
+which stays in place. Copied folders keep who else may read them, but stay
+writable by their owner. An interrupted copy finishes at the next launch.
+
+Keys were saved under `dev.local.buzz.foundation.*` services before 1.0; they
+now live under `xyz.block.buzz.desktop.*`: the human key (`.identity[.debug]`),
+the agent keys (`.agents`, shared by release and development) and the TypeSafe
+key (`.jev-key[.debug]`). A read looks under the new name first. Only when the
+key is absent there does it look under the old name and copy what it finds,
+create-only, then return the key saved under the new name. The copy holds the
+old item's interprocess lock, which deleting the old item takes too, so a delete
+in another Buzz can't land between its read and write. A key already there
+stays, even if it differs. On macOS an agent key is looked for in the new
+bundle, then its own new item, then the old bundle, then its own old item, all
+under the bundle lock older builds take too. The old items stay, so an older
+build still finds them. Any failure is an error for that key only, never
+absence. Writes touch only the new names. Every deletion (Sign out, deleting
+an agent, an erase, clearing the TypeSafe key) removes the old item before the
+new one, and on macOS the agent's entry from the old bundle, so a read never
+copies back a deleted key. On macOS each deletion reads again to confirm the
+item is gone. Deleting an agent fails, keeping every copy, while the old bundle
+is malformed.
+
+Older builds sign out by deleting the human key under the old name only. A
+record in the user data folder (`.<service>.sign-outs-seen`, next to the
+finished record) keeps the count of finished sign-outs the last launch saw.
+After any pending sign-out finishes, a launch that finds the count grew deletes
+the human key under the new name too; the first launch only starts the count.
+It decides holding the record's lock file alone, so a copy launching at the
+same time sees the count this one recorded and never deletes a key saved since.
+If the deletion fails, it records nothing and exits. The count is replaced by
+a synced rename, and on macOS and Linux every launch syncs its folder before
+any key is saved, so a power loss can't bring back a lower count and delete a
+newer key. Windows has no folder sync, as for the app's other atomic writes: a
+power loss right after a launch recorded a new count can lose the rename, and
+the next launch then deletes a key saved in that window. Older builds record a
+finished sign-out with an unsynced append on every OS, so a power loss then can
+keep the deletion but lose the count, and the signed-out key under the new name
+stays. Older builds' other
+deletions aren't counted: after an older build erases agents or clears the
+TypeSafe key, their copies under the new names stay. On macOS, Keychain may ask once to
+allow the renamed app to use each saved item.
 
 A sign-out needs its key lock alone, so every other copy using that key must be
 closed. A wipe also needs the all-Buzz lock alone, so every other Buzz must be
@@ -165,7 +277,8 @@ process finished a sign-out of its key while it let go. Retaking them
 shared is bounded too; on timeout, or if a lock can't be let go, Buzz exits the
 same way. These locks
 coordinate running Buzz 1.0 app copies only: `buzzodz plugin sign` reads the
-human key without them, and older Buzz versions don't take them, so close those
+human key without them, under the new name else the old, and never copies it,
+so Keychain items stay the app's; older Buzz versions don't take them, so close those
 before signing out. The native
 `sign_out` command deletes nothing: it admits one sign-out per instance, refuses
 unless it can hold the locks it needs alone, writes a marker beside (not inside)
@@ -235,8 +348,10 @@ too: one that can't look fails the attempt, keeping the marker. If renaming or t
 the marker is kept and Buzz shows a native error and exits without opening a
 window, so nothing recreates wiped storage and the next launch retries. Without
 wipe, local data stays: it is already scoped by public key, so signing back in
-with the same key finds it. Builderlab and hosted-community logins live only in
-memory and end with the restart. Kept agents start only while the signed-in key
+with the same key finds it. Native federated sessions are removed by the same
+sign-out owner across indexed profiles and configurations. Without FI, Builderlab and
+hosted-community logins live only in memory and end with the restart; an FI build signs
+them in through the native FI session instead, which restores after it. Kept agents start only while the signed-in key
 matches the owner in their saved attestation, checked before their key is read.
 
 ## Automatic backup consent hooks
@@ -265,6 +380,126 @@ app copies. Saving a choice reports busy while such a lease is held. Disabling
 automatic backup governs future uploads and does not delete existing backups.
 The consent hooks are the base of the draft stack:
 #1137 consent hooks → #1106 gated uploader → #1107 recovery → #1101 restore UI.
+
+## Native federated session module
+
+Federated identity ([NIP-FI](https://github.com/block/buzz/blob/main/docs/nips/NIP-FI.md),
+[NIP-FA](https://github.com/block/buzz/blob/main/docs/nips/NIP-FA.md)) adds a native
+owner separate from the human Nostr key. Its deployment descriptor is documented
+in [configuration](configuration.md#federated-identity-build-input).
+The native commands return status, authority, revision, optional email, and fixed
+failure codes. Session tokens and assertion headers are native-only.
+
+Sign-in uses the existing native loopback callback owner with NIP-FA `return_to`
+and an S256 handoff challenge, exchanges the code natively, and verifies the
+fixed session expiry before persistence. Restore checks the stored credential
+against `/v1/session`; failed reads and unrecognized refusals do not authorize
+replacement. Local expiry, cancellation, and sign-out fence stale work.
+
+FI records use the OS secure-store service
+`xyz.block.buzz.desktop.federated-session` (with `.debug` for Rust debug
+builds), keyed by profile and deployment fingerprint. Account indices and
+revision-specific refusal markers contain no credential and live outside wiped
+Buzz data. Failed removal of a known record leaves refusal durable before any
+secure-store access, so that revision cannot restore until cleanup succeeds.
+Sign out of Buzz removes indexed FI records across profiles/configurations in
+its debug/release namespace before deleting the human key or opening a WebView.
+
+The app's `federatedIdentity` service exposes this public state to the shared
+sign-in UI. Session record revision survives restore and scopes account caches
+without inventing a NIP-FA subject.
+
+NIP-11 discovery from the exact relay carries no FI credential. Valid absent or
+false FI flags retain ordinary Nostr transport. A true flag requires the supported
+client-attached/offline-jwt descriptor and compiled authority mapping. Assertions
+are acquired with native same-key NIP-98 proof and checked for exact audience,
+key, and lifetime. Native HTTP, media, repository Git reads/imports, and socket
+upgrades attach the assertion beside their existing possession proof. Protected
+socket workers stop by assertion expiry; the existing live owner reconnects and
+performs fresh NIP-42. Retirement fences protected reads and results.
+
+### Local agent federated credentials
+
+Each local agent enrolls using the signed-in owner's session and its own NIP-98
+proof. The native agent-token owner stores the resulting grant beside session
+records in the same OS secure-store service, under a separate key scoped to the
+profile, deployment, owner public key and agent public key. Neither grants nor
+assertion headers cross IPC. Enrollment validates the returned owner and issuer;
+assertions are checked for the agent key, issuer, relay audience and lifetime.
+The relay remains responsible for signature and authorization verification.
+
+An enrolled grant survives ordinary owner-session expiry and same-account
+restoration. Organization sign-out, another account or agent deletion retires it.
+Account installation records required retirement before persisting the new session;
+interrupted cleanup resumes before grants are admitted. Enrollment also rechecks
+its session revision, so a caller paused before reservation cannot install a
+credential from a retired session.
+
+A refused grant permits one replacement enrollment while the owner is signed in.
+Replacement attempts preserve that budget across transient errors. Before enrollment
+or replacement issuance, the same secure-store record reserves a token-free stop
+scoped to the persisted session revision. Terminal refusal, restart or interrupted
+issuance cannot silently start another enrollment. A new sign-in revision or
+explicit agent deletion permits a reset; ordinary restore of the same session does
+not. Failure to persist the reservation prevents dispatch. A known transient
+outcome releases it only if that storage write succeeds.
+
+The `/v1/nip-fi/agent-grant` and `/v1/nip-fi/agent-assertion` routes and
+`Nostr-Agent-Proof` header are this configured adapter's wire contract, not
+standard endpoints defined by NIP-FI/NIP-FA. NIP-FI defines the
+`nip-fi-agent+jwt` assertion class and owner checks; that does not establish
+interoperability with another adapter's enrollment endpoints.
+
+In an FI build, Builderlab's remote-agent, hosted-community, known-community,
+Apps viewer and backup calls go through the native FI session. The renderer
+names only the public session revision. For API calls, native checks the
+plugin's authority/operation grant, enabled artifact revision, live
+registration and that revision; the Apps viewer exchange and backup check only
+that the revision is current. Each sends the adapter session as
+`Authorization: Bearer` to the identity origin only. A 401 fails that call
+without ending the session; native then checks the adapter's `GET /v1/session`
+once and ends the session only if the adapter refuses it there. Builderlab's
+Settings card has no sign-out of its own in an FI build: it links to Identity →
+Organization sign-in, which ends the shared session. Builderlab
+Apps' agent tools still need the legacy login and are absent in FI builds.
+
+### Sign in at launch
+
+A build whose descriptor sets `"signIn": "at-launch"` treats organization
+sign-in as part of opening the app. After key setup, the launch mark stays up
+while the saved session is checked. A restored session opens the app directly.
+Otherwise a full-window screen titled "Signing you in to *organization*" opens
+the browser sign-in, and the app opens when it finishes. Cancel or a failed
+sign-in leaves **Sign in with *organization*** and **Not now**; neither reopens
+the browser by itself. Not now opens the app, where protected communities offer
+their usual sign-in recovery.
+
+When the session ends during a run (expiry or the adapter refusing it), the same
+screen covers the app, above any dialog or menu it had open, and starts sign-in
+again. The app stays mounted, covered and inert, so drafts, scroll and
+navigation survive, and focus returns to where it was. An explicit sign-out
+shows the screen without opening the browser. A saved session that cannot be
+checked (network or secure storage) offers Try again, and the screen stays up
+while it checks.
+
+Before the session expires, a persistent warning names when it ends and offers
+**Sign in again**. It appears 72 hours ahead, or halfway through a shorter
+session. Signing in again keeps the current session working until the new one
+is exchanged; Cancel or a failure leaves it in place, and a different account
+retires derived agent grants as any account change does. At expiry, native ends
+the session itself rather than waiting for the next relay assertion or 401, and
+the screen above takes over.
+On-demand builds are unchanged.
+
+The Node development host retains its supported broker flow.
+
+For the community sign-in and recovery UI alone, run the environment-free
+fixture server documented below and open `/tests/fixtures/federated-identity.html`.
+Click **Sign in**, then **Cancel sign-in** or **Complete** in fixture controls;
+verify the prompt switches to **Cancel sign-in** and clears once signed in.
+**Binding mismatch** shows existing identity-link guidance; **Storage failure**
+shows recovery without claiming success. It does not exercise the running app's
+full navigation or native credentials.
 
 ## Packaged connection
 
@@ -337,7 +572,9 @@ the user must inspect the conversation before explicitly sending a new message.
 
 Protected media and uploads are native, because the webview cannot attach Blossom
 (kind 24242) authentication itself: `<img>`, `<video>` and `<audio>` send no custom
-headers, and the CSP keeps `connect-src` closed to general HTTPS. Relay `/media/`
+headers, and the CSP keeps `connect-src` closed to general HTTPS; it admits only
+the `buzz-media` scheme, whose bytes the requesting window may already read (such
+as an agent card's embedded definition). Relay `/media/`
 URLs selected by shared TypeScript render through the `buzz-media` URI scheme;
 `<video>` and `<audio>` instead load the same URLs from a native listener on
 `127.0.0.1`, since WebKitGTK cannot play a custom scheme. It authorizes each
@@ -356,8 +593,7 @@ hashes and uploads only the converted bytes; JavaScript receives the descriptor,
 not the prepared file. ffmpeg must be installed on the computer.
 Community member changes (NIP-43 kinds 9030–9032) are signed in the host only
 in the exact add/remove/role shape; the relay decides authority. Repository HTTP
-and other broker-only helpers are not claimed by this adapter. NIP-FI assertion
-acquisition is not implemented, so deployments enforcing it are outside acceptance.
+and other broker-only helpers are not claimed by this adapter.
 Windows/Linux custody, credential migration and release-signing acceptance remain
 separate limitations.
 

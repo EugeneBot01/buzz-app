@@ -60,6 +60,7 @@ export type TabItem<Value extends string> = {
   value: Value;
   label: string;
   icon?: ReactNode;
+  disabled?: boolean;
   trailing?: ReactNode;
   /** Link a retained, externally owned tab panel. */
   panelId?: string;
@@ -94,7 +95,8 @@ export type TabsVariant =
   | "panel"
   | "workspace"
   | "navigation"
-  | "segmented";
+  | "segmented"
+  | "segmented-icons";
 
 export function Tabs<Value extends string>({
   value,
@@ -104,6 +106,7 @@ export function Tabs<Value extends string>({
   onReselect,
   trailingAction,
   variant = "chrome",
+  size = "md",
   showSelection = true,
   previewValue,
   arrivalValue,
@@ -129,6 +132,8 @@ export function Tabs<Value extends string>({
   onReselect?: (value: Value) => void;
   trailingAction?: ReactNode;
   variant?: TabsVariant;
+  /** Segmented filter track size; other variants retain their own geometry. */
+  size?: "sm" | "md";
   /** Hide the visual selection for a single-view header; tab semantics remain. */
   showSelection?: boolean;
   /** Incoming tab being previewed before a workspace drop is committed. */
@@ -136,6 +141,7 @@ export function Tabs<Value extends string>({
   /** Brief visual confirmation of a tab arriving after a completed move. */
   arrivalValue?: Value | undefined;
 }) {
+  const iconOnly = variant === "segmented-icons";
   const [renaming, setRenaming] = useState<Value>();
   if (renaming !== undefined && !items.some((item) => item.value === renaming))
     setRenaming(undefined);
@@ -162,6 +168,8 @@ export function Tabs<Value extends string>({
             <BaseTabs.Tab
               value={item.value}
               title={item.label}
+              disabled={item.disabled}
+              data-icon-only={iconOnly || undefined}
               render={
                 variant === "navigation" ? (
                   <NavigationItem
@@ -232,8 +240,16 @@ export function Tabs<Value extends string>({
               ) : null}
               {variant !== "navigation" && (
                 <>
-                  {item.icon}
-                  <span>{item.label}</span>
+                  {iconOnly ? (
+                    <span className="buzz-tabs-icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                  ) : (
+                    item.icon
+                  )}
+                  <span className={iconOnly ? "sr-only" : undefined}>
+                    {item.label}
+                  </span>
                   {item.trailing}
                 </>
               )}
@@ -266,6 +282,7 @@ export function Tabs<Value extends string>({
       data-buzz-ui=""
       className={renderPanel ? "buzz-tab-panels" : "buzz-tabs"}
       data-variant={variant}
+      data-size={size}
       data-selection-hidden={!showSelection || undefined}
       value={value}
       onValueChange={(nextValue) => onValueChange(nextValue as Value)}
@@ -274,6 +291,7 @@ export function Tabs<Value extends string>({
         <div
           className="buzz-tabs"
           data-variant={variant}
+          data-size={size}
           data-selection-hidden={!showSelection || undefined}
         >
           {strip}

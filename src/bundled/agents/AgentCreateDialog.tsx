@@ -37,9 +37,15 @@ const reveal = (element: HTMLElement | null) => {
 };
 
 /** Use each registered provider's icon in creation and library cards. */
-export function TypeIcon({ type }: { type: RegisteredAgentType | undefined }) {
+export function TypeIcon({
+  type,
+  size = 16,
+}: {
+  type: RegisteredAgentType | undefined;
+  size?: number;
+}) {
   const Icon = type?.icon ?? RobotIcon;
-  return <Icon size={16} aria-hidden="true" />;
+  return <Icon size={size} aria-hidden="true" />;
 }
 
 const startingConfig = (type: RegisteredAgentType | undefined) => {
@@ -94,7 +100,7 @@ export function AgentCreateDialog({
   const migration = (item: RegisteredAgentType | undefined) => {
     if (!edited || !item || item.key === edited.type) return undefined;
     try {
-      return agents.previewRetype(edited.pubkey, item.key);
+      return agents.previewRetype(edited.key, item.key);
     } catch {
       return undefined;
     }
@@ -265,23 +271,6 @@ export function AgentCreateDialog({
               </div>
             </Field>
           </div>
-          {Create ? (
-            <Create
-              key={type.key}
-              config={config}
-              disabled={pending}
-              onChange={(next) => {
-                setConfig(next);
-                setDirty(true);
-              }}
-            />
-          ) : (
-            <p className="m-0 text-body-sm text-secondary">
-              {type?.remote
-                ? "Its provider keeps its key and runs it, whether or not this app is open."
-                : "Set it up after it is made."}
-            </p>
-          )}
           <section
             aria-label="AI configuration"
             className={styles.configuration}
@@ -295,12 +284,14 @@ export function AgentCreateDialog({
                     variant="compact"
                     align="end"
                     value={type?.key ?? ""}
+                    leading={<TypeIcon type={type} size={20} />}
                     disabled={pending || types.length < 2}
                     groups={[
                       {
                         label: "",
                         options: types.map((item) => ({
                           value: item.key,
+                          leading: <TypeIcon type={item} size={20} />,
                           label: item.remote
                             ? `${item.title} (hosted)`
                             : item.title,
@@ -326,6 +317,23 @@ export function AgentCreateDialog({
               )}
             </SettingsGroup>
           </section>
+          {Create ? (
+            <Create
+              key={type.key}
+              config={config}
+              disabled={pending}
+              onChange={(next) => {
+                setConfig(next);
+                setDirty(true);
+              }}
+            />
+          ) : (
+            <p className="m-0 text-body-sm text-secondary">
+              {type?.remote
+                ? "Its provider keeps its key and runs it, whether or not this app is open."
+                : "Set it up after it is made."}
+            </p>
+          )}
           {preview && type && (
             <MigrationPreview
               source={types.find((item) => item.key === edited?.type)}

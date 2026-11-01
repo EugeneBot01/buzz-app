@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { useState } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { WorkflowEditor } from "./WorkflowEditor";
@@ -174,12 +174,19 @@ test.each([
 test("form errors follow the editable field and clear when corrected", async () => {
   const user = userEvent.setup();
   render(<Example />);
+  // The dialog's deferred initial focus must finish before typing into a field.
+  await waitFor(() =>
+    expect(
+      screen.getByText("Message helper", { selector: "span" }),
+    ).toHaveFocus(),
+  );
   const name = screen.getByRole("textbox", { name: "Workflow name" });
   const save = screen.getByRole("button", { name: "Save changes" });
   await user.clear(name);
   expect(name).toHaveAccessibleDescription("Give this workflow a name.");
   expect(save).toBeDisabled();
   await user.type(name, "Repaired");
+  expect(name).toHaveValue("Repaired");
   expect(name).not.toHaveAttribute("aria-invalid", "true");
   await user.click(
     screen.getByRole("button", { name: "Edit step 1: Send Message" }),
@@ -244,6 +251,12 @@ test("errors stay visible beside hidden fields and Runs clears view-switch error
 test("YAML errors replace help, retain the draft and restore help after recovery", async () => {
   const user = userEvent.setup();
   render(<Example initial="name: [" />);
+  // The dialog's deferred initial focus must finish before typing into a field.
+  await waitFor(() =>
+    expect(
+      screen.getByText("Untitled workflow", { selector: "span" }),
+    ).toHaveFocus(),
+  );
   // Unreadable YAML has no enabled state to show or change.
   expect(screen.queryByRole("switch")).not.toBeInTheDocument();
   expect(
@@ -475,4 +488,29 @@ test("editing another Basic condition preserves the untouched literal", async ()
   expect(parse(yaml).trigger.filter).toBe(
     `str_starts_with(trigger_text, "deploy ") && trigger_author == "${"a".repeat(64)}"`,
   );
+});
+
+test("opening an existing workflow focuses its heading without running or saving", async () => {
+  const run = vi.fn();
+  const save = vi.fn();
+  render(
+    <WorkflowEditor
+      yaml={fixtureYaml}
+      onChange={vi.fn()}
+      onSave={save}
+      run={
+        <button type="button" onClick={run}>
+          Run now
+        </button>
+      }
+    />,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByText("Message helper", { selector: "span" }),
+    ).toHaveFocus(),
+  );
+  await userEvent.setup().keyboard("{Enter}");
+  expect(run).not.toHaveBeenCalled();
+  expect(save).not.toHaveBeenCalled();
 });

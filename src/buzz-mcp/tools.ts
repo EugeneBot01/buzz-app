@@ -2,6 +2,7 @@
 // CLI writes. Names, arguments and descriptions are kept short because every
 // session pays for them in context. Each tool answers in plain text.
 import { decode, npubEncode } from "nostr-tools/nip19";
+import buzzHelp from "../../docs/buzz-help.md?raw";
 import {
   canonicalDetailsName,
   detailsDraftErrors,
@@ -18,15 +19,54 @@ import {
   attachmentMarkdown,
   attachmentName,
 } from "../features/relay/attachments";
+import {
+  communityEmoji,
+  contentEmojiTags,
+  EMOJI_SET,
+  EMOJI_SET_KIND,
+  referencedEmoji,
+} from "../features/relay/emoji";
+import { newer } from "../features/relay/events";
 import { threadReference } from "../features/relay/thread-reference";
+import { soloChannelMetadata } from "../features/relay/discovery";
+import type { RelayEvent } from "../features/relay/events";
 import { attestedOwner } from "../features/agents/owner-attestation";
-import type { BuzzClient, BuzzEvent, Context, Filter, Upload } from "./client";
+import type {
+  BuzzClient,
+  BuzzEvent,
+  ChannelTemplate,
+  Context,
+  Filter,
+  Memory,
+  Upload,
+} from "./client";
 
 const ROLES = ["owner", "admin", "member", "guest", "bot"];
 const str = { type: "string" } as const;
 const strs = { type: "array", items: str } as const;
+// Shared by send and reply_in_subthread.
+const audience = {
+  type: "string",
+  enum: ["everyone", "agents"],
+  description:
+    "agents: only other agents need this (delegating, asking or answering an agent)",
+} as const;
+const final = {
+  type: "boolean",
+  description: "Your last message this turn; ends the turn.",
+} as const;
 /** The channel types a channel list can ask for, as NIP-CL names them. */
 const CHANNEL_TYPES = ["stream", "forum", "dm", "workflow", "system"];
+const ttl = {
+  type: "integer",
+  description: "Seconds without a message before it archives; 0: never.",
+} as const;
+const joinRole = {
+  type: "string",
+  enum: ["member", "guest"],
+  description:
+    "Role for people who join or are added without one. guest on an open channel: anyone reads, only members post.",
+} as const;
 const tool = (
   name: string,
   description: string,
@@ -44,7 +84,40 @@ const tool = (
 });
 
 export type Tool = ReturnType<typeof tool>;
+
+/** Capture built-in outgoing text before review. Dispatch receives these same
+ * arguments, so an approved path cannot supply different bytes afterward. */
+export async function captureToolBody(
+  client: BuzzClient,
+  name: string,
+  args: Record<string, unknown>,
+) {
+  const message = name === "send" || name === "reply_in_subthread";
+  if (
+    !message &&
+    name !== "mem_set" &&
+    name !== "notes_set" &&
+    name !== "canvas_set"
+  )
+    return;
+  if (message && list(args.files).length)
+    throw new Error(
+      "Protected attachment uploads are not supported; send reviewable text instead.",
+    );
+  const path = text(args.path);
+  if (!path) return;
+  args[name === "canvas_set" ? "content" : "text"] = new TextDecoder().decode(
+    await client.read(path),
+  );
+  delete args.path;
+}
+
 export const TOOLS: readonly Tool[] = [
+  tool(
+    "buzz_help",
+    "Read the bundled guide to using Buzz: chats, communities, identity, agents, and settings.",
+    {},
+  ),
   tool(
     "agent_types",
     "List installed local agent types available for agent_create.",
@@ -72,18 +145,30 @@ export const TOOLS: readonly Tool[] = [
       reply: str,
       files: strs,
       mentions: strs,
-      audience: {
-        type: "string",
-        enum: ["everyone", "agents"],
-        description:
-          "agents: only other agents need this (delegating, asking or answering an agent)",
-      },
-      final: {
-        type: "boolean",
-        description: "Your last message this turn; ends the turn.",
-      },
+      audience,
+      final,
     },
     ["audience"],
+  ),
+  tool(
+    "reply_in_subthread",
+    "Reply under a specific message, nested in a subthread below it rather than in the main thread. Use when asked to reply in a subthread, or to keep a side discussion under the message it is about. Takes send's text, path, files, mentions, audience and final; the channel is the parent's.",
+    {
+      parent: { ...str, description: "Id of the message to reply under" },
+      text: str,
+      path: str,
+      files: strs,
+      mentions: strs,
+      audience,
+      final,
+    },
+    ["parent", "audience"],
+  ),
+  tool(
+    "self_handoff",
+    "Hand off to yourself in another of your conversations, waking that session with text. thread: any of its messages, outside a Solo chat.",
+    { channel: str, thread: str, text: str },
+    ["channel", "text"],
   ),
   tool("edit", "Edit your message.", { id: str, text: str }, ["id", "text"]),
   tool(
@@ -119,8 +204,8 @@ export const TOOLS: readonly Tool[] = [
     },
   ),
   tool(
-    "channels",
-    "Channels you are in; with all, every one you can see. types lists only channels of those types; system channels are listed only when types has system.",
+    "channel_list",
+    "Channels you are in; with all, every one you can see. System channels are listed only when types has system.",
     {
       q: str,
       all: { type: "boolean" },
@@ -132,57 +217,82 @@ export const TOOLS: readonly Tool[] = [
       },
     },
   ),
+  tool("channel_get", "A channel's details (default: current).", {
+    channel: str,
+  }),
   tool(
-    "channel",
-    "Channel details (default: current), or an action on it. create may use your owner's template, by name. delete is permanent.",
+    "channel_create",
+    "Create a channel. template: one of your owner's, by name.",
     {
-      channel: str,
-      action: {
-        type: "string",
-        enum: [
-          "create",
-          "update",
-          "join",
-          "leave",
-          "archive",
-          "unarchive",
-          "delete",
-        ],
-      },
       name: str,
-      about: str,
       visibility: { type: "string", enum: ["open", "private"] },
+      about: str,
       type: {
         type: "string",
         enum: ["stream", "forum", "system"],
         description:
-          "system: left out of ordinary channel lists. An open one is still found by anyone who lists system channels.",
+          "system: left out of ordinary channel lists; anyone can still list an open one.",
       },
-      ttl: {
-        type: "integer",
-        description: "Seconds without a message before it archives; 0: never.",
-      },
-      topic: str,
-      purpose: str,
+      ttl,
+      join_role: joinRole,
       template: str,
     },
+    ["name", "visibility"],
+  ),
+  tool("channel_update", "Change a channel's details.", {
+    channel: str,
+    name: str,
+    about: str,
+    visibility: { type: "string", enum: ["open", "private"] },
+    ttl,
+    join_role: joinRole,
+    topic: str,
+    purpose: str,
+  }),
+  tool("channel_join", "Join a channel.", { channel: str }),
+  tool("channel_leave", "Leave a channel.", { channel: str }),
+  tool("channel_archive", "Archive a channel.", { channel: str }),
+  tool("channel_unarchive", "Unarchive a channel.", { channel: str }),
+  tool("channel_delete", "Delete a channel permanently.", { channel: str }),
+  tool("member_list", "A channel's members (default: current).", {
+    channel: str,
+    limit: { type: "integer", description: "Default 100, max 500." },
+    offset: {
+      type: "integer",
+      description: "Members to skip, from a continue line.",
+    },
+  }),
+  tool(
+    "member_add",
+    "Add pubkeys or npubs to a channel, optionally with a role.",
+    { channel: str, pubkeys: strs, role: { type: "string", enum: ROLES } },
+    ["pubkeys"],
   ),
   tool(
-    "members",
-    "A channel's members; add or remove pubkeys or npubs, giving those added a role.",
-    {
-      channel: str,
-      add: strs,
-      remove: strs,
-      role: { type: "string", enum: ROLES },
-    },
+    "member_remove",
+    "Remove pubkeys or npubs from a channel.",
+    { channel: str, pubkeys: strs },
+    ["pubkeys"],
   ),
   tool("users", "Profiles by pubkey or name.", { ids: strs, q: str }),
   tool("dm", "Open a DM; returns its channel.", { to: strs }, ["to"]),
-  tool("mem_get", "Read memory; without slug, list slugs.", { slug: str }),
-  tool("mem_set", "Write memory.", { slug: str, text: str, path: str }, [
-    "slug",
-  ]),
+  tool(
+    "mem_get",
+    "Read memory: slug gives its version and text; q finds entries with every word; neither lists slugs.",
+    { slug: str, q: str },
+  ),
+  tool(
+    "mem_set",
+    "Write memory. To replace an entry, pass the version from your latest mem_get or mem_set of it as expected; without expected it only creates.",
+    { slug: str, text: str, path: str, expected: str },
+    ["slug"],
+  ),
+  tool(
+    "mem_rm",
+    "Delete memory. Pass the version from your latest mem_get of it as expected. core cannot be deleted.",
+    { slug: str, expected: str },
+    ["slug", "expected"],
+  ),
   tool(
     "notes_get",
     "Read a shared note, such as a team runbook, by name; without name, list notes. author: me (default for lists), all, an npub, a hex pubkey or a display name.",
@@ -201,9 +311,10 @@ export const TOOLS: readonly Tool[] = [
     ["name"],
   ),
   tool("notes_rm", "Delete your note.", { name: str }, ["name"]),
-  tool("canvas", "Read a channel's canvas, or replace it.", {
+  tool("canvas_get", "Read a channel's canvas.", { channel: str }),
+  tool("canvas_set", "Replace a channel's canvas.", {
     channel: str,
-    text: str,
+    content: str,
     path: str,
   }),
   tool(
@@ -252,18 +363,6 @@ const MAX_EVENTS = 10_000;
 const CHANNEL_BYTES = 16_384;
 const CHANNEL_PARTIAL =
   "Partial channel list: scan or output limit reached. Narrow with q or use a known channel ID.";
-/** The `channel` arguments each action takes. */
-const ACTIONS: Readonly<Record<string, readonly string[]>> = {
-  details: [],
-  create: ["name", "about", "visibility", "type", "ttl", "template"],
-  update: ["name", "about", "visibility", "ttl", "topic", "purpose"],
-  join: [],
-  leave: [],
-  archive: [],
-  unarchive: [],
-  delete: [],
-};
-
 type Args = Readonly<Record<string, unknown>>;
 /** A tool's answer: text, or an image (base64 `data`) for the agent to see,
  * with any `text` about it. */
@@ -282,10 +381,26 @@ export function callTool(
 ) {
   const handler = HANDLERS[name];
   if (!handler) throw new Error(`No tool ${name}`);
+  // A channel or member tool refuses arguments it does not list, so a
+  // misspelled target cannot fall back to the current channel.
+  if (name.startsWith("channel_") || name.startsWith("member_")) {
+    const listed =
+      TOOLS.find((tool) => tool.name === name)?.inputSchema.properties ?? {};
+    const extra = Object.keys(args).filter(
+      (key) => !Object.hasOwn(listed, key),
+    );
+    if (extra.length)
+      return Promise.reject(
+        new Error(`${extra.join(", ")} cannot be used with ${name}.`),
+      );
+  }
   return handler(new Tools(client, context), args);
 }
 
 const HANDLERS: Readonly<Record<string, Handler>> = {
+  async buzz_help() {
+    return buzzHelp.trim();
+  },
   async agent_types({ client }) {
     if (!client.agentTypes)
       throw new Error("Agent creation is unavailable on this host");
@@ -298,6 +413,44 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const name = text(args.name)?.trim();
     if (!type || !name) throw new Error("type and name are required");
     return JSON.stringify(await client.createAgent({ type, name }));
+  },
+  async self_handoff(tools, args) {
+    const { client, context } = tools;
+    if (!client.handoff) throw new Error("Self-handoff is unavailable here");
+    const channel = required(args, "channel");
+    const body = text(args.text);
+    if (!body) throw new Error("text is required.");
+    const thread = text(args.thread);
+    const [metadata, event] = await Promise.all([
+      tools.metadata(channel),
+      thread ? tools.event(thread) : undefined,
+    ]);
+    if (!metadata) throw unseen(channel);
+    if (
+      event &&
+      !event.tags.some(([name, value]) => name === "h" && value === channel)
+    )
+      throw new Error(`${thread} is not in ${channel}.`);
+    // A harness takes a wake with no thread only in a Solo chat.
+    if (!event && !soloChannelMetadata(metadata as RelayEvent))
+      throw new Error("thread is required outside a Solo chat.");
+    const root = event && rootOf(event);
+    if (
+      channel === context.channel &&
+      (!context.root || context.wholeChannel || root === context.root)
+    )
+      throw new Error("That is this conversation.");
+    const { channel: from, root: fromRoot } = context;
+    client.handoff({
+      channel,
+      ...(root && { root }),
+      text: body,
+      from: {
+        ...(from && { channel: from }),
+        ...(fromRoot && { root: fromRoot }),
+      },
+    });
+    return root ? `Handed off to thread ${root}.` : `Handed off to ${channel}.`;
   },
   async agent_update({ client }, args) {
     if (!client.updateAgent)
@@ -318,7 +471,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     );
   },
   async send(tools, args) {
-    const { client, context } = tools;
+    const { context } = tools;
     const reply =
       text(args.reply) ??
       (args.channel === undefined ? context.root : undefined);
@@ -334,28 +487,38 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw new Error(
         "This chat stays at the top level: send again without reply.",
       );
-    if (args.audience !== "everyone" && args.audience !== "agents")
-      throw new Error("audience must be everyone or agents.");
-    const files = await tools.attach(list(args.files));
-    const content = `${(await tools.body(args, !files.links)) ?? ""}${files.links}`;
+    const audienceTags = audienceOf(args);
     const thread = reply ? await tools.threadTags(reply) : [];
-    const mentions = await tools.mentions(
+    return post(tools, channel, args, thread, audienceTags);
+  },
+
+  async reply_in_subthread(tools, args) {
+    const { context } = tools;
+    const parent = text(args.parent)?.toLowerCase();
+    if (!parent) throw new Error("parent is required.");
+    const target =
+      parent === context.root ? undefined : await tools.event(parent);
+    const channel = (target && tag(target, "h")) ?? context.channel;
+    if (!channel) throw new Error("No channel for that message.");
+    if (context.topLevel && channel === context.channel)
+      throw new Error("This chat stays at the top level: use send instead.");
+    const audienceTags = audienceOf(args);
+    // As relay ingest reads it: the last valid marker, in either case.
+    const root = target
+      ? (threadReference(target)?.rootId ?? target.id)
+      : parent;
+    return post(
+      tools,
       channel,
-      content,
-      list(args.mentions),
+      args,
+      root === parent
+        ? [["e", root, "", "reply"]]
+        : [
+            ["e", root, "", "root"],
+            ["e", parent, "", "reply"],
+          ],
+      audienceTags,
     );
-    const event = await client.publish({
-      kind: 9,
-      content,
-      tags: [
-        ["h", channel],
-        ...thread,
-        ...mentions.map((pubkey) => ["p", pubkey]),
-        ...files.tags,
-        ...(args.audience === "agents" ? [["audience", "agents"]] : []),
-      ],
-    });
-    return `sent ${event.id}`;
   },
 
   async edit(tools, args) {
@@ -363,14 +526,16 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const target = await tools.event(id);
     const channel = tag(target, "h");
     if (!channel) throw new Error(`${id} is not a channel message.`);
+    const content = required(args, "text");
     await tools.client.publish({
       kind: 40003,
-      content: required(args, "text"),
+      content,
       // An edit replaces the attachments too, so it keeps the message's.
       tags: [
         ["h", channel],
         ["e", id],
         ...target.tags.filter((t) => t[0] === "imeta"),
+        ...(await tools.emoji(content)),
       ],
     });
     return "edited";
@@ -530,7 +695,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     ].join("\n");
   },
 
-  async channels(tools, args) {
+  async channel_list(tools, args) {
     const { client } = tools;
     const ids = new Set<string>();
     // Each channel-state event carries its type in its first `t` tag. The
@@ -592,7 +757,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
               const size = encoder.encode(row).length + 1;
               if (bytes + size > CHANNEL_BYTES) {
                 // Preserve a usable ID when one channel has oversized details.
-                const brief = `${id} (details omitted; use channel for details)`;
+                const brief = `${id} (details omitted; use channel_get for details)`;
                 if (bytes + encoder.encode(brief).length + 1 <= CHANNEL_BYTES)
                   rows.push(brief);
                 return false;
@@ -606,102 +771,59 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return rows.join("\n") || "No channels.";
   },
 
-  async channel(tools, args) {
-    const { client } = tools;
-    const action = args.action ?? "details";
-    const fields =
-      typeof action === "string" && Object.hasOwn(ACTIONS, action)
-        ? ACTIONS[action]
-        : undefined;
-    if (typeof action !== "string" || !fields)
-      throw new Error(
-        `action must be one of ${Object.keys(ACTIONS).join(", ")}.`,
-      );
-    const extra = Object.keys(args).filter(
-      (key) => key !== "channel" && key !== "action" && !fields.includes(key),
-    );
-    if (extra.length)
-      throw new Error(`${extra.join(", ")} cannot be used with ${action}.`);
-    if (action === "create") {
-      if (args.channel !== undefined)
-        throw new Error("create makes a new channel; leave out channel.");
-      return tools.create(args);
-    }
-    const channel = target(tools, args);
-    if (action === "details") return tools.details(channel);
-    if (action === "update") return tools.update(channel, args);
-    const { kind, content, tags } = lifecycleTemplate(
-      action as "join" | "leave" | "archive" | "unarchive" | "delete",
-      channel,
-    );
-    await client.publish({ kind, content, tags });
-    // The relay can accept a change it then fails to make, so it is reported
-    // only once the channel shows it.
-    const shown = async () => {
-      if (action === "join" || action === "leave")
-        return (
-          (await tools.roster(channel)).some(
-            (member) => member.pubkey === client.pubkey,
-          ) ===
-          (action === "join")
-        );
-      const metadata = await tools.metadata(channel);
-      if (action === "delete") return !metadata;
-      return !!metadata && has(metadata, "archived") === (action === "archive");
-    };
-    const done: Readonly<Record<string, string>> = {
-      join: "joined",
-      leave: "left",
-      archive: "archived",
-      unarchive: "unarchived",
-      delete: "deleted",
-    };
-    const now = await until(shown, Boolean).catch(unread);
-    if (now === true) return `${done[action]} ${channel}`;
-    return `The community accepted ${action} but ${now ? now.message : "does not show it yet"}.`;
-  },
+  channel_get: (tools, args) => tools.details(target(tools, args)),
+  channel_create: (tools, args) => tools.create(args),
+  channel_update: (tools, args) => tools.update(target(tools, args), args),
+  channel_join: (tools, args) => lifecycle(tools, args, "join"),
+  channel_leave: (tools, args) => lifecycle(tools, args, "leave"),
+  channel_archive: (tools, args) => lifecycle(tools, args, "archive"),
+  channel_unarchive: (tools, args) => lifecycle(tools, args, "unarchive"),
+  channel_delete: (tools, args) => lifecycle(tools, args, "delete"),
 
-  async members(tools, args) {
+  async member_list(tools, args) {
     const channel = target(tools, args);
-    const add = keys(args, "add");
-    const remove = keys(args, "remove");
+    const limit = bound(
+      typeof args.limit === "number" ? args.limit : undefined,
+      100,
+      500,
+    );
+    const offset = args.offset ?? 0;
+    if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 0)
+      throw new Error("offset must be a whole number, 0 or more.");
+    // The relay keeps a channel's whole roster in one event; only the page
+    // shown needs names.
+    const members = await tools.members(channel);
+    const page = members.slice(offset, offset + limit);
+    if (!page.length) return "No members.";
+    const names = await tools.names(page.map((member) => member.pubkey));
+    const rest = members.length - offset - page.length;
+    return [
+      ...page.map(
+        ({ pubkey, role }) =>
+          `${pubkey} ${names.get(pubkey) ?? ""}${role === "member" ? "" : ` (${role})`}`,
+      ),
+      ...(rest > 0
+        ? [
+            `${rest} more; continue with ${JSON.stringify({ channel, limit, offset: offset + limit })}`,
+          ]
+        : []),
+    ].join("\n");
+  },
+  async member_add(tools, args) {
     const role = args.role;
     if (role !== undefined && !ROLES.includes(role as string))
       throw new Error(`role must be one of ${ROLES.join(", ")}.`);
-    if (role !== undefined && !add.length)
-      throw new Error("role is for the members you add.");
-    if (add.length || remove.length) {
-      lifecycleChannelId(channel);
-      if ([...add, ...remove].includes(tools.client.pubkey))
-        throw new Error("For yourself, use channel with action join or leave.");
-      if (add.some((key) => remove.includes(key)))
-        throw new Error("Add or remove someone, not both.");
-      if (add.length + remove.length > 50)
-        throw new Error("Change at most 50 members at a time.");
-      const { lines, changed } = await tools.change(
-        channel,
-        add,
-        remove,
-        role as string | undefined,
-      );
-      if (!changed) throw new Error(lines.join("\n"));
-      return lines.join("\n");
-    }
-    const members = await tools.members(channel);
-    const names = await tools.names(members.map((member) => member.pubkey));
-    return members
-      .map(
-        ({ pubkey, role }) =>
-          `${pubkey} ${names.get(pubkey) ?? ""}${role === "member" ? "" : ` (${role})`}`,
-      )
-      .join("\n");
+    return changeMembers(tools, args, "add", role as string | undefined);
   },
+  member_remove: async (tools, args) => changeMembers(tools, args, "remove"),
 
   async users(tools, args) {
     const { client } = tools;
     const ids = list(args.ids).map(pubkey);
     const q = text(args.q)?.toLowerCase();
     if (!ids.length && !q) throw new Error("Give ids or q.");
+    if (ids.length && q) throw new Error("Give ids or q, not both.");
+    if (ids.length > 100) throw new Error("Give at most 100 ids.");
     // Name search matches only name and display_name, best match first;
     // NIP-50 search matches the whole profile, so text in avatars or `about`
     // can fill its results and hide the person asked for. Name search refuses
@@ -773,19 +895,32 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   async mem_get(tools, args) {
     const slug = text(args.slug);
+    const q = typeof args.q === "string" ? args.q : undefined;
+    if (slug && q !== undefined)
+      throw new Error("q searches all memory; leave out slug.");
+    if (q !== undefined && !q.trim())
+      throw new Error("q needs a word to search for.");
     if (!slug) {
       const { entries, partial } = await tools.client.memories();
-      const lines = entries
-        .map((entry) => `${entry.slug} ${time(entry.createdAt)}`)
-        .join("\n");
-      if (!partial) return lines || "No memory.";
+      const found = q === undefined ? undefined : searchMemory(entries, q);
+      const lines =
+        found ??
+        entries
+          .map((entry) => `${entry.slug} ${time(entry.createdAt)}`)
+          .join("\n");
+      if (!partial)
+        return (
+          lines ||
+          (found === undefined ? "No memory." : `No memory matches ${q}.`)
+        );
       if (!lines) throw new Error("Memory could not be read; try again.");
-      return `${lines}\nThis list is incomplete: some memory could not be read.`;
+      return `${lines}\nThis ${found === undefined ? "list" : "search"} is incomplete: some memory could not be read.`;
     }
     const key = memorySlug(slug);
     const { entries, partial } = await tools.client.memories(key);
     const body = entries.find((entry) => entry.slug === key)?.body;
-    if (body !== undefined) return body;
+    if (body !== undefined)
+      return `version: ${await memoryVersion(body)}\n\n${body}`;
     if (partial) throw new Error(`Memory ${key} could not be read; try again.`);
     return `No memory ${key}.`;
   },
@@ -793,14 +928,69 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   async mem_set(tools, args) {
     const key = memorySlug(required(args, "slug"));
     const body = (await tools.body(args, true)) as string;
+    const expected = text(args.expected);
+    // A copied mem_get reply would save its header into the entry.
+    if (/^version: [0-9a-f]{16}\n/.test(body))
+      throw new Error(
+        "Leave out the version line from mem_get; pass the version as expected.",
+      );
     // A write must be dated after the entry it replaces, so it waits for a
     // read that finds the entry or confirms there is none.
+    const { entries, deleted, partial } = await tools.client.memories(key);
+    const current = entries.find((entry) => entry.slug === key);
+    if (!current && partial)
+      throw new Error(`Memory ${key} could not be read; try again.`);
+    // Another session of this agent may have written it since this one read
+    // it (a session's `core` is a copy from when it started): replacing
+    // needs the version it was shown, so nothing it never saw is lost.
+    if (!current && expected)
+      throw new Error(
+        `No memory ${key} to replace; leave out expected to create it.`,
+      );
+    if (current && !expected)
+      throw new Error(
+        `${key} exists. Read it with mem_get, keep what still holds, and pass its version as expected.`,
+      );
+    if (current && expected !== (await memoryVersion(current.body)))
+      throw new Error(
+        `${key} changed since version ${expected}. Read it again with mem_get, merge your change into it, and pass the new version as expected.`,
+      );
+    // Recreating a deleted entry follows its tombstone.
+    const tombstone = deleted?.find((entry) => entry.slug === key);
+    await tools.client.remember(
+      key,
+      body,
+      current?.createdAt ?? tombstone?.createdAt ?? 0,
+    );
+    const saved = `saved; version ${await memoryVersion(body)}`;
+    if (key !== "core") return saved;
+    const size = new TextEncoder().encode(body).length;
+    const amount =
+      size < 1000 ? `${size} bytes` : `${(size / 1000).toFixed(1)} KB`;
+    return size > CORE_TARGET_BYTES
+      ? `${saved}; core is ${amount}, over the ~10 KB target. Move detail you do not need every turn to a mem/ slug.`
+      : `${saved}; core is ${amount}.`;
+  },
+
+  async mem_rm(tools, args) {
+    const key = memorySlug(required(args, "slug"));
+    const expected = required(args, "expected");
+    // NIP-AE has no tombstone for core; only a write replaces it.
+    if (key === "core")
+      throw new Error("core cannot be deleted; replace it with mem_set.");
     const { entries, partial } = await tools.client.memories(key);
     const current = entries.find((entry) => entry.slug === key);
     if (!current && partial)
       throw new Error(`Memory ${key} could not be read; try again.`);
-    await tools.client.remember(key, body, current?.createdAt ?? 0);
-    return "saved";
+    if (!current) throw new Error(`No memory ${key}.`);
+    // As with mem_set, nothing another session wrote since this one read it
+    // is lost.
+    if (expected !== (await memoryVersion(current.body)))
+      throw new Error(
+        `${key} changed since version ${expected}. Read it again with mem_get before you delete it.`,
+      );
+    await tools.client.remember(key, null, current.createdAt);
+    return `deleted ${key}`;
   },
 
   async notes_get(tools, args) {
@@ -970,16 +1160,19 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     return `deleted ${coordinate}`;
   },
 
-  async canvas(tools, args) {
+  async canvas_get(tools, args) {
+    const channel = text(args.channel) ?? tools.context.channel;
+    if (!channel) throw new Error("channel is required here.");
+    const head = await canvas(tools, channel);
+    return head?.content || "No canvas.";
+  },
+
+  async canvas_set(tools, args) {
     const { client, context } = tools;
     const channel = text(args.channel) ?? context.channel;
     if (!channel) throw new Error("channel is required here.");
-    const content = await tools.body(args, false);
-    const [head] = await client.query([
-      { kinds: [40100], "#h": [channel], limit: 1 },
-    ]);
-    if (!head && !(await tools.metadata(channel))) throw unseen(channel);
-    if (content === undefined) return head?.content || "No canvas.";
+    const content = (await tools.body(args, true, "content")) as string;
+    const head = await canvas(tools, channel);
     // The newest canvas wins, so a write must be dated after the current one.
     const after = head ? (head.created_at + 1) * 1000 : 0;
     if (after - Date.now() > 5000)
@@ -1099,6 +1292,40 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
 };
 
+/** The tags for a message's required audience. */
+function audienceOf(args: Args): string[][] {
+  if (args.audience !== "everyone" && args.audience !== "agents")
+    throw new Error("audience must be everyone or agents.");
+  return args.audience === "agents" ? [["audience", "agents"]] : [];
+}
+
+/** Publishes `args`' text, files and mentions as a message in `channel`,
+ * with `thread`'s e-tags and any `extra` tags. */
+async function post(
+  tools: Tools,
+  channel: string,
+  args: Args,
+  thread: readonly string[][],
+  extra: readonly string[][] = [],
+) {
+  const files = await tools.attach(list(args.files));
+  const content = `${(await tools.body(args, !files.links)) ?? ""}${files.links}`;
+  const mentions = await tools.mentions(channel, content, list(args.mentions));
+  const event = await tools.client.publish({
+    kind: 9,
+    content,
+    tags: [
+      ["h", channel],
+      ...thread,
+      ...mentions.map((pubkey) => ["p", pubkey]),
+      ...files.tags,
+      ...(await tools.emoji(content)),
+      ...extra,
+    ],
+  });
+  return `sent ${event.id}`;
+}
+
 /** One call's helpers, so lookups it repeats are made once. */
 class Tools {
   private readonly cache = new Map<string, Promise<unknown>>();
@@ -1116,16 +1343,17 @@ class Tools {
     return value;
   }
 
-  /** `text`, or the file at `path`. Undefined when neither is given and
-   * `needed` is false. */
-  async body(args: Args, needed: boolean) {
+  /** `field` (default `text`), or the file at `path`. Undefined when neither
+   * is given and `needed` is false. */
+  async body(args: Args, needed: boolean, field = "text") {
     const path = text(args.path);
     const value = path
       ? new TextDecoder().decode(await this.client.read(path))
-      : typeof args.text === "string"
-        ? args.text
+      : typeof args[field] === "string"
+        ? args[field]
         : undefined;
-    if (value === undefined && needed) throw new Error("Give text or path.");
+    if (value === undefined && needed)
+      throw new Error(`Give ${field} or path.`);
     return value;
   }
 
@@ -1138,8 +1366,8 @@ class Tools {
     return event;
   }
 
-  /** The e-tag of a reply to `parent`. Agents never nest: a reply to any
-   * message in a thread is a reply to the thread's root. */
+  /** The e-tag of a `send` reply to `parent`: a reply to any message in a
+   * thread is a reply to the thread's root. */
   async threadTags(parent: string) {
     const root =
       parent === this.context.root ? parent : rootOf(await this.event(parent));
@@ -1198,6 +1426,7 @@ class Tools {
       tag(metadata, "ttl")
         ? `archives after ${tag(metadata, "ttl")}s idle`
         : "",
+      tag(metadata, "join_role") === "guest" ? "join as guest" : "",
     ].filter(Boolean);
     return [
       `${channel} ${tag(metadata, "name") ?? ""} (${flags.join(", ")})`,
@@ -1218,6 +1447,9 @@ class Tools {
     const type = args.type ?? "stream";
     if (type !== "stream" && type !== "forum" && type !== "system")
       throw new Error("type must be stream, forum or system.");
+    const role = joinRoleArg(args);
+    if (role === "guest" && args.visibility === "private")
+      throw new Error("join_role guest is for open channels.");
     // Found first, so a wrong name creates nothing.
     const template =
       args.template === undefined
@@ -1238,9 +1470,25 @@ class Tools {
     });
     const shown = await until(() => this.metadata(id), Boolean).catch(unread);
     if (!shown || shown instanceof Error)
-      return `The community accepted channel ${id} but ${shown ? shown.message : "does not show it yet"}${template ? "; the template was not applied" : ""}.`;
+      return `The community accepted channel ${id} but ${shown ? shown.message : "does not show it yet"}${template ? "; the template was not applied" : ""}${role === "guest" ? "; join_role was not set" : ""}.`;
     const lines = [`created ${id}`];
-    if (!template) return lines.join("\n");
+    if (template) lines.push(...(await this.apply(id, template)));
+    // Last, so the template's agents join as members, not guests.
+    if (role === "guest")
+      try {
+        const answer = await this.update(id, { join_role: role });
+        lines.push(
+          answer === `updated ${id}` ? "new people join as guests" : answer,
+        );
+      } catch (error) {
+        lines.push(`join_role not set: ${reason(error)}`);
+      }
+    return lines.join("\n");
+  }
+
+  /** Starts a new channel's Canvas and adds its agents from `template`. */
+  async apply(id: string, template: ChannelTemplate) {
+    const lines: string[] = [];
     // The template's own agents, as Buzz adds them; each is tried.
     const agents = template.agents.filter((key) => key !== this.client.pubkey);
     if (template.canvas.trim())
@@ -1259,10 +1507,10 @@ class Tools {
         lines.push(
           `Canvas not started${agents.length ? ", so no agents were added" : ""}: ${reason(error)}`,
         );
-        return lines.join("\n");
+        return lines;
       }
     if (agents.length) lines.push(...(await this.change(id, agents, [])).lines);
-    return lines.join("\n");
+    return lines;
   }
 
   /** The owner's template named `name`, as one, without guessing. */
@@ -1303,8 +1551,18 @@ class Tools {
     }
     if (args.ttl !== undefined)
       wanted.push(["ttl", String(seconds(args.ttl) ?? "")]);
+    const role = joinRoleArg(args);
+    if (
+      role === "guest" &&
+      (args.visibility ?? (has(metadata, "private") ? "private" : "open")) ===
+        "private"
+    )
+      throw new Error("join_role guest is for open channels.");
+    if (role) wanted.push(["join_role", role]);
     if (!wanted.length)
-      throw new Error("Give name, about, visibility, ttl, topic or purpose.");
+      throw new Error(
+        "Give name, about, visibility, ttl, join_role, topic or purpose.",
+      );
     const value = (key: string) => wanted.find((t) => t[0] === key)?.[1];
     checkDetails(
       value("name"),
@@ -1373,13 +1631,20 @@ class Tools {
     );
     const who = (key: string) =>
       names.has(key) ? `${key} ${names.get(key)}` : key;
+    // With no role asked for, the relay gives a new member the channel's
+    // join_role, which is guest on an announce channel.
+    const shown = (key: string) =>
+      role ??
+      (roster instanceof Error
+        ? undefined
+        : roster.find((m) => m.pubkey === key)?.role);
     const report = (key: string, verb: string, done?: typeof added) =>
       refused.has(key)
         ? `not ${verb} ${who(key)}: ${refused.get(key)}`
         : roster instanceof Error
           ? `${who(key)}: the community accepted it but ${roster.message}`
           : done?.(roster, key)
-            ? `${verb} ${who(key)}${verb === "added" && role ? ` as ${role}` : ""}`
+            ? `${verb} ${who(key)}${verb === "added" && (role || shown(key) !== "member") ? ` as ${shown(key)}` : ""}`
             : `${who(key)}: the community accepted it but does not show it yet`;
     return {
       changed: refused.size < add.length + remove.length,
@@ -1469,6 +1734,18 @@ class Tools {
         .filter(Boolean)
         .join(" ");
     });
+  }
+
+  /** NIP-30 tags for the community emoji `content` uses, as the composer
+   * adds them, so `:shortcode:` renders as the emoji. */
+  async emoji(content: string) {
+    if (!referencedEmoji(content).length) return [];
+    const sets = new Map<string, BuzzEvent>();
+    for (const event of await this.client.query([
+      { kinds: [EMOJI_SET_KIND], "#d": [EMOJI_SET], limit: 500 },
+    ]))
+      sets.set(event.pubkey, newer(sets.get(event.pubkey), event));
+    return contentEmojiTags(content, communityEmoji(sets.values()));
   }
 
   /** Who `content` notifies: `mentions`, `nostr:npub…` links, and `@Name`
@@ -1627,6 +1904,63 @@ function memorySlug(slug: string) {
   return key;
 }
 
+/** The size the base prompt asks agents to keep `core` under. */
+const CORE_TARGET_BYTES = 10_000;
+/** What a memory search shows: entries, lines of each, and characters of a line. */
+const SEARCH_ENTRIES = 20;
+const SEARCH_LINES = 3;
+const SEARCH_LINE_CHARS = 160;
+
+/** A memory's version: the start of the SHA-256 of its text. */
+export async function memoryVersion(body: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(body),
+  );
+  return [...new Uint8Array(digest).slice(0, 8)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** The entries whose slug or text has every word of `q`, newest first, each
+ * with a few of its matching lines cut around the first match. Empty when
+ * none match. */
+function searchMemory(entries: readonly Memory[], q: string) {
+  const words = [...new Set(q.toLowerCase().split(/\s+/).filter(Boolean))];
+  const found = entries
+    .filter((entry) => {
+      const all = `${entry.slug}\n${entry.body}`.toLowerCase();
+      return words.every((word) => all.includes(word));
+    })
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const shown = found.slice(0, SEARCH_ENTRIES).map((entry) => {
+    const lines = entry.body
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => words.some((word) => line.toLowerCase().includes(word)))
+      .slice(0, SEARCH_LINES)
+      .map((line) => `  ${snippet(line, words)}`);
+    return [`${entry.slug} ${time(entry.createdAt)}`, ...lines].join("\n");
+  });
+  const more = found.length - shown.length;
+  return [
+    ...shown,
+    ...(more > 0 ? [`${more} more; add words to q to narrow it.`] : []),
+  ].join("\n");
+}
+
+/** `line`, cut to SEARCH_LINE_CHARS around its first match. */
+function snippet(line: string, words: readonly string[]) {
+  if (line.length <= SEARCH_LINE_CHARS) return line;
+  const lower = line.toLowerCase();
+  const at = Math.min(
+    ...words.map((word) => lower.indexOf(word)).filter((index) => index >= 0),
+  );
+  const start = Math.max(0, Math.min(at - 40, line.length - SEARCH_LINE_CHARS));
+  const end = start + SEARCH_LINE_CHARS;
+  return `${start ? "…" : ""}${line.slice(start, end)}${end < line.length ? "…" : ""}`;
+}
+
 /** A note's name, as the CLI allows it. */
 function noteSlug(value: unknown) {
   if (typeof value !== "string" || !/^[a-z0-9._-]{1,80}$/.test(value))
@@ -1705,7 +2039,7 @@ async function until<T>(load: () => Promise<T>, done: (value: T) => boolean) {
 /** A channel without visible metadata, including a newly created channel. */
 const unseen = (channel: string) =>
   new Error(
-    `No channel ${channel} that you can see (it may not be visible yet). If you supplied a name, channels with q finds its ID.`,
+    `No channel ${channel} that you can see (it may not be visible yet). If you supplied a name, channel_list with q finds its ID.`,
   );
 
 /** The repositories bound to `channel` by its owners and admins or their
@@ -1822,6 +2156,77 @@ async function leads(
 const unread = (error: unknown) =>
   new Error(`its state could not be read back: ${reason(error)}`);
 
+/** The channel's newest canvas, once the channel is known to be visible. */
+async function canvas(tools: Tools, channel: string) {
+  const [head] = await tools.client.query([
+    { kinds: [40100], "#h": [channel], limit: 1 },
+  ]);
+  if (!head && !(await tools.metadata(channel))) throw unseen(channel);
+  return head;
+}
+
+/** Makes lifecycle change `action` to the `channel` argument. The relay can
+ * accept a change it then fails to make, so it is reported only once the
+ * channel shows it. */
+async function lifecycle(
+  tools: Tools,
+  args: Args,
+  action: "join" | "leave" | "archive" | "unarchive" | "delete",
+) {
+  const { client } = tools;
+  const channel = target(tools, args);
+  const { kind, content, tags } = lifecycleTemplate(action, channel);
+  await client.publish({ kind, content, tags });
+  const shown = async () => {
+    if (action === "join" || action === "leave")
+      return (
+        (await tools.roster(channel)).some(
+          (member) => member.pubkey === client.pubkey,
+        ) ===
+        (action === "join")
+      );
+    const metadata = await tools.metadata(channel);
+    if (action === "delete") return !metadata;
+    return !!metadata && has(metadata, "archived") === (action === "archive");
+  };
+  const done = {
+    join: "joined",
+    leave: "left",
+    archive: "archived",
+    unarchive: "unarchived",
+    delete: "deleted",
+  };
+  const now = await until(shown, Boolean).catch(unread);
+  if (now === true) return `${done[action]} ${channel}`;
+  return `The community accepted ${action} but ${now ? now.message : "does not show it yet"}.`;
+}
+
+/** Adds or removes `pubkeys`, each tried on its own; a throw when none
+ * changed. */
+async function changeMembers(
+  tools: Tools,
+  args: Args,
+  change: "add" | "remove",
+  role?: string,
+) {
+  const channel = target(tools, args);
+  const pubkeys = keys(args, "pubkeys");
+  if (!pubkeys.length) throw new Error("pubkeys is required.");
+  lifecycleChannelId(channel);
+  if (pubkeys.includes(tools.client.pubkey))
+    throw new Error("For yourself, use channel_join or channel_leave.");
+  if (pubkeys.length > 50)
+    throw new Error("Change at most 50 members at a time.");
+  const { lines, changed } = await tools.change(
+    channel,
+    change === "add" ? pubkeys : [],
+    change === "remove" ? pubkeys : [],
+    role,
+  );
+  if (!changed) throw new Error(lines.join("\n"));
+  return lines.join("\n");
+}
+
 /** The `channel` argument, or the current channel only when it is left out. */
 function target(tools: Tools, args: Args) {
   if (args.channel === undefined) {
@@ -1855,6 +2260,15 @@ function seconds(value: unknown) {
   if (value === undefined || value === 0) return undefined;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0)
     throw new Error("ttl must be a whole number of seconds.");
+  return value;
+}
+
+/** A `join_role` argument: undefined when absent. */
+function joinRoleArg(args: Args) {
+  const value = args.join_role;
+  if (value === undefined) return undefined;
+  if (value !== "member" && value !== "guest")
+    throw new Error("join_role must be member or guest.");
   return value;
 }
 

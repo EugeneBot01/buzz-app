@@ -1,13 +1,18 @@
 import { TeamMentionAvatars } from "./TeamMentionAvatars";
 import { groupMentionSuggestions } from "../../team/mentions/group-suggestions";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useTeamMentions } from "./use-team-mentions";
 import { useMentionChoices } from "./use-mention-choices";
 import type { ComposerCompletionProps } from "../../features/conversation/contracts";
 import type { ComposerSession } from "../../features/messages/composer-session";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
 import { outsideMentionDetail } from "./mention-candidates";
-import { matchesMentionQuery } from "./mention-query";
+import { matchesMentionQuery, pendingMentionQuery } from "./mention-query";
+import { continuedMention } from "./mention-ranking";
+import { resolveSpaceMention } from "./resolve-space-mention";
+import { SelectedMentionContext } from "../../features/messages/selected-mention-context";
+import { DraftMentionRoster } from "../../features/messages/draft-mention-roster";
+import { AgentsContext } from "../../features/agents/react";
 import { avatarMedia } from "../../shared/avatar-source";
 
 // Demand bookkeeping only, not another profile cache. Missing names do not issue
@@ -31,14 +36,7 @@ export function MentionCompletion({
     query.query,
     JSON.stringify(["inline", scope, channelId, threadRootId, query.start]),
   );
-  const {
-    profiles,
-    agents,
-    channel,
-    list,
-    choices,
-    roster: draftRoster,
-  } = model;
+  const { profiles, agents, channel, list, choices } = model;
   const teams = useTeamMentions(
     session,
     channelId,
@@ -46,6 +44,10 @@ export function MentionCompletion({
     query.query,
     model,
   );
+  const selected = useContext(SelectedMentionContext);
+  const roster = useContext(DraftMentionRoster);
+  const community = useContext(AgentsContext);
+  const draftRoster = roster?.recipients;
   const members = draftRoster?.map((p) => p.pubkey) ?? channel?.members ?? [];
   const memberKey = members.join(":");
   const parentAdmission = !!channel && channel.channelType !== "solo";
@@ -107,7 +109,7 @@ export function MentionCompletion({
       };
     }
     const available = [
-      ...matching.map(({ recipient, label, disabled }) => ({
+      ...matching.map(({ recipient, label, elsewhere, disabled }) => ({
         disabled,
         canSelect: (key: string) =>
           (key !== " " || !teams.blocksSpace) &&
@@ -120,7 +122,7 @@ export function MentionCompletion({
             ? recipient.pubkey
             : inviteAgents
               ? `${parentAdmission ? "Adds to channel" : "Adds to chat"} · ${recipient.pubkey}`
-              : outsideMentionDetail(channel)),
+              : outsideMentionDetail(channel, elsewhere)),
         preview: (
           <Avatar
             alt=""
@@ -183,8 +185,44 @@ export function MentionCompletion({
     const next = [...ids, ...additions.map((item) => item.id)].slice(0, 50);
     shown.current = { session, key, ids: next };
     const byId = new Map(available.map((item) => [item.id, item]));
+    // Space is undecided, not declined, only while evidence is still arriving:
+    // members, names or agents loading, or the directory search waiting or
+    // running. Then the host may hold the name and let the resolver apply
+    // section 5 once the choice set is known. A name already known to continue
+    // the query declines Space whatever else arrives: the next word may
+    // complete that longer name, so Space stays prose and the query open. The
+    // known set is every candidate the chooser has, not only the shown rows:
+    // members or roster, offered agents and the directory rows received so
+    // far, the same set `spaceId` is decided over. Anything else is prose.
+    const undecided =
+      admitted &&
+      model.spaceId === undefined &&
+      !teams.blocksSpace &&
+      !continuedMention(model.candidates, query.query) &&
+      (model.pending || model.directory.loading) &&
+      pendingMentionQuery(query.query);
     const withdraw = publish({
       spaceId: teams.blocksSpace ? undefined : model.spaceId,
+      ...(undecided
+        ? {
+            spacePending: {
+              name: query.query,
+              resolve: (signal: AbortSignal) =>
+                resolveSpaceMention(
+                  session,
+                  {
+                    channelId,
+                    inviteAgents,
+                    roster,
+                    selected,
+                    elsewhere: community?.joinable(),
+                  },
+                  query.query,
+                  signal,
+                ),
+            },
+          }
+        : {}),
       // Team: @all / @everyone come first when the typed text starts them.
       items: [
         ...groupMentionSuggestions(query.query, channel?.channelType),
@@ -265,8 +303,11 @@ export function MentionCompletion({
     choices,
     channel,
     draftRoster,
+    roster,
     inviteAgents,
     parentAdmission,
+    selected,
+    community,
   ]);
   return null;
 }

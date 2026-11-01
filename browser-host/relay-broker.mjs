@@ -53,6 +53,10 @@ import {
 } from "./direct-messages.mjs";
 import { SocketRequestError } from "../src/features/relay/socket-requests.ts";
 import {
+  ARTIFACT_SYNC_MAX_VIEWS,
+  artifactSyncFilter,
+} from "../src/features/relay/artifact-sync-filter.ts";
+import {
   assertSidebarStarIntent,
   mutateSidebarStar,
   assertSidebarMuteIntent,
@@ -322,6 +326,8 @@ async function relayAuthority(fetch, relay) {
     channelIdentity:
       Array.isArray(nip11.supported_extensions) &&
       nip11.supported_extensions.includes("nip-cl"),
+    // NIP-AR sync: REQ with `"artifact": "current"` keeps a set current.
+    artifactSync: nip11.artifacts?.sync?.version === 1,
     // Bridge search accepts `search_sort: "newest"`.
     searchSort:
       Array.isArray(nip11.supported_extensions) &&
@@ -604,6 +610,59 @@ export function validAgentEnrollment(event) {
     )
   );
 }
+/** Owner-signed agent listings; preserve prior settings and extension tags. */
+function validAgentRecord(event, viewer) {
+  if (
+    event?.kind !== 30177 ||
+    typeof event.content !== "string" ||
+    !Number.isSafeInteger(event.created_at) ||
+    event.created_at < 0 ||
+    !Array.isArray(event.tags) ||
+    !event.tags.every(
+      (tag) =>
+        Array.isArray(tag) && tag.every((value) => typeof value === "string"),
+    )
+  )
+    return false;
+  const coordinates = event.tags.filter(([name]) => name === "d");
+  if (
+    coordinates.length !== 1 ||
+    coordinates[0].length !== 2 ||
+    !/^[0-9a-f]{64}$/.test(coordinates[0][1])
+  )
+    return false;
+  // Admission must fit the complete socket frame, including the fixed-width
+  // hash and signature. This also fits the HTTP body and native signing bounds.
+  const frame = [
+    "EVENT",
+    {
+      id: "0".repeat(64),
+      pubkey: viewer,
+      created_at: event.created_at,
+      kind: event.kind,
+      tags: event.tags,
+      content: event.content,
+      sig: "0".repeat(128),
+    },
+  ];
+  if (Buffer.byteLength(JSON.stringify(frame)) > 64 * 1024) return false;
+  try {
+    const body = JSON.parse(event.content);
+    return (
+      body !== null &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      typeof body.name === "string" &&
+      !!body.name.trim() &&
+      Number.isSafeInteger(body.parallelism) &&
+      body.parallelism >= 0 &&
+      typeof body.respond_to === "string"
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Base Buzz agent delete: only removal of one member, relay-authorized. */
 /** The owner's NIP-09 deletion of one of their own kind 30177 agent records. */
 export function validAgentRecordDeletion(event, owner) {
@@ -1431,6 +1490,7 @@ export function relayBrokerPlugin({
                 9001,
                 30078,
                 30175,
+                30177,
                 30178,
                 40100,
                 1984,
@@ -1466,6 +1526,76 @@ export function relayBrokerPlugin({
               presence: true,
               agentActivity: true,
             });
+          }
+          if (
+            (route === "/api/relay/stream-artifact-sync" ||
+              route === "/api/relay/stream-artifact-sync-close") &&
+            req.method === "POST"
+          ) {
+            const opening = route === "/api/relay/stream-artifact-sync";
+            let raw = "";
+            req.setEncoding("utf8");
+            for await (const part of req) {
+              raw += part;
+              if (Buffer.byteLength(raw) > 300000)
+                return json(res, 413, { error: "Artifact sync too large" });
+            }
+            let streamId, id, filter;
+            try {
+              const body = JSON.parse(raw);
+              streamId = body.streamId;
+              id = body.id;
+              if (typeof id !== "string" || !/^[0-9a-z-]{1,32}$/.test(id))
+                throw new Error("Invalid sync id");
+              if (opening) filter = artifactSyncFilter(body.filter);
+            } catch {
+              return json(res, 400, { error: "Invalid artifact sync" });
+            }
+            if (
+              typeof streamId !== "string" ||
+              !/^[0-9a-f]{32}$/.test(streamId)
+            )
+              return json(res, 400, { error: "Invalid artifact sync" });
+            const stream = streams.get(streamId);
+            if (!stream || stream.relay !== relay)
+              return json(res, 404, {
+                error: "Live stream no longer available",
+              });
+            const existing = stream.syncs.get(id);
+            if (!opening) {
+              stream.syncs.delete(id);
+              existing?.();
+              // The close can overtake its open: remember it so the late
+              // open cannot take a slot. IDs are never reused on a stream.
+              // A forgotten record would let its open take a slot again, so
+              // a stream with too many unresolved closes ends instead: that
+              // ends every sync on it, and a late open finds no stream.
+              if (!existing) {
+                if (stream.closedSyncs.size >= 64) stream.close();
+                else stream.closedSyncs.add(id);
+              }
+              return json(res, 200, { accepted: true });
+            }
+            if (stream.closedSyncs.delete(id))
+              return json(res, 409, { error: "Artifact sync already closed" });
+            if (existing || stream.syncs.size >= ARTIFACT_SYNC_MAX_VIEWS)
+              return json(res, 429, {
+                error: "Artifact sync capacity reached",
+              });
+            const frame = (value) =>
+              stream.write("artifact-sync", { id, ...value });
+            stream.syncs.set(
+              id,
+              stream.traffic.syncArtifacts(filter, {
+                event: (event) => frame({ type: "event", event }),
+                eose: () => frame({ type: "eose" }),
+                closed: (reason) => {
+                  stream.syncs.delete(id);
+                  frame({ type: "closed", reason });
+                },
+              }),
+            );
+            return json(res, 200, { accepted: true });
           }
           if (
             [
@@ -1709,6 +1839,9 @@ export function relayBrokerPlugin({
               interestRevision,
               traffic: undefined,
               close: undefined,
+              write,
+              syncs: new Map(),
+              closedSyncs: new Set(),
             };
             const traffic = subscribeRelayTraffic(
               relay.replace(/^http/, "ws"),
@@ -2551,6 +2684,12 @@ export function relayBrokerPlugin({
                   sent: false,
                 });
               }
+            } else if (filters?.kind === 30177) {
+              if (!validAgentRecord(filters, viewer))
+                return json(res, 400, {
+                  error: "Malformed agent record",
+                  sent: false,
+                });
             } else if ([30175, 30178].includes(filters?.kind)) {
               if (!validCatalogEnvelope(filters))
                 return json(res, 400, {

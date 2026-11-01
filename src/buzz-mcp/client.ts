@@ -1,3 +1,4 @@
+import type { ProtectionAction } from "../features/agent-protection/service";
 // What the Buzz tools need from whoever holds the agent's key: the app's native
 // custody in Buzz Desktop, or a key in the environment of a standalone server.
 // The tools never see the key itself.
@@ -49,6 +50,8 @@ export type ChannelTemplate = Readonly<{
  * limit, a deadline or the relay's rate limit. */
 export type Memories = Readonly<{
   entries: readonly Memory[];
+  /** Deleted entries' tombstones, which a write recreating one must follow. */
+  deleted?: readonly Readonly<{ slug: string; createdAt: number }>[];
   partial: boolean;
 }>;
 
@@ -75,7 +78,11 @@ export type Memory = Readonly<{
 }>;
 
 export interface BuzzClient {
+  protect?(action: ProtectionAction): Promise<void>;
   readonly pubkey: string;
+  /** The agent's membership key in this client's community: its pubkey in
+   * its home community, which is the only one a standalone client has. */
+  readonly key: string;
   /** Owner-reviewed creation requests, bound by the app to the caller's owner/community. */
   agentTypes?(): Promise<readonly Readonly<{ key: string; title: string }>[]>;
   createAgent?(
@@ -89,6 +96,15 @@ export interface BuzzClient {
       instructions?: string;
     }>,
   ): Promise<Readonly<{ requestId: string; saved: false }>>;
+  /** Wakes the agent in another of its conversations here, `from` this one. */
+  handoff?(
+    handoff: Readonly<{
+      channel: string;
+      root?: string;
+      text: string;
+      from: Readonly<{ channel?: string; root?: string }>;
+    }>,
+  ): void;
   /** The agent's owner, as its host records it. */
   readonly owner?: string | undefined;
   /** Trusted connection authorities, never inferred from query results. */
@@ -118,8 +134,9 @@ export interface BuzzClient {
   read(path: string): Promise<Uint8Array>;
   /** The agent's memory entries, decrypted; only entry `slug` when given. */
   memories(slug?: string): Promise<Memories>;
-  /** Writes entry `slug`, newer than the one it replaces (`after`, or 0). */
-  remember(slug: string, body: string, after: number): Promise<void>;
+  /** Writes entry `slug`, newer than the one it replaces (`after`, or 0);
+   * a `null` body deletes it. */
+  remember(slug: string, body: string | null, after: number): Promise<void>;
   /** The owner's channel templates, where the host has them. */
   templates?(): Promise<readonly ChannelTemplate[]>;
   /** The agent's attention, where its host keeps one. Without it the
@@ -130,9 +147,11 @@ export interface BuzzClient {
 }
 
 /** Where the agent is working, so tools can default to it. `topLevel` keeps
- * this channel's messages out of threads. */
+ * this channel's messages out of threads. With no `root`, or with
+ * `wholeChannel`, its session is the whole channel. */
 export type Context = Readonly<{
   channel?: string;
   root?: string;
   topLevel?: boolean;
+  wholeChannel?: boolean;
 }>;

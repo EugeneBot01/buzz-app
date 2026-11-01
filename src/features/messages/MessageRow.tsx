@@ -70,10 +70,11 @@ import { AttachmentImage } from "./AttachmentImage";
 import { DeliveryNotice } from "./DeliveryNotice";
 import { AttachmentView } from "../conversation/AttachmentView";
 import { AudioAttachment } from "./AudioAttachment";
+import { AttachmentDownloadContext } from "./AttachmentDownloadContext";
 import { isNativeMediaSource, isProxySource } from "./attachment-source";
 import { FileAttachment } from "./FileAttachment";
 import { useReferenceDirectory } from "./ReferenceText";
-import { MessageMarkdown } from "./MessageMarkdown";
+import { EditedMarker, MessageMarkdown } from "./MessageMarkdown";
 import { safeMessageUrl } from "../relay/message-content";
 import styles from "./Messages.module.css";
 import { usesLargeEmojiPresentation } from "./emoji-size";
@@ -99,7 +100,6 @@ import { avatarMedia } from "../../shared/avatar-source";
 export type MessageLinkOrigin = Readonly<{ rootId: string }>;
 export type MessageRowProps = {
   row: ChannelMessage;
-  staticMentions?: boolean | undefined;
   getThreadRoot?: (() => ChannelMessage | undefined) | undefined;
   session?: RelaySession | undefined;
   scope?: string | undefined;
@@ -167,7 +167,6 @@ const FullMessageRow = memo(function MessageRow(props: MessageContentProps) {
 });
 function MessageRowContent({
   row,
-  staticMentions,
   shownRow,
   renderMessage,
   getThreadRoot,
@@ -451,6 +450,14 @@ function MessageRowContent({
     bodyShown && messageRenderer !== failedRenderer
       ? messageRenderer?.ownsAttachment
       : undefined;
+  // The host's Markdown marks an edit after the caption's last line. Plugin
+  // cards are marked inside their bubble; diffs and captionless rows after the
+  // payload.
+  const editedInBody =
+    bodyShown &&
+    !row.diff &&
+    !!displayRow.content.trim() &&
+    (!messageRenderer || messageRenderer === failedRenderer);
   const claimed = (attachment: ChannelMessage["attachments"][number]) => {
     try {
       return !!claims?.call(messageRenderer, row, attachment);
@@ -458,17 +465,36 @@ function MessageRowContent({
       return false;
     }
   };
+  // A plugin may draw an image itself, such as a shared agent's card; it
+  // stands alone rather than joining the gallery around it.
+  const attachmentRenderers = useSyncExternalStore(
+    extensions?.attachments?.subscribe ?? noSubscribe,
+    extensions?.attachments?.snapshot ?? noActions,
+    extensions?.attachments?.snapshot ?? noActions,
+  );
+  const drawn = (attachment: ChannelMessage["attachments"][number]) =>
+    attachment.kind === "image" &&
+    attachmentRenderers.some((renderer) => {
+      try {
+        return renderer.matches(attachment);
+      } catch {
+        return false;
+      }
+    });
   // Gallery-backed images and videos share a group, preserving sender order.
   const attachmentGroups: ChannelMessage["attachments"][number][][] = [];
   for (const attachment of row.attachments) {
     if (!safeMessageUrl(attachment.url) || claimed(attachment)) continue;
     const previous = attachmentGroups.at(-1);
     if (
-      ((attachment.kind === "image" || attachment.kind === "file") &&
-        previous?.[0]?.kind === attachment.kind) ||
-      (onOpenMediaReview &&
-        (attachment.kind === "image" || attachment.kind === "video") &&
-        (previous?.[0]?.kind === "image" || previous?.[0]?.kind === "video"))
+      previous?.[0] &&
+      !drawn(attachment) &&
+      !drawn(previous[0]) &&
+      (((attachment.kind === "image" || attachment.kind === "file") &&
+        previous[0].kind === attachment.kind) ||
+        (onOpenMediaReview &&
+          (attachment.kind === "image" || attachment.kind === "video") &&
+          (previous[0].kind === "image" || previous[0].kind === "video")))
     )
       previous.push(attachment);
     else attachmentGroups.push([attachment]);
@@ -501,13 +527,13 @@ function MessageRowContent({
       session={session}
       scope={scope}
       row={displayRow}
-      staticMentions={staticMentions}
       extensions={extensions}
       media={media}
       onOpenLink={openLink}
       canOpenLink={canOpenLink}
       participantProfiles={participantProfiles}
       largeEmoji={emojiOnly}
+      edited={editedInBody && displayRow.edited}
     />
   );
   const avatar = row.workflowOwnerId ? (
@@ -798,6 +824,8 @@ function MessageRowContent({
     !shownRow &&
     !emojiOnly &&
     !row.diff;
+  // A plugin card keeps reactions in its bubble, so its mark goes above them.
+  const editedInBubble = !editedInBody && reactionsInBubble;
   const reactionContent =
     session && scope && extensions ? (
       <MessageReactions
@@ -821,22 +849,33 @@ function MessageRowContent({
           className={`${styles.reactions} ${styles.reactionFallback}`}
           data-message-reactions
         >
-          {reactions.map((reaction) => (
-            <span key={JSON.stringify([reaction.content, reaction.emoji?.url])}>
-              {extensions ? (
-                <InlineText
-                  registry={extensions.inline}
-                  content={{ text: reaction.content, message: row, reaction }}
-                  media={media}
-                />
-              ) : (
-                reaction.content
-              )}
-              <span className={styles.reactionCount}>
-                {new Set(reaction.events.map((event) => event.authorId)).size}
-              </span>
-            </span>
-          ))}
+          {reactions.flatMap((reaction) =>
+            [...new Set(reaction.events.map((event) => event.authorId))].map(
+              (authorId) => (
+                <span
+                  key={JSON.stringify([
+                    reaction.content,
+                    reaction.emoji?.url,
+                    authorId,
+                  ])}
+                >
+                  {extensions ? (
+                    <InlineText
+                      registry={extensions.inline}
+                      content={{
+                        text: reaction.content,
+                        message: row,
+                        reaction,
+                      }}
+                      media={media}
+                    />
+                  ) : (
+                    reaction.content
+                  )}
+                </span>
+              ),
+            ),
+          )}
         </div>
       )
     );
@@ -1042,6 +1081,7 @@ function MessageRowContent({
                   ) : (
                     body
                   )}
+                  {editedInBubble && shown.edited && <EditedMarker />}
                   {reactionsInBubble && reactionContent}
                 </div>
               )}
@@ -1083,18 +1123,19 @@ function MessageRowContent({
                           (isProxySource(source) || isNativeMediaSource(source))
                         )
                           return extensions?.attachments ? (
-                            <AttachmentView
-                              key={url}
-                              registry={extensions.attachments}
-                              attachment={{ ...attachment, url }}
-                              source={source}
-                              fallback={
-                                <AudioAttachment
-                                  attachment={{ ...attachment, url }}
-                                  source={source}
-                                />
-                              }
-                            />
+                            <AttachmentDownloadContext key={url} value={true}>
+                              <AttachmentView
+                                registry={extensions.attachments}
+                                attachment={{ ...attachment, url }}
+                                source={source}
+                                fallback={
+                                  <AudioAttachment
+                                    attachment={{ ...attachment, url }}
+                                    source={source}
+                                  />
+                                }
+                              />
+                            </AttachmentDownloadContext>
                           ) : (
                             <AudioAttachment
                               key={url}
@@ -1112,7 +1153,7 @@ function MessageRowContent({
                         );
                       }
                       if (attachment.kind === "image") {
-                        return (
+                        const image = (
                           <AttachmentImage
                             onOpenLink={
                               canOpenLink?.(attachment.url)
@@ -1151,6 +1192,19 @@ function MessageRowContent({
                                 }
                               : {})}
                           />
+                        );
+                        return source &&
+                          extensions?.attachments &&
+                          drawn(attachment) ? (
+                          <AttachmentView
+                            key={url}
+                            registry={extensions.attachments}
+                            attachment={{ ...attachment, url }}
+                            source={source}
+                            fallback={image}
+                          />
+                        ) : (
+                          image
                         );
                       }
                       return (
@@ -1199,7 +1253,9 @@ function MessageRowContent({
                         />
                       );
                     });
-                    return images && (imageOnly || group.length >= 4) ? (
+                    return images &&
+                      !(group[0] && drawn(group[0])) &&
+                      (imageOnly || group.length >= 4) ? (
                       <div className={styles.imageGroup} key={group[0]?.url}>
                         {/* biome-ignore lint/a11y/useSemanticElements: This labels related media links, not a fieldset of form controls. */}
                         <div
@@ -1220,6 +1276,9 @@ function MessageRowContent({
                     );
                   })}
                 </div>
+              )}
+              {!editedInBody && !editedInBubble && shown.edited && (
+                <EditedMarker />
               )}
             </MessageTimestampHint>
           </div>
@@ -1391,7 +1450,7 @@ function AgentsMessageRow(props: MessageRowProps) {
               ref={trigger}
               data-buzz-ui=""
               className={styles.audienceLine}
-              aria-label={`${author.name}${to.length ? ` to ${to.map((who) => who.name).join(", ")}` : ""}: ${preview}`}
+              aria-label={`${author.name}${to.length ? ` to ${to.map((who) => who.name).join(", ")}` : ""}: ${preview}${row.edited ? " (edited)" : ""}`}
             >
               {avatar(author)}
               {to.length > 0 && (
@@ -1407,6 +1466,7 @@ function AgentsMessageRow(props: MessageRowProps) {
               {!open && (
                 <span className={styles.audiencePreview}>{preview}</span>
               )}
+              {!open && row.edited && <EditedMarker />}
             </Collapsible.Trigger>
             <Collapsible.Panel
               className={`${styles.audiencePanel} ${styles.activityExpansion} ${styles.audienceBody}`}

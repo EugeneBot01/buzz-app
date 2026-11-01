@@ -1,22 +1,28 @@
 # Contribution workflow
 
-The repository pins just 1.58.0, Node.js 24.18.0, pnpm 11.8.0, Lefthook 2.2.3-buzz.1,
-and Rust 1.98.1
-(including Cargo, rustfmt, and Clippy) with [Hermit](https://cashapp.github.io/hermit/).
+The repository pins just 1.58.0, Node.js 24.18.0, pnpm 11.8.0, Lefthook 2.2.2,
+and rustup with [Hermit](https://cashapp.github.io/hermit/). `rust-toolchain.toml`
+pins Rust 1.98.1 (including Cargo, rustfmt, and Clippy), which rustup installs
+under the machine-shared `~/.rustup`.
 No global tool installation is required: `bin/hermit` bootstraps Hermit and tools
-are downloaded on first use. The temporary Lefthook package builds once from
-checksum-pinned upstream source plus our worktree-recovery patch using pinned
-Go 1.27.0; this first use needs network access for Go modules and takes longer.
-The small `bin/lefthook` launcher provisions Go before entering Hermit’s package
-unpack lock, then executes the pinned `bin/lefthook-runner`. Desktop development still requires the
+are downloaded on first use. Desktop development still requires the
 [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 From the repository root:
 
 ```sh
 source bin/activate-hermit # bash/zsh; fish: source bin/activate-hermit.fish
+rustup toolchain install
 just --list
 ```
+
+Run `rustup toolchain install` after cloning and after `rust-toolchain.toml`
+changes, before an editor or parallel commands start the Rust proxies. rustup
+does not serialize installs, so concurrent first use can leave the toolchain
+missing a component's binaries while rustup reports it installed (for example,
+`cargo clippy` fails although `rustup component add clippy` says it is up to
+date). To repair it, reinstall the toolchain:
+`rustup toolchain uninstall 1.98.1 && rustup toolchain install`.
 
 Without activation, use `bin/just`, `bin/pnpm`, or `bin/cargo` from the root;
 these proxies supply the pinned environment to child commands too. For example,
@@ -113,6 +119,17 @@ need their own validation.
   defaults to a `.app` bundle unless `--bundles` or `--no-bundle` says otherwise,
   and passes everything else to `tauri build`. The bundle uses `buzz`, as does
   release bundling with `pnpm tauri build`.
+- On macOS, set `BUZZ_DEV_SIGNING_IDENTITY` in `.env.local` to an installed code
+  signing certificate name or SHA-1 hash (`security find-identity -v -p codesigning`
+  lists them). `just desktop-bundle` passes it to Tauri's macOS signer; the process
+  environment takes precedence, including an empty value to disable this setting.
+  Keep the same certificate and development app identifier across rebuilds. After
+  the first signed build, enter your login Keychain password and choose **Always
+  Allow** when Buzz requests its saved identity; later builds should retain that
+  approval. Ad-hoc signatures change with the binary and cannot retain that trust.
+  An unavailable certificate fails the build rather than silently signing ad-hoc.
+  This setting leaves `just desktop` and release builds unchanged. Explicit Tauri
+  `--config` arguments still merge after the local defaults.
 - For opt-in automation of a disposable macOS native webview, see
   [Native webview automation](native-mcp.md).
 - `just design [args...]`: install locked dependencies, start the standalone
@@ -175,8 +192,9 @@ scripts/bootstrap-worktree.sh /absolute/path/to/source/checkout
 ```
 
 The idempotent script copies the source checkout's git-ignored `.env.local`
-without overwriting an existing target, then uses the new worktree's Hermit proxy
-to run `bin/pnpm install --frozen-lockfile`. It rejects checkouts from another
+without overwriting an existing target, then uses the new worktree's Hermit
+proxies to run `bin/rustup toolchain install` and
+`bin/pnpm install --frozen-lockfile`. It rejects checkouts from another
 repository. Keychain credentials and pnpm's package cache remain machine-shared;
 do not copy private keys, `node_modules`, build output, `.npmrc`, or other ignored
 files. Git hooks need no per-worktree step; see [Git hooks](#git-hooks).
@@ -244,7 +262,7 @@ Buzz library are described in [Agents](agents.md#community-inventory).
 
 ## Running the app
 
-Hermit pins just, Node.js 24, pnpm 11.8.0, and Rust in `bin/`; no global tool
+Hermit pins just, Node.js 24, pnpm 11.8.0, and rustup in `bin/`; no global tool
 installation is needed. From the repository root, activate the pinned environment:
 
 ```sh
@@ -626,10 +644,6 @@ lhm, install once per clone (linked worktrees share the installed hooks):
 just hooks # or bin/just hooks without Hermit activation
 ```
 
-Existing standalone clones must rerun `just hooks` once after pulling this change
-to replace old shims; their old stock runner cannot self-update past the version
-gate. Do this in every clone, not every linked worktree.
-
 This recipe runs the pinned `bin/lefthook install`; it never changes Git config.
 If installation refuses because of a global `core.hooksPath`, **do not follow
 Lefthook's suggested fixes**: `--reset-hooks-path` and
@@ -653,31 +667,14 @@ setting is unchanged, but its hooks no longer run in this clone. Do not use this
 override for lhm.
 
 The installed hooks fail rather than silently skip when they cannot find
-Lefthook; `bin/lefthook uninstall` removes them. The repository pins a temporary
-patched runner, `2.2.3-buzz.1` (upstream 2.2.2 plus ownership-safe recovery refs).
-Standalone shims select `bin/lefthook`. **Under lhm, activate Hermit before
-committing or pushing** (`source bin/activate-hermit`), since lhm selects
-`lefthook` from `PATH` and does not read the repo's `lefthook:` setting. A
-nonactivated GUI/agent shell using stock 2.2.2 or older is rejected by
-`min_version` before any unstaged edits are hidden. **If no Lefthook exists on
-PATH, lhm 0.14.1 can silently skip hooks instead** (especially in linked worktrees);
-the repository config cannot prevent that fallback. Use Git from an activated
-shell, or a client that actually inherits that shell’s environment, and verify
-`command -v lefthook` resolves to this checkout’s `bin/lefthook`. Do not bypass
-hooks or change machine policy. Upgrading Homebrew's stock runner is not this fix.
-
-Stock 2.2.2 isolates worktree patches but still lists a backup's positional stash
-ref before dropping it. A sibling stash inserted between those commands shifts
-the position and gets deleted instead. Keep owned recovery refs until upstream
-cleanup is atomic. Under lhm, an older runner also makes `git worktree add` fail
-through `post-checkout`; activate Hermit first, or use
-`git -c core.hooksPath=/dev/null worktree add …` for that one command.
-
-This version gate is temporary, not a capability check: future stock 2.2.3+
-would pass it. Reassess the gate at the next upstream release and adopt only a
-release verified to preserve the recovery guarantees. Source, license,
-revalidation commands, and removal criteria are in
-[`bin/packages/lefthook-recovery.md`](../bin/packages/lefthook-recovery.md).
+Lefthook; `bin/lefthook uninstall` removes them. Standalone shims select
+`bin/lefthook`. **Under lhm, activate Hermit before committing or pushing**
+(`source bin/activate-hermit`), since lhm selects `lefthook` from `PATH` and does
+not read the repo's `lefthook:` setting; `min_version` rejects runners older than
+2.2.2. **If no Lefthook exists on PATH, lhm 0.14.1 can silently skip hooks
+instead** (especially in linked worktrees); the repository config cannot prevent
+that fallback. Use Git from an activated shell, or a client that actually
+inherits that shell’s environment. Do not bypass hooks or change machine policy.
 
 Pre-commit runs these jobs in order and stops at the first failure: refuse staged
 names containing `*`, `?`, `[` or `\`, which Git would expand as globs when
@@ -693,14 +690,9 @@ Both reject remaining Biome warnings.
 
 Lefthook owns partial staging: it hides the unstaged hunks of partially staged
 files while the jobs run, restages the formatted files, then restores the hunks,
-so unstaged hunks never enter the commit. The patched runner isolates patches
-per worktree and uses owned `refs/lefthook/backup/<hash>` recovery refs instead
-of modifying the shared stash list. A failed restore retains the backup:
-`git for-each-ref refs/lefthook/backup/` lists them; preserve current edits, then
-use `git stash apply --index <ref>` in a clean worktree at the original base.
-After verifying recovery, delete only that ref with
-`git update-ref -d <ref> <hash>`. Legacy stashes remain untouched; recovery refs
-are not automatically expired and can be included by `git push --mirror`.
+so unstaged hunks never enter the commit. A failed restore keeps Lefthook's
+`lefthook auto backup` entry in `git stash list`; preserve current edits, then
+use `git stash apply --index <entry>` in a clean worktree at the original base.
 When a formatter changes the same lines
 as an unstaged hunk, the commit is blocked with "conflict while merging unstaged
 changes" and the index, the files and unrelated edits are left as they were;
@@ -792,7 +784,7 @@ add setup time; normal warm hooks use the pinned tools already installed.
 that could omit newly added tests. It splits the CI-selected `scan` coverage
 across cached, parallel jobs rather than running the entire recipe several times.
 [Three documented WebKit cases remain local-only](browser-testing.md#ci-coverage-and-local-only-webkit-checks);
-the complete suite still runs with `pnpm test` / `just scan`:
+the complete correctness suite still runs with `pnpm test` / `just scan`:
 
 - **JavaScript:** three runners, each with Biome, one TypeScript check and a frontend
   build. Vitest splits all test files across the runners, with two workers each;
@@ -802,6 +794,7 @@ the complete suite still runs with `pnpm test` / `just scan`:
   tests build Rust and install scaffold dependencies; they are intentionally CI-only
   rather than part of pre-push.
 - **Browser measurements:** Chromium then WebKit, serially on an isolated runner.
+  It also runs all [perf scenarios](performance.md) once in Chromium.
 - **Browser journeys:** twenty-one runners (nine Chromium and twelve WebKit
   file-level shards), each with two workers. They start alongside measurements on separate
   runners; `CI required` still requires both lanes. A separate required Ubuntu
