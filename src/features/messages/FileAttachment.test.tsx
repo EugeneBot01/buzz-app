@@ -320,7 +320,7 @@ it.each(["success", "failure"])(
         onOpenLink={() => false}
       />,
     );
-    fireEvent.click(screen.getAllByRole("button")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /^(?!.*열기)/ }));
     const replacement = nativeSource.replace(".pdf", ".txt");
     rerender(
       <FileAttachment
@@ -334,8 +334,8 @@ it.each(["success", "failure"])(
         ? old.resolve()
         : old.reject(new Error("old failure")),
     );
-    expect(screen.getAllByRole("button")[0]).toHaveTextContent("1 KB");
-    expect(screen.getAllByRole("button")[0]).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("button", { name: /^(?!.*열기)/ })).toHaveTextContent("1 KB");
+    expect(screen.getByRole("button", { name: /^(?!.*열기)/ })).toHaveAttribute("aria-busy", "false");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   },
