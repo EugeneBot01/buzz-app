@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { PluginModule } from "../../plugins/api";
 import type { ComposerAccessoryProps } from "../../features/conversation/contracts";
 import {
-  nameList,
   splitAgents,
+  statusCounts,
   type AgentAvailability,
 } from "../../team/agents/status";
 
@@ -63,24 +63,28 @@ function AgentStatusLine({ session, channelId }: ComposerAccessoryProps) {
   );
   if (!online.length && !resting.length) return null;
   return (
-    <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-1 pb-1 text-xs text-muted"
-      data-no-translate=""
-    >
-      {online.length > 0 && (
-        <span>
-          <span className="mr-1 inline-block size-2 rounded-full bg-[#10b981] align-middle" />
-          <span className="text-ink">{nameList(online)}</span> 지금 답할 수
-          있어요
-        </span>
-      )}
-      {resting.length > 0 && (
-        <span>
-          <span className="mr-1 inline-block size-2 rounded-full bg-line align-middle" />
-          {nameList(resting)} 쉬는 중 (만든 사람 맥이 꺼져 있으면 답하지 않아요)
-        </span>
-      )}
-    </div>
+    <details className="px-1 pb-1 text-xs text-muted" data-no-translate="">
+      <summary
+        className="w-fit cursor-pointer select-none"
+        title="이 채널 에이전트 상태 보기"
+      >
+        에이전트 {statusCounts(online.length, resting.length)}
+      </summary>
+      <div className="flex flex-col gap-0.5 pt-1">
+        {online.length > 0 && (
+          <span>
+            🟢 <span className="text-ink">{online.join(", ")}</span> 지금 답할
+            수 있어요
+          </span>
+        )}
+        {resting.length > 0 && (
+          <span>
+            ⚪ {resting.join(", ")} 쉬는 중 (만든 사람 맥이 꺼져 있으면 답하지
+            않아요)
+          </span>
+        )}
+      </div>
+    </details>
   );
 }
 

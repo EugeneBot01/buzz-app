@@ -20,7 +20,7 @@
   background: transparent;
 }
 .feed {
-  --timeline-measure: 52rem;
+  --timeline-measure: var(--team-timeline-measure, 52rem);
 
   flex: 1;
   min-height: 0;
@@ -128,6 +128,7 @@
   min-width: 0;
 }
 .message {
+  zoom: var(--team-message-zoom, 1);
   --message-side-space: calc(var(--size-control-sm) + var(--space-2));
   width: min(100%, var(--timeline-measure));
   margin-inline: auto;
@@ -613,7 +614,7 @@ html[data-keyboard-navigation] .attachmentImage:focus-visible {
   border-radius: calc(var(--radius-icon-button) + var(--space-1h) + 1px);
   box-shadow: var(--shadow-xs);
   padding: var(--space-3) var(--space-1h) var(--space-1h);
-  width: min(calc(100% - 2 * var(--space-4)), 52rem);
+  width: min(calc(100% - 2 * var(--space-4)), var(--team-timeline-measure, 52rem));
   margin: 0 auto var(--space-4);
   display: flex;
   flex-shrink: 0;
@@ -648,7 +649,7 @@ html[data-keyboard-navigation] .attachmentImage:focus-visible {
     padding-block: var(--space-3);
   }
   .composer {
-    width: min(calc(100% - 2 * var(--space-3)), 52rem);
+    width: min(calc(100% - 2 * var(--space-3)), var(--team-timeline-measure, 52rem));
     margin: 0 auto var(--space-3);
   }
 }
@@ -835,7 +836,7 @@ html[data-keyboard-navigation] .attachmentImage:focus-visible {
 }
 
 .threadHistory {
-  --timeline-measure: 52rem;
+  --timeline-measure: var(--team-timeline-measure, 52rem);
   position: relative;
   flex: 1;
   min-height: 0;

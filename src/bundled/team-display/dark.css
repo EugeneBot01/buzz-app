@@ -1,0 +1,10 @@
+/* Team: buttons and quiet text stay readable in dark mode. */
+:root:root[data-color-mode="dark"] {
+  --text-subtle: var(--neutral-11);
+  --text-metadata: var(--neutral-10);
+  --text-quiet-control: var(--neutral-10);
+  --border-standard: var(--neutral-6);
+  --border-message-thread: var(--neutral-7);
+  --border-prominent: var(--neutral-9);
+  --border-floating-control: var(--neutral-10);
+}

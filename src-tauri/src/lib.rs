@@ -80,7 +80,8 @@ use identity::{
     identity_sign_builderlab_binding, IdentityHost,
 };
 use relay::{
-    file_download, media_copy_image, media_download, media_stream_base, team_media_open,
+    file_download, media_copy_image, media_download, media_stream_base, team_download_folder,
+    team_media_open, team_media_save, team_media_saved, team_media_show,
     relay_agent_library,
     relay_agent_log_proof, relay_agent_memories_read, relay_agent_observer, relay_agent_resolve,
     relay_channel_publish, relay_channel_sign, relay_decode_read_state, relay_decode_reminders,
@@ -684,6 +685,10 @@ fn commands<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Sen
         file_download,
         media_download,
         team_media_open,
+        team_download_folder,
+        team_media_save,
+        team_media_saved,
+        team_media_show,
         media_copy_image,
         clipboard::clipboard_write_text,
         media_stream_base,

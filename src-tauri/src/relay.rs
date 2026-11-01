@@ -1937,6 +1937,195 @@ pub(crate) async fn media_download<R: tauri::Runtime>(
     Ok(())
 }
 
+/// Team build: this device's chosen download folder and the files it saved,
+/// kept by the host so a page can never name a path to write or open.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct TeamDownloads {
+    folder: Option<std::path::PathBuf>,
+    files: std::collections::BTreeMap<String, std::path::PathBuf>,
+}
+
+static TEAM_DOWNLOADS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn team_downloads_file<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<std::path::PathBuf> {
+    use tauri::Manager as _;
+    app.path()
+        .app_data_dir()
+        .map(|directory| directory.join("team-downloads.json"))
+        .map_err(|_| "Downloads unavailable".to_owned())
+}
+
+fn team_downloads_read(file: &std::path::Path) -> TeamDownloads {
+    std::fs::read(file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn team_downloads_write(file: &std::path::Path, downloads: &TeamDownloads) -> Result<()> {
+    if let Some(directory) = file.parent() {
+        std::fs::create_dir_all(directory).map_err(|_| "Could not save the download list")?;
+    }
+    let bytes = serde_json::to_vec(downloads).map_err(|_| "Could not save the download list")?;
+    std::fs::write(file, bytes).map_err(|_| "Could not save the download list".to_owned())
+}
+
+fn team_main_window<R: tauri::Runtime>(webview: &tauri::Webview<R>) -> Result<()> {
+    if webview.label() == "main" {
+        Ok(())
+    } else {
+        Err("This window cannot manage downloads".into())
+    }
+}
+
+/// Team build: the chosen download folder; `choose` asks the member for a new one.
+#[tauri::command]
+pub(crate) async fn team_download_folder<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    webview: tauri::Webview<R>,
+    choose: bool,
+) -> Result<Option<String>> {
+    use tauri_plugin_dialog::DialogExt as _;
+    team_main_window(&webview)?;
+    let file = team_downloads_file(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let picked = if choose {
+            app.dialog()
+                .file()
+                .set_title("다운로드 폴더 선택")
+                .blocking_pick_folder()
+                .and_then(|folder| folder.into_path().ok())
+        } else {
+            None
+        };
+        let _guard = TEAM_DOWNLOADS_LOCK
+            .lock()
+            .map_err(|_| "Downloads unavailable")?;
+        let mut downloads = team_downloads_read(&file);
+        if let Some(folder) = picked {
+            downloads.folder = Some(folder);
+            team_downloads_write(&file, &downloads)?;
+        }
+        Ok(downloads
+            .folder
+            .map(|folder| folder.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|_| "Downloads unavailable".to_owned())?
+}
+
+/// Team build: save to the chosen folder, or reuse the copy already saved.
+/// Returns true when a saved copy was reused.
+#[tauri::command]
+pub(crate) async fn team_media_save<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    webview: tauri::Webview<R>,
+    host: tauri::State<'_, IdentityHost>,
+    fi: tauri::State<'_, FederatedIdentity>,
+    source: String,
+    name: String,
+) -> Result<bool> {
+    use tauri::Manager as _;
+    team_main_window(&webview)?;
+    let file = team_downloads_file(&app)?;
+    let known = {
+        let _guard = TEAM_DOWNLOADS_LOCK
+            .lock()
+            .map_err(|_| "Downloads unavailable")?;
+        team_downloads_read(&file)
+    };
+    if known.files.get(&source).is_some_and(|path| path.is_file()) {
+        return Ok(true);
+    }
+    let url = download_target(&source).ok_or("Invalid media URL")?;
+    let filename = download_name(&name, &url).to_owned();
+    let directory = match known.folder.filter(|folder| folder.is_dir()) {
+        Some(folder) => folder,
+        None => app
+            .path()
+            .download_dir()
+            .map_err(|_| "Downloads unavailable")?,
+    };
+    let response = fetch_media(host.inner(), Some(fi.inner()), url, None)
+        .await
+        .map_err(|_| "Media download failed")?;
+    let body = response.into_body();
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = save_download(&directory, &filename, &body)?;
+        let _guard = TEAM_DOWNLOADS_LOCK
+            .lock()
+            .map_err(|_| "Downloads unavailable")?;
+        let mut downloads = team_downloads_read(&file);
+        downloads.files.insert(source, path);
+        team_downloads_write(&file, &downloads)?;
+        Ok(false)
+    })
+    .await
+    .map_err(|_| "Media download interrupted".to_owned())?
+}
+
+/// Team build: which of these attachments still have a saved copy on disk.
+#[tauri::command]
+pub(crate) async fn team_media_saved<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    webview: tauri::Webview<R>,
+    sources: Vec<String>,
+) -> Result<Vec<String>> {
+    team_main_window(&webview)?;
+    let file = team_downloads_file(&app)?;
+    let _guard = TEAM_DOWNLOADS_LOCK
+        .lock()
+        .map_err(|_| "Downloads unavailable")?;
+    let downloads = team_downloads_read(&file);
+    Ok(sources
+        .into_iter()
+        .filter(|source| downloads.files.get(source).is_some_and(|path| path.is_file()))
+        .collect())
+}
+
+/// Team build: show a saved copy in Finder, or open it when its type is safe.
+#[tauri::command]
+pub(crate) async fn team_media_show<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    webview: tauri::Webview<R>,
+    source: String,
+    open: bool,
+) -> Result<()> {
+    team_main_window(&webview)?;
+    let file = team_downloads_file(&app)?;
+    let path = {
+        let _guard = TEAM_DOWNLOADS_LOCK
+            .lock()
+            .map_err(|_| "Downloads unavailable")?;
+        team_downloads_read(&file).files.remove(&source)
+    }
+    .filter(|path| path.is_file())
+    .ok_or("The saved file is gone")?;
+    let mut command = std::process::Command::new("/usr/bin/open");
+    if open {
+        let ext = path
+            .extension()
+            .map(|ext| ext.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        if !TEAM_OPENABLE_EXTENSIONS.contains(&ext.as_str()) {
+            return Err("This file type opens from Finder".into());
+        }
+    } else {
+        command.arg("-R");
+    }
+    let status = command
+        .arg(&path)
+        .status()
+        .map_err(|_| "Could not show the file")?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("Could not show the file".into())
+    }
+}
+
 /// Team build: the ArtCraft app that opens a document, by file extension.
 fn team_app_for(ext: &str) -> Option<&'static str> {
     match ext {
@@ -1974,6 +2163,7 @@ fn team_installed_app(name: &str) -> Option<std::path::PathBuf> {
 #[tauri::command]
 pub(crate) async fn team_media_open(
     host: tauri::State<'_, IdentityHost>,
+    fi: tauri::State<'_, FederatedIdentity>,
     source: String,
     name: String,
 ) -> Result<String> {
@@ -1986,7 +2176,7 @@ pub(crate) async fn team_media_open(
     if !TEAM_OPENABLE_EXTENSIONS.contains(&ext.as_str()) {
         return Err(format!("이 종류의 파일(.{ext})은 여기서 열 수 없어요. 다운로드해서 여세요."));
     }
-    let response = fetch_media(host.inner(), url, None)
+    let response = fetch_media(host.inner(), Some(fi.inner()), url, None)
         .await
         .map_err(|_| "Media download failed")?;
     let body = response.into_body();

@@ -515,6 +515,11 @@ pub fn bundled_manifests() -> Vec<Manifest> {
             "../../../src/bundled/team-shortcuts/manifest.json"
         ))
         .expect("team-shortcuts manifest"),
+        // Buzz Team: team-display.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-display/manifest.json"
+        ))
+        .expect("team-display manifest"),
         // Buzz Team: team-mcp.
         serde_json::from_str(include_str!(
             "../../../src/bundled/team-mcp/manifest.json"
@@ -560,6 +565,7 @@ fn enabled_by_default(id: &str) -> bool {
             | "buzz.team.files"
             | "buzz.team.agent-status"
             | "buzz.team.shortcuts"
+            | "buzz.team.display"
             | "buzz.team.mcp"
             | "buzz.typesafe"
     )

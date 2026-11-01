@@ -6,4 +6,4 @@ Every file shared in a channel, in one list.
 
 1. In a channel, choose the paperclip button at the top.
 2. Search by name or pick Images, Videos, Audio or Files.
-3. Download one file, or choose **Download all** to save the whole list to Downloads.
+3. Download one file, or choose **Download all** to save the list. Change the folder with **Change**; saved files show **Show in folder** instead of downloading again.

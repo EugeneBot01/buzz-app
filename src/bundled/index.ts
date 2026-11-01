@@ -10,6 +10,8 @@ import teamAgentStatusManifest from "./team-agent-status/manifest.json";
 import * as teamAgentStatus from "./team-agent-status";
 import teamShortcutsManifest from "./team-shortcuts/manifest.json";
 import * as teamShortcuts from "./team-shortcuts";
+import teamDisplayManifest from "./team-display/manifest.json";
+import * as teamDisplay from "./team-display";
 import teamMcpManifest from "./team-mcp/manifest.json";
 import * as teamMcp from "./team-mcp";
 import teamMentionsManifest from "./team-mentions/manifest.json";
@@ -269,6 +271,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...teamShortcutsManifest, apiVersion: 1 },
     module: teamShortcuts,
+    enabledByDefault: true,
+  },
+  // Team: text size, conversation width and dark mode contrast.
+  {
+    manifest: { ...teamDisplayManifest, apiVersion: 1 },
+    module: teamDisplay,
     enabledByDefault: true,
   },
   // Team: MCP connections for Claude agents.

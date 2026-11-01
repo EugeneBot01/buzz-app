@@ -3,6 +3,12 @@ export type AgentAvailability = "online" | "away" | "offline" | "unknown";
 
 const MAX_NAMES = 3;
 
+/** The short form shown until someone opens the list. */
+export const statusCounts = (online: number, resting: number) =>
+  [online && `🟢 ${online}`, resting && `⚪ ${resting}`]
+    .filter(Boolean)
+    .join(" · ");
+
 export function nameList(names: readonly string[]) {
   return names.length > MAX_NAMES
     ? `${names.slice(0, MAX_NAMES).join(", ")} 외 ${names.length - MAX_NAMES}`

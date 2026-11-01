@@ -13,12 +13,18 @@ import type {
 import type { RelayData } from "../../features/relay/service";
 import type { RelaySession } from "../../features/relay/session";
 import type { EventData } from "../../features/relay/events";
-import { downloadNativeMedia } from "../../features/messages/native-download";
 import { isNativeMediaSource } from "../../features/messages/attachment-source";
 import { PaperclipIcon } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { OpenFileButton } from "../../team/files/OpenButton";
+import { canOpenFile } from "../../team/files/open";
+import {
+  downloadFolder,
+  savedSources,
+  saveToFolder,
+  showSaved,
+} from "../../team/files/saved";
 import {
   collectFiles,
   fileName,
@@ -41,12 +47,12 @@ const KINDS: readonly { kind: FileKind; label: string }[] = [
 const noop = () => () => {};
 const emptyProfiles = new Map();
 
-/** Saves one file to Downloads; signed relay media goes through the host. */
+/** Saves one file to the chosen folder; signed relay media goes through the host. */
 async function save(session: RelaySession, file: ChannelFile) {
   const source = session.media(file.attachment.url);
   if (!source) throw new Error("이 파일은 받을 수 없어요");
   if (isNativeMediaSource(source))
-    return downloadNativeMedia(source, file.attachment.name ?? "");
+    return void (await saveToFolder(source, file.attachment.name ?? ""));
   const link = document.createElement("a");
   link.href = source;
   link.download = fileName(file);
@@ -78,6 +84,8 @@ function FilesPanel({
   const [kind, setKind] = useState<FileKind>("all");
   const [query, setQuery] = useState("");
   const [progress, setProgress] = useState("");
+  const [folder, setFolder] = useState<string | null>(null);
+  const [saved, setSaved] = useState<ReadonlySet<string>>(new Set());
   const profiles = useSyncExternalStore(
     session?.profiles.subscribe ?? noop,
     session ? session.profiles.snapshot : () => emptyProfiles,
@@ -123,6 +131,23 @@ function FilesPanel({
     if (authors.length) void session.profiles.ensure(authors).catch(() => {});
   }, [session, files]);
 
+  useEffect(() => {
+    void downloadFolder().then(setFolder, () => {});
+  }, []);
+  const refreshSaved = useCallback(() => {
+    if (!session) return;
+    const sources = files.flatMap(({ attachment }) => {
+      const source = session.media(attachment.url);
+      return source && isNativeMediaSource(source) ? [source] : [];
+    });
+    if (sources.length)
+      void savedSources(sources).then(
+        (found) => setSaved(new Set(found)),
+        () => {},
+      );
+  }, [session, files]);
+  useEffect(refreshSaved, [refreshSaved]);
+
   const oldest = events.reduce(
     (min, event) => Math.min(min, event.created_at),
     Number.POSITIVE_INFINITY,
@@ -142,9 +167,10 @@ function FilesPanel({
     }
     setProgress(
       failed
-        ? `${done}개를 다운로드 폴더에 받았고, ${failed}개는 받지 못했어요.`
-        : `${done}개를 다운로드 폴더에 받았어요.`,
+        ? `${done}개를 받았고, ${failed}개는 받지 못했어요.`
+        : `${done}개를 받았어요. 이미 받은 파일은 다시 받지 않아요.`,
     );
+    refreshSaved();
   };
 
   if (!session || !channelId)
@@ -196,6 +222,21 @@ function FilesPanel({
           모두 다운로드
         </Button>
       </div>
+      <div className="flex items-center justify-between gap-2 text-xs text-muted">
+        <span className="min-w-0 truncate" title={folder ?? "다운로드"}>
+          받을 폴더: {folder ?? "다운로드"}
+        </span>
+        <Button
+          variant="ghost"
+          onClick={() =>
+            void downloadFolder(true).then(setFolder, () =>
+              setProgress("폴더를 바꾸지 못했어요."),
+            )
+          }
+        >
+          바꾸기
+        </Button>
+      </div>
       {progress && <p className="text-xs text-muted">{progress}</p>}
       <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {shown.map((file) => (
@@ -204,7 +245,8 @@ function FilesPanel({
             file={file}
             author={profiles.get(file.author)?.name}
             source={session.media(file.attachment.url)}
-            onSave={() => save(session, file)}
+            isSaved={saved.has(session.media(file.attachment.url) ?? "")}
+            onSave={() => save(session, file).then(refreshSaved)}
           />
         ))}
         {state !== "loading" && !shown.length && (
@@ -241,11 +283,13 @@ function FileRow({
   file,
   author,
   source,
+  isSaved,
   onSave,
 }: {
   file: ChannelFile;
   author: string | undefined;
   source: string | undefined;
+  isSaved: boolean;
   onSave(): Promise<void>;
 }) {
   const [status, setStatus] = useState("");
@@ -266,19 +310,44 @@ function FileRow({
           {status && ` · ${status}`}
         </p>
       </div>
-      <Button
-        variant="ghost"
-        onClick={() => {
-          setStatus("받는 중…");
-          onSave().then(
-            () => setStatus("받음"),
-            () => setStatus("실패"),
-          );
-        }}
-      >
-        다운로드
-      </Button>
-      <OpenFileButton source={source} name={file.attachment.name} />
+      {isSaved && source ? (
+        <>
+          <Button
+            variant="ghost"
+            onClick={() =>
+              void showSaved(source, false).catch(() => setStatus("찾기 실패"))
+            }
+          >
+            폴더에서 보기
+          </Button>
+          {canOpenFile(fileName(file)) && (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                void showSaved(source, true).catch(() => setStatus("열기 실패"))
+              }
+            >
+              열기
+            </Button>
+          )}
+        </>
+      ) : (
+        <>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setStatus("받는 중…");
+              onSave().then(
+                () => setStatus("받음"),
+                () => setStatus("실패"),
+              );
+            }}
+          >
+            다운로드
+          </Button>
+          <OpenFileButton source={source} name={file.attachment.name} />
+        </>
+      )}
     </li>
   );
 }
