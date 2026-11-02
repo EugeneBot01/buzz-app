@@ -1445,5 +1445,9 @@
   [
     "Plugin storage did not respond within {0} seconds",
     "플러그인 저장소가 {0}초 안에 응답하지 않았습니다"
-  ]
+  ],
+  ["{0} is typing in a thread", "{0} 님이 스레드에 입력 중"],
+  ["{0} are typing in a thread", "{0} 님이 스레드에 입력 중"],
+  ["{0} is typing", "{0} 님이 입력 중"],
+  ["{0} are typing", "{0} 님이 입력 중"]
 ]

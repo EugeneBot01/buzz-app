@@ -2336,8 +2336,8 @@ export function createRelaySession(
           );
           if (unknown.length)
             void profiles.queries.ensure(unknown).catch(() => {});
-          // A member whose profile is not loaded yet counts as an agent, so
-          // @everyone never wakes an agent by mistake.
+          // A member whose profile is not loaded yet counts as a person: a
+          // missed teammate is worse than waking an agent by mistake.
           return expandGroupMentions(
             content,
             mentions,
@@ -2345,9 +2345,7 @@ export function createRelaySession(
             transport?.viewer,
             (pubkey) => {
               const profile = known.get(pubkey);
-              return (
-                !profile || profile.isAgent === true || !!profile.ownerPubkey
-              );
+              return profile?.isAgent === true || !!profile?.ownerPubkey;
             },
           );
         },

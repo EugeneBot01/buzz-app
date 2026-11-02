@@ -202,7 +202,10 @@ it("shows stable agent ordering, scopes humans exactly, and clears after work st
   };
   f.update([entry(other, secondRoot), entry(agent), entry(human)]);
   const view = render(<TypingIndicator {...props} />);
-  expect(screen.getByRole("status")).not.toHaveTextContent("Human is typing");
+  // Team: the channel view names people typing in its threads.
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Human is typing in a thread",
+  );
   const trigger = screen.getByRole("button", {
     name: "Activity: 2 agents working",
   });

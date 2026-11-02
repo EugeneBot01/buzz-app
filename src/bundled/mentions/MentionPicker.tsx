@@ -16,6 +16,7 @@ import {
   CheckIcon,
 } from "../../shared/design-system/icons/index";
 import { useEffect, useId, useRef, useState } from "react";
+import { groupMentionSuggestions } from "../../team/mentions/group-suggestions";
 import { useTeamMentions } from "./use-team-mentions";
 import { useMentionChoices } from "./use-mention-choices";
 import type { ComposerSession } from "../../features/messages/composer-session";
@@ -37,6 +38,7 @@ export function MentionPicker({
   inviteAgents,
   audience,
   select,
+  insertText,
   selectTeam,
   focusDraft,
 }: {
@@ -47,6 +49,7 @@ export function MentionPicker({
   inviteAgents?: boolean | undefined;
   audience?: ComposerToolProps["audience"];
   select: ComposerToolProps["insertMention"];
+  insertText?: ComposerToolProps["insertText"];
   selectTeam?: ComposerToolProps["insertMentions"];
   /** Return typing to the draft when the agent menu closes. */
   focusDraft?: ComposerToolProps["focus"];
@@ -135,6 +138,17 @@ export function MentionPicker({
       setOpen(false);
     }
   };
+  // Team: @all / @everyone. Last, so Enter on an empty search never picks them.
+  const groups =
+    insertText && !audience && !draftRoster && channel
+      ? groupMentionSuggestions(search, channel.channelType, true)
+      : [];
+  const chooseGroup = (group: (typeof groups)[number]) => {
+    if (insertText?.(`@${group.label} `)) {
+      accepted.current = true;
+      setOpen(false);
+    }
+  };
   const personKey = (pubkey: string) => `person:${pubkey}`;
   const teamKey = (id: string) => `team:${id}`;
   // Order stays rankMentions', shared with inline @ completion and mobile.
@@ -150,6 +164,7 @@ export function MentionPicker({
           ...teams.choices
             .filter((team) => !team.disabled)
             .map((team) => teamKey(team.id)),
+          ...groups.map((group) => group.id),
         ],
     onChoose: (key) => {
       const person = candidates.find(
@@ -157,7 +172,9 @@ export function MentionPicker({
       );
       if (person) return chooseRecipient(person.recipient);
       const team = teams.choices.find((choice) => teamKey(choice.id) === key);
-      if (team) chooseTeam(team);
+      if (team) return chooseTeam(team);
+      const group = groups.find((choice) => choice.id === key);
+      if (group) chooseGroup(group);
     },
     open: open && !disabled,
     // Enter chose the first row before anything was typed; keep that, and
@@ -170,7 +187,8 @@ export function MentionPicker({
     candidates.find(
       (choice) => personKey(choice.recipient.pubkey) === highlight.active,
     )?.label ??
-    teams.choices.find((team) => teamKey(team.id) === highlight.active)?.name;
+    teams.choices.find((team) => teamKey(team.id) === highlight.active)?.name ??
+    groups.find((group) => group.id === highlight.active)?.label;
   // Underline with the same rule that ranks mentions.
   const matched = (label: string) =>
     search.trim() ? matchPerson(label, search)?.positions : undefined;
@@ -486,12 +504,33 @@ export function MentionPicker({
                   onClick={() => chooseTeam(team)}
                 />
               ))}
+              {groups.map((group) => (
+                <NavigationItem
+                  key={group.id}
+                  variant="option"
+                  data-mention-choice=""
+                  type="button"
+                  {...highlight.rowProps(group.id)}
+                  selected={highlight.active === group.id}
+                  aria-current={false}
+                  disabled={disabled}
+                  label={`@${group.label}`}
+                  trailing={
+                    <span className="text-caption text-subtle">
+                      {group.detail}
+                    </span>
+                  }
+                  aria-label={`${group.label} · ${group.detail}`}
+                  onClick={() => chooseGroup(group)}
+                />
+              ))}
               {model.truncated && (
                 <p>Narrow your search to see more members.</p>
               )}
-              {members && !candidates.length && !teams.choices.length && (
-                <p>No matching channel members.</p>
-              )}
+              {members &&
+                !candidates.length &&
+                !teams.choices.length &&
+                !groups.length && <p>No matching channel members.</p>}
               {audience?.named && (
                 <p className="text-caption text-subtle">
                   Your message tags{" "}

@@ -22,3 +22,9 @@ it("@everyone adds people only; @all adds agents too; the sender is skipped", ()
   ]);
   expect(expandGroupMentions("hi", ["x"], members, "me", agent)).toEqual(["x"]);
 });
+
+it("keeps a member whose profile has not loaded when the caller counts them as a person", () => {
+  expect(
+    expandGroupMentions("@everyone hi", [], ["me", "new"], "me", () => false),
+  ).toEqual(["new"]);
+});

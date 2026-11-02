@@ -2211,7 +2211,8 @@ fn team_installed_app(name: &str) -> Option<std::path::PathBuf> {
 /// its ArtCraft app when installed, else the Mac's default app for the type.
 /// Returns the app it used, or "default".
 #[tauri::command]
-pub(crate) async fn team_media_open(
+pub(crate) async fn team_media_open<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     host: tauri::State<'_, IdentityHost>,
     fi: tauri::State<'_, FederatedIdentity>,
     source: String,
@@ -2226,17 +2227,57 @@ pub(crate) async fn team_media_open(
     if !TEAM_OPENABLE_EXTENSIONS.contains(&ext.as_str()) {
         return Err(format!("이 종류의 파일(.{ext})은 여기서 열 수 없어요. 다운로드해서 여세요."));
     }
-    let response = fetch_media(host.inner(), Some(fi.inner()), url, None)
-        .await
-        .map_err(|_| "Media download failed")?;
-    let body = response.into_body();
+    use tauri::Manager as _;
+    // A copy this app saved opens as is; another with the same name and the
+    // same bytes in the download folders also does, instead of a new copy.
+    let known = {
+        let file = team_downloads_file(&app)?;
+        let _guard = TEAM_DOWNLOADS_LOCK
+            .lock()
+            .map_err(|_| "Downloads unavailable")?;
+        team_downloads_read(&file)
+    };
+    let saved = known.files.get(&source).cloned().filter(|path| {
+        path.is_file()
+            && path
+                .extension()
+                .is_some_and(|found| found.to_string_lossy().eq_ignore_ascii_case(&ext))
+    });
+    let folders: Vec<_> = known
+        .folder
+        .into_iter()
+        .chain(app.path().download_dir().ok())
+        .collect();
+    let body = if saved.is_some() {
+        None
+    } else {
+        let response = fetch_media(host.inner(), Some(fi.inner()), url, None)
+            .await
+            .map_err(|_| "Media download failed")?;
+        Some(response.into_body())
+    };
     tauri::async_runtime::spawn_blocking(move || {
-        // A fresh folder per open, so two files with the same name never collide.
-        let directory = std::env::temp_dir()
-            .join("buzz-team-opened")
-            .join(uuid::Uuid::new_v4().to_string());
-        std::fs::create_dir_all(&directory).map_err(|_| "Could not prepare the file")?;
-        let path = save_download(&directory, &filename, &body)?;
+        let path = match (saved, body) {
+            (Some(path), _) => path,
+            (None, Some(body)) => {
+                let same = folders.iter().map(|folder| folder.join(&filename)).find(
+                    |path| std::fs::read(path).is_ok_and(|found| found[..] == body[..]),
+                );
+                match same {
+                    Some(path) => path,
+                    None => {
+                        // A fresh folder per open, so two files with the same name never collide.
+                        let directory = std::env::temp_dir()
+                            .join("buzz-team-opened")
+                            .join(uuid::Uuid::new_v4().to_string());
+                        std::fs::create_dir_all(&directory)
+                            .map_err(|_| "Could not prepare the file")?;
+                        save_download(&directory, &filename, &body)?
+                    }
+                }
+            }
+            (None, None) => return Err("Could not open the file".to_owned()),
+        };
         let app = team_app_for(&ext).and_then(|name| team_installed_app(name).map(|p| (name, p)));
         let mut command = std::process::Command::new("/usr/bin/open");
         if let Some((_, app_path)) = &app {

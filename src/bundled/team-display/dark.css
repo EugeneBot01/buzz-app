@@ -1,5 +1,12 @@
 /* Team: buttons and quiet text stay readable in dark mode. */
 :root:root[data-color-mode="dark"] {
+  /* Lifted from near-black so panels and controls separate. */
+  --neutral-1: #141414;
+  --neutral-2: #1c1c1c;
+  --neutral-3: #262626;
+  --neutral-4: #303030;
+  --neutral-5: #3d3d3d;
+  --neutral-6: #4a4a4a;
   --text-subtle: var(--neutral-11);
   --text-metadata: var(--neutral-10);
   --text-quiet-control: var(--neutral-10);

@@ -9,11 +9,13 @@ const GROUPS = [
 export function groupMentionSuggestions(
   query: string,
   channelType: string | undefined,
+  // The @ button's list: nothing is typed by accident there, so show them all.
+  anyLength = false,
 ): CompletionSuggestion[] {
   if (channelType === "dm") return [];
   const typed = query.trim().toLowerCase();
   // Two letters or more ("@al", "@ev") so short searches stay about people.
-  if (typed.length < 2 || typed.includes(" ")) return [];
+  if ((!anyLength && typed.length < 2) || typed.includes(" ")) return [];
   return GROUPS.filter(({ key }) => key.startsWith(typed)).map(
     ({ key, detail }) => ({
       id: `team-group-${key}`,

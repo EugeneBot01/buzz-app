@@ -116,13 +116,19 @@ export function TypingIndicator({
   );
   const rows = useSyncExternalStore(subscribeRows, getRows);
   const firstAgent = agents[0];
-  const humans = entries.filter(
+  // Team: the channel view also names people typing in its threads.
+  const typers = entries.filter(
     (entry) =>
       entry.channelId === channelId &&
-      entry.threadRootId === threadRootId &&
+      (!threadRootId || entry.threadRootId === threadRootId) &&
       !details.has(entry.pubkey) &&
       !replaced.has(entry.pubkey),
   );
+  const humans = [
+    ...new Map(typers.map((entry) => [entry.pubkey, entry])).values(),
+  ];
+  const onlyInThreads =
+    !threadRootId && typers.every((entry) => !!entry.threadRootId);
   const name = (pubkey: string) =>
     resolveName(pubkey, profiles.get(pubkey)?.name ?? pubkey.slice(0, 10));
   const avatar = (pubkey: string) => {
@@ -230,7 +236,7 @@ export function TypingIndicator({
         .map(({ pubkey }) => name(pubkey))
         .join(
           ", ",
-        )}${humans.length > 2 ? ` and ${humans.length - 2} others` : ""}${humans.length === 1 ? " is typing" : " are typing"}`
+        )}${humans.length > 2 ? ` and ${humans.length - 2} others` : ""}${humans.length === 1 ? " is typing" : " are typing"}${onlyInThreads ? " in a thread" : ""}`
     : "";
   return (
     <>

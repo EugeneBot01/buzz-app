@@ -63,7 +63,15 @@ function AgentStatusLine({ session, channelId }: ComposerAccessoryProps) {
   );
   if (!online.length && !resting.length) return null;
   return (
-    <details className="px-1 pb-1 text-xs text-muted" data-no-translate="">
+    <details
+      className="mx-auto px-1 pb-1 text-xs text-muted"
+      style={{
+        // Team: the same column as the composer and the typing line.
+        inlineSize:
+          "min(calc(100% - 2 * var(--space-4)), var(--team-timeline-measure, 52rem))",
+      }}
+      data-no-translate=""
+    >
       <summary
         className="w-fit cursor-pointer select-none"
         title="이 채널 에이전트 상태 보기"
