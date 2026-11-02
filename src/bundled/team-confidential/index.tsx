@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { PluginModule } from "../../plugins/api";
 import type {
   ComposerToolProps,
@@ -29,6 +29,9 @@ function SecretTool({ disabled, insertText }: ComposerToolProps) {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  // Focus moves into the popup, so the composer taking focus back on the
+  // first click does not close it straight away.
+  const field = useRef<HTMLTextAreaElement>(null);
   const reset = () => {
     setText("");
     setPassword("");
@@ -72,9 +75,15 @@ function SecretTool({ disabled, insertText }: ComposerToolProps) {
           />
         }
       />
-      <PopoverPopup side="top" aria-label="대외비 메시지" size="wide">
+      <PopoverPopup
+        side="top"
+        aria-label="대외비 메시지"
+        size="wide"
+        initialFocus={field}
+      >
         <div className="flex flex-col gap-2" data-no-translate="">
           <Textarea
+            ref={field}
             aria-label="대외비 내용"
             placeholder="비밀번호를 아는 사람만 볼 내용"
             value={text}
