@@ -16,6 +16,8 @@ import teamMcpManifest from "./team-mcp/manifest.json";
 import * as teamMcp from "./team-mcp";
 import teamMentionsManifest from "./team-mentions/manifest.json";
 import * as teamMentions from "./team-mentions";
+import teamConfidentialManifest from "./team-confidential/manifest.json";
+import * as teamConfidential from "./team-confidential";
 import voiceNotesManifest from "./voice-notes/manifest.json";
 import * as voiceNotes from "./voice-notes";
 import pairingManifest from "./pairing/manifest.json";
@@ -155,6 +157,11 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...teamMentionsManifest, apiVersion: 1 },
     module: teamMentions,
+    enabledByDefault: true,
+  },
+  {
+    manifest: { ...teamConfidentialManifest, apiVersion: 1 },
+    module: teamConfidential,
     enabledByDefault: true,
   },
   {

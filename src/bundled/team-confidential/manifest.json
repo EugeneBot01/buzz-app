@@ -1,0 +1,10 @@
+{
+  "id": "buzz.team.confidential",
+  "name": "Confidential messages",
+  "apiVersion": 1,
+  "description": "Send text that only people with the password can read.",
+  "discovery": {
+    "category": "communication",
+    "tags": ["messaging", "people"]
+  }
+}
