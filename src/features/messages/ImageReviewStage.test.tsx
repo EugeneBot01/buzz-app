@@ -862,7 +862,7 @@ it("sends the selected image filename with its authenticated native download sou
   // The live region is always mounted and already reads "Downloading…", so an
   // existence query resolves before the mocked download settles.
   await waitFor(() =>
-    expect(screen.getByRole("status")).toHaveTextContent("Saved to Downloads"),
+    expect(screen.getByRole("status")).toHaveTextContent("Saved"),
   );
 });
 
@@ -908,7 +908,7 @@ it("keeps image download controls visible and focused while blocking pending rep
   expect(stage).toHaveAttribute("data-controls-revealed");
   expect(stage).not.toHaveAttribute("data-controls-idle");
   await act(async () => gate.resolve());
-  expect(screen.getByRole("status")).toHaveTextContent("Saved to Downloads");
+  expect(screen.getByRole("status")).toHaveTextContent("Saved");
   act(() => vi.advanceTimersByTime(3999));
   expect(stage).toHaveAttribute("data-controls-revealed");
   act(() => vi.advanceTimersByTime(1));
@@ -933,7 +933,7 @@ it("keeps failed image downloads retryable and recovers on success", async () =>
   fireEvent.click(screen.getByRole("button", { name: "Retry download image" }));
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   await act(async () => gate.resolve());
-  expect(screen.getByRole("status")).toHaveTextContent("Saved to Downloads");
+  expect(screen.getByRole("status")).toHaveTextContent("Saved");
   expect(invoke).toHaveBeenCalledTimes(2);
 });
 

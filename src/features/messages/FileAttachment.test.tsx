@@ -182,7 +182,26 @@ it("downloads authenticated native documents through the host without navigating
   fireEvent.click(link);
   expect(open).not.toHaveBeenCalled();
   expect(downloadNativeMedia).toHaveBeenCalledWith(nativeSource, "report.pdf");
-  await screen.findByText("Saved to Downloads");
+  await screen.findByText("Saved");
+});
+
+it("returns to idle when the save dialog is cancelled", async () => {
+  vi.mocked(downloadNativeMedia).mockRejectedValueOnce("Download cancelled");
+  render(
+    <FileAttachment
+      attachment={{
+        url: "https://relay.test/media/file",
+        kind: "file",
+        name: "report.pdf",
+      }}
+      source={nativeSource}
+      onOpenLink={vi.fn(() => false)}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Download report.pdf" }));
+  await waitFor(() => expect(downloadNativeMedia).toHaveBeenCalled());
+  await screen.findByText("Download file");
+  expect(screen.queryByText(/Retry/)).not.toBeInTheDocument();
 });
 
 it.each([
@@ -265,13 +284,11 @@ it("preserves focus and blocks repeat saves while pending, then announces succes
   fireEvent.click(button);
   expect(downloadNativeMedia).toHaveBeenCalledTimes(1);
   await act(async () => download.resolve());
-  expect(button).toHaveTextContent("Saved to Downloads");
+  expect(button).toHaveTextContent("Saved");
   expect(button).toHaveAttribute("aria-busy", "false");
-  expect(screen.getByRole("status")).toHaveTextContent(
-    "Saved report.pdf to Downloads",
-  );
+  expect(screen.getByRole("status")).toHaveTextContent("Saved report.pdf");
   act(() => vi.advanceTimersByTime(3999));
-  expect(button).toHaveTextContent("Saved to Downloads");
+  expect(button).toHaveTextContent("Saved");
   act(() => vi.advanceTimersByTime(1));
   expect(button).toHaveTextContent("1 KB");
   vi.mocked(downloadNativeMedia).mockResolvedValueOnce(undefined);
@@ -304,7 +321,7 @@ it("keeps a failed download on the card and recovers through retry", async () =>
   expect(retry).toHaveTextContent("Downloading…");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   await act(async () => retried.resolve());
-  expect(retry).toHaveTextContent("Saved to Downloads");
+  expect(retry).toHaveTextContent("Saved");
   expect(downloadNativeMedia).toHaveBeenCalledTimes(2);
 });
 
@@ -334,8 +351,13 @@ it.each(["success", "failure"])(
         ? old.resolve()
         : old.reject(new Error("old failure")),
     );
-    expect(screen.getByRole("button", { name: /^(?!.*열기)/ })).toHaveTextContent("1 KB");
-    expect(screen.getByRole("button", { name: /^(?!.*열기)/ })).toHaveAttribute("aria-busy", "false");
+    expect(
+      screen.getByRole("button", { name: /^(?!.*열기)/ }),
+    ).toHaveTextContent("1 KB");
+    expect(screen.getByRole("button", { name: /^(?!.*열기)/ })).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   },

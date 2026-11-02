@@ -107,7 +107,7 @@ function NativeMediaDownload({
           : state === "saved"
             ? compact
               ? "Downloaded"
-              : "Saved to Downloads"
+              : "Saved"
             : failureShown
               ? compact
                 ? "Download failed"

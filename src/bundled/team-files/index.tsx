@@ -14,6 +14,7 @@ import type { RelayData } from "../../features/relay/service";
 import type { RelaySession } from "../../features/relay/session";
 import type { EventData } from "../../features/relay/events";
 import { isNativeMediaSource } from "../../features/messages/attachment-source";
+import { isDownloadCancel } from "../../features/messages/use-native-download";
 import { PaperclipIcon } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
@@ -48,11 +49,11 @@ const noop = () => () => {};
 const emptyProfiles = new Map();
 
 /** Saves one file to the chosen folder; signed relay media goes through the host. */
-async function save(session: RelaySession, file: ChannelFile) {
+async function save(session: RelaySession, file: ChannelFile, ask = false) {
   const source = session.media(file.attachment.url);
   if (!source) throw new Error("이 파일은 받을 수 없어요");
   if (isNativeMediaSource(source))
-    return void (await saveToFolder(source, file.attachment.name ?? ""));
+    return void (await saveToFolder(source, file.attachment.name ?? "", ask));
   const link = document.createElement("a");
   link.href = source;
   link.download = fileName(file);
@@ -246,7 +247,12 @@ function FilesPanel({
             author={profiles.get(file.author)?.name}
             source={session.media(file.attachment.url)}
             isSaved={saved.has(session.media(file.attachment.url) ?? "")}
-            onSave={() => save(session, file).then(refreshSaved)}
+            onSave={() =>
+              save(session, file, true).then(() => {
+                refreshSaved();
+                void downloadFolder().then(setFolder, () => {});
+              })
+            }
           />
         ))}
         {state !== "loading" && !shown.length && (
@@ -339,7 +345,8 @@ function FileRow({
               setStatus("받는 중…");
               onSave().then(
                 () => setStatus("받음"),
-                () => setStatus("실패"),
+                (reason: unknown) =>
+                  setStatus(isDownloadCancel(reason) ? "" : "실패"),
               );
             }}
           >

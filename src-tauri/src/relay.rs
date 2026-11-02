@@ -1911,8 +1911,13 @@ pub(crate) async fn media_download<R: tauri::Runtime>(
     name: String,
 ) -> Result<()> {
     use tauri::Manager as _;
+    // Team build: chat attachments ask where to save, starting at the last folder.
+    if webview.label() == "main" {
+        return team_media_save(app, webview, host, fi, source, name, Some(true))
+            .await
+            .map(|_| ());
+    }
     let allowed = match webview.label() {
-        "main" => true,
         "huddle" => app
             .try_state::<crate::huddle_window::HuddleWindow>()
             .is_some_and(|host| host.permits_download(&source, &name)),
@@ -2026,9 +2031,12 @@ pub(crate) async fn team_media_save<R: tauri::Runtime>(
     fi: tauri::State<'_, FederatedIdentity>,
     source: String,
     name: String,
+    ask: Option<bool>,
 ) -> Result<bool> {
     use tauri::Manager as _;
+    use tauri_plugin_dialog::DialogExt as _;
     team_main_window(&webview)?;
+    let ask = ask.unwrap_or(false);
     let file = team_downloads_file(&app)?;
     let known = {
         let _guard = TEAM_DOWNLOADS_LOCK
@@ -2036,18 +2044,44 @@ pub(crate) async fn team_media_save<R: tauri::Runtime>(
             .map_err(|_| "Downloads unavailable")?;
         team_downloads_read(&file)
     };
-    if known.files.get(&source).is_some_and(|path| path.is_file()) {
+    if !ask && known.files.get(&source).is_some_and(|path| path.is_file()) {
         return Ok(true);
     }
     let url = download_target(&source).ok_or("Invalid media URL")?;
-    let filename = download_name(&name, &url).to_owned();
-    let directory = match known.folder.filter(|folder| folder.is_dir()) {
+    let mut filename = download_name(&name, &url).to_owned();
+    let mut directory = match known.folder.filter(|folder| folder.is_dir()) {
         Some(folder) => folder,
         None => app
             .path()
             .download_dir()
             .map_err(|_| "Downloads unavailable")?,
     };
+    if ask {
+        let dialog = app.clone();
+        let (start, suggested) = (directory.clone(), filename.clone());
+        let picked = tauri::async_runtime::spawn_blocking(move || {
+            dialog
+                .dialog()
+                .file()
+                .set_title("저장할 위치 선택")
+                .set_directory(start)
+                .set_file_name(suggested)
+                .blocking_save_file()
+                .and_then(|path| path.into_path().ok())
+        })
+        .await
+        .map_err(|_| "Media download interrupted".to_owned())?
+        .ok_or("Download cancelled")?;
+        directory = picked
+            .parent()
+            .ok_or("Invalid save location")?
+            .to_path_buf();
+        filename = picked
+            .file_name()
+            .ok_or("Invalid save location")?
+            .to_string_lossy()
+            .into_owned();
+    }
     let response = fetch_media(host.inner(), Some(fi.inner()), url, None)
         .await
         .map_err(|_| "Media download failed")?;
@@ -2058,6 +2092,9 @@ pub(crate) async fn team_media_save<R: tauri::Runtime>(
             .lock()
             .map_err(|_| "Downloads unavailable")?;
         let mut downloads = team_downloads_read(&file);
+        if ask {
+            downloads.folder = Some(directory);
+        }
         downloads.files.insert(source, path);
         team_downloads_write(&file, &downloads)?;
         Ok(false)

@@ -67,7 +67,7 @@ export function FileAttachment({
           {state === "pending"
             ? "Downloading…"
             : state === "saved"
-              ? "Saved to Downloads"
+              ? "Saved"
               : state === "failed"
                 ? "Couldn’t download · Retry"
                 : source
@@ -164,7 +164,7 @@ function NativeFileDownload({
     state === "pending"
       ? `Downloading ${displayName}`
       : state === "saved"
-        ? `Saved ${displayName} to Downloads`
+        ? `Saved ${displayName}`
         : state === "failed"
           ? `Couldn’t download ${displayName}. Try again.`
           : "";

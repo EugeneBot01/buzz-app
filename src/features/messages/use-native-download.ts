@@ -3,6 +3,10 @@ import { downloadNativeMedia } from "./native-download";
 
 export type DownloadState = "idle" | "pending" | "saved" | "failed";
 
+/** The host's answer when the save dialog is closed without choosing a place. */
+export const isDownloadCancel = (reason: unknown) =>
+  reason === "Download cancelled";
+
 /** The caller keys its action by attachment/source so each mount owns one lifetime. */
 export function useNativeDownload(
   source: string,
@@ -23,8 +27,8 @@ export function useNativeDownload(
     try {
       await downloadNativeMedia(source, name);
       setState("saved");
-    } catch {
-      setState("failed");
+    } catch (reason) {
+      setState(isDownloadCancel(reason) ? "idle" : "failed");
     } finally {
       pending.current = false;
     }
