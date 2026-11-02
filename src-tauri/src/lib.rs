@@ -885,6 +885,7 @@ pub fn run() {
                     })?;
                 }
             }
+            relay::set_user_agent(&app.package_info().version);
             app.state::<federated_identity::FederatedIdentity>()
                 .watch(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
