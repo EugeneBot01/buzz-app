@@ -6,9 +6,9 @@ export const TEXT_SIZES = [
   { id: "larger", label: "더 크게", zoom: 1.3 },
 ] as const;
 export const WIDTHS = [
-  { id: "normal", label: "기본", measure: "52rem" },
-  { id: "wide", label: "넓게", measure: "72rem" },
-  { id: "full", label: "화면 가득", measure: "100%" },
+  { id: "normal", label: "기본", measure: "52rem", body: "46rem" },
+  { id: "wide", label: "넓게", measure: "72rem", body: "66rem" },
+  { id: "full", label: "화면 가득", measure: "100%", body: "100%" },
 ] as const;
 
 export type DisplaySettings = Readonly<{
@@ -40,5 +40,7 @@ export function displayStyle({ text, width }: DisplaySettings) {
     ),
     "--team-timeline-measure":
       WIDTHS.find(({ id }) => id === width)?.measure ?? "52rem",
+    "--team-message-measure":
+      WIDTHS.find(({ id }) => id === width)?.body ?? "46rem",
   };
 }

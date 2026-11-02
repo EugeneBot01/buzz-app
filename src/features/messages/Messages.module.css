@@ -174,7 +174,7 @@
 .message:has(> .messageGutter) > .messageBody {
   max-width: min(
     85%,
-    46rem,
+    var(--team-message-measure, 46rem),
     max(60%, calc(100% - 2 * var(--message-side-space) - var(--space-4)))
   );
 }

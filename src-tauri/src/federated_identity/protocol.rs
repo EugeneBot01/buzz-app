@@ -48,7 +48,8 @@ impl From<&'static str> for Failure {
 }
 
 async fn body(mut response: reqwest::Response) -> Result<Zeroizing<Vec<u8>>, Failure> {
-    const LIMIT: usize = 64 * 1024;
+    // Team build: a relay's /info carries its community icon, often over 64 KiB.
+    const LIMIT: usize = 1024 * 1024;
     if response
         .headers()
         .iter()

@@ -15,6 +15,7 @@ describe("chat display settings", () => {
     expect(displayStyle({ text: "large", width: "wide" })).toEqual({
       "--team-message-zoom": "1.15",
       "--team-timeline-measure": "72rem",
+      "--team-message-measure": "66rem",
     });
   });
 });
