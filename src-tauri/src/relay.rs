@@ -1721,6 +1721,34 @@ fn save_download(
     Err("Too many files with this name".into())
 }
 
+/// Team build: write `filename` exactly, replacing a file the member chose to
+/// replace. A sibling temporary file is renamed over it, so a failed write
+/// never leaves the old file half overwritten.
+fn replace_download(
+    directory: &std::path::Path,
+    filename: &str,
+    body: &[u8],
+) -> Result<std::path::PathBuf> {
+    use std::io::Write as _;
+    let path = directory.join(filename);
+    let temporary = directory.join(format!(".{filename}.{}.part", uuid::Uuid::new_v4()));
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .and_then(|mut file| {
+            mark_download(&file, &temporary)
+                .and_then(|_| file.write_all(body))
+                .and_then(|_| file.sync_all())
+        })
+        .and_then(|_| std::fs::rename(&temporary, &path));
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(format!("Could not save media: {error}"));
+    }
+    Ok(path)
+}
+
 /// `image` bounds the WebP canvas but its VP8 decoder allocates Y/U/V planes
 /// from the embedded frame header before comparing that frame to the canvas.
 /// Inspect every embedded lossy frame (including ANMF subchunks) before decode.
@@ -2100,7 +2128,12 @@ pub(crate) async fn team_media_save<R: tauri::Runtime>(
         .map_err(|_| "Media download failed")?;
     let body = response.into_body();
     tauri::async_runtime::spawn_blocking(move || {
-        let path = save_download(&directory, &filename, &body)?;
+        // The save dialog already asked before replacing a file, so keep its choice.
+        let path = if ask {
+            replace_download(&directory, &filename, &body)?
+        } else {
+            save_download(&directory, &filename, &body)?
+        };
         let _guard = TEAM_DOWNLOADS_LOCK
             .lock()
             .map_err(|_| "Downloads unavailable")?;
