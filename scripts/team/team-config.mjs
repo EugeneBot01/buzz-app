@@ -18,14 +18,14 @@ const base = JSON.parse(
   ),
 );
 const config = {
-  productName: "SHIBAL",
+  productName: "Buzz Team",
   identifier: "xyz.buzzteam.desktop",
   version,
   app: {
     // Arrays replace rather than merge, so keep every other window setting.
     windows: base.app.windows.map((window) => ({
       ...window,
-      title: "SHIBAL",
+      title: "Buzz Team",
     })),
   },
   bundle: {
