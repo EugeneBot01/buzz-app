@@ -202,10 +202,7 @@ it("shows stable agent ordering, scopes humans exactly, and clears after work st
   };
   f.update([entry(other, secondRoot), entry(agent), entry(human)]);
   const view = render(<TypingIndicator {...props} />);
-  // Team: the channel view names people typing in its threads.
-  expect(screen.getByRole("status")).toHaveTextContent(
-    "Human is typing in a thread",
-  );
+  expect(screen.getByRole("status")).not.toHaveTextContent("Human is typing");
   const trigger = screen.getByRole("button", {
     name: "Activity: 2 agents working",
   });
@@ -643,4 +640,12 @@ it("Solo chat ArrowDown exposes retained thread navigation without opening Activ
     undefined,
   );
   expect(trigger).toHaveFocus();
+});
+
+it("names a person typing in a thread from the channel view (team)", () => {
+  const f = fixture();
+  const person = "d".repeat(64);
+  f.update([entry(person)]);
+  render(<TypingIndicator session={f.session} channelId="channel" />);
+  expect(screen.getByRole("status")).toHaveTextContent("is typing in a thread");
 });
