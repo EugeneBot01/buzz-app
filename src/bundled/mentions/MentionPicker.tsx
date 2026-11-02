@@ -164,7 +164,8 @@ export function MentionPicker({
           ...teams.choices
             .filter((team) => !team.disabled)
             .map((team) => teamKey(team.id)),
-          ...groups.map((group) => group.id),
+          // Never the first row Enter picks: searching or a click only.
+          ...(search.trim() ? groups.map((group) => group.id) : []),
         ],
     onChoose: (key) => {
       const person = candidates.find(

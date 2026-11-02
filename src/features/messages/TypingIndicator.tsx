@@ -120,7 +120,9 @@ export function TypingIndicator({
   const typers = entries.filter(
     (entry) =>
       entry.channelId === channelId &&
-      (!threadRootId || entry.threadRootId === threadRootId) &&
+      (entry.threadRootId === threadRootId ||
+        // Agents in a thread keep their own presentation there.
+        (!threadRootId && !profiles.get(entry.pubkey)?.isAgent)) &&
       !details.has(entry.pubkey) &&
       !replaced.has(entry.pubkey),
   );
