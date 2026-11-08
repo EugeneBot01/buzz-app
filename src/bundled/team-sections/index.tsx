@@ -64,8 +64,10 @@ function writeFiled(viewer: string, community: string, ids: Set<string>) {
   }
 }
 
-/** How long a read team layout is reused before asking the relay again. */
-const LAYOUT_TTL_MS = 10 * 60_000;
+/** How long a read team layout is reused: long enough for the burst of
+ * default channels a new member joins, short enough that an admin's new
+ * layout from another device is picked up. */
+const LAYOUT_TTL_MS = 60_000;
 const layouts = new Map<
   string,
   { session: RelaySession; at: number; layout: TeamLayout | null }

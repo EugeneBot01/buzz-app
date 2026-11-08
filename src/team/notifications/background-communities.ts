@@ -50,14 +50,15 @@ export function bindBackgroundCommunityAlerts(
     timer = setTimeout(connectNext, BETWEEN_MS);
   };
   const update = () => {
-    if (!started) return;
     const client = communities.snapshot();
+    // The account's on/off list is ready even before connecting starts.
+    communityAlerts.selectViewer(client.viewer);
+    if (!started) return;
     // A different account starts over.
     if (client.viewer !== viewer) {
       for (const stop of bindings.values()) stop();
       bindings.clear();
       viewer = client.viewer;
-      communityAlerts.selectViewer(viewer);
     }
     if (!viewer) return;
     const joined = new Set(client.memberships.map((item) => item.id));

@@ -6,6 +6,7 @@ import { useGoogleSyncSettings } from "../lib/useGoogleCalendarSync";
 import { Button } from "../compat/ui";
 import { Input } from "../compat/ui";
 import { Step, StatusLine } from "./DigestPanel";
+import { writeClipboardText } from "../../../shared/clipboard";
 
 function statusText(
   status: ReturnType<typeof useGoogleSyncSettings>["status"],
@@ -76,8 +77,7 @@ export function GoogleSyncSection({
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={() =>
-              void navigator.clipboard
-                .writeText(GOOGLE_APPS_SCRIPT)
+              void writeClipboardText(GOOGLE_APPS_SCRIPT)
                 .then(() => toast.success("코드를 복사했습니다."))
                 .catch(() => toast.error("복사하지 못했습니다."))
             }

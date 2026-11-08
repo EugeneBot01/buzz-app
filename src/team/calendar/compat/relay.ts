@@ -108,7 +108,8 @@ async function poll() {
           ...shape,
           ...(anyWithoutD ? {} : { "#d": [...new Set(tags)] }),
           since,
-          limit: 200,
+          // Room for every subscription's documents, so none is crowded out.
+          limit: Math.min(1000, 200 * Math.max(1, new Set(tags).size)),
         } as never,
       ])) as unknown as RelayEvent[];
       for (const watcher of group) {
