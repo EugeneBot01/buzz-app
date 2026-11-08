@@ -1,6 +1,6 @@
 {
   "id": "buzz.team.display",
-  "name": "Chat display",
+  "name": "UI EDIT",
   "apiVersion": 1,
   "description": "Personalize text size, spacing, avatars, width, font, dark mode brightness and top tabs.",
   "discovery": { "category": "productivity", "tags": ["tasks"] }

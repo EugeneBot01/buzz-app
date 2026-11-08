@@ -1,19 +1,38 @@
-/** This device's chat display choices (Buzz Team), shared by the settings
- * card and the shell parts that follow them. */
+/** This device's UI EDIT choices and saved UI profiles (Buzz Team), shared by
+ * the settings card and the shell parts that follow them. */
+import {
+  decodeProfiles,
+  readProfile,
+  saveProfile,
+  type UiProfile,
+} from "./profiles";
 import { type DisplaySettings, decodeDisplay, displayStyle } from "./settings";
 
 const KEY = "buzz-team-display.v1";
+const PROFILES_KEY = "buzz-team-ui-profiles.v1";
+const LAST_KEY = "buzz-team-ui-profile-last.v1";
 const listeners = new Set<() => void>();
 
-function read() {
+function load(key: string) {
   try {
-    return decodeDisplay(window.localStorage.getItem(KEY));
+    return window.localStorage.getItem(key);
   } catch {
-    return decodeDisplay(null);
+    return null;
+  }
+}
+function store(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Without storage, the choice lasts until the app closes.
   }
 }
 
+const read = () => decodeDisplay(load(KEY));
+
 let current: DisplaySettings | undefined;
+let profiles: readonly UiProfile[] | undefined;
+let last: string | null | undefined;
 let active = false;
 
 function apply(settings: DisplaySettings) {
@@ -59,11 +78,45 @@ export const displaySettings = {
   change(next: DisplaySettings) {
     current = next;
     if (active) apply(next);
-    try {
-      window.localStorage.setItem(KEY, JSON.stringify(next));
-    } catch {
-      // Without storage, the choice lasts until the app closes.
-    }
+    store(KEY, JSON.stringify(next));
+    notify();
+  },
+  profiles(): readonly UiProfile[] {
+    profiles ??= decodeProfiles(load(PROFILES_KEY));
+    return profiles;
+  },
+  /** The profile applied most recently, for Re-apply after an update. */
+  lastProfile(): string | null {
+    last ??= load(LAST_KEY);
+    return last;
+  },
+  /** Saves the current choices under `name`; throws a message to show. */
+  saveProfile(name: string) {
+    profiles = saveProfile(
+      displaySettings.profiles(),
+      name,
+      displaySettings.snapshot(),
+    );
+    store(PROFILES_KEY, JSON.stringify(profiles));
+    last = profiles[0]?.name ?? null;
+    if (last) store(LAST_KEY, last);
+    notify();
+  },
+  /** Applies a saved profile; returns what this version could not apply. */
+  applyProfile(name: string, tabsHere: readonly string[]) {
+    const profile = displaySettings
+      .profiles()
+      .find((item) => item.name === name);
+    if (!profile) throw new Error("저장된 프로필을 찾지 못했어요.");
+    const { settings, skipped } = readProfile(profile, tabsHere);
+    last = name;
+    store(LAST_KEY, name);
+    displaySettings.change(settings);
+    return skipped;
+  },
+  deleteProfile(name: string) {
+    profiles = displaySettings.profiles().filter((item) => item.name !== name);
+    store(PROFILES_KEY, JSON.stringify(profiles));
     notify();
   },
 };

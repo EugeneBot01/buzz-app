@@ -1,4 +1,4 @@
-/** Chat display (Buzz Team): how this device shows conversations and the app. */
+/** UI EDIT (Buzz Team): how this device shows conversations and the app. */
 export const TEXT_SIZES = [
   { id: "small", label: "작게", zoom: 0.9 },
   { id: "normal", label: "보통", zoom: 1 },
