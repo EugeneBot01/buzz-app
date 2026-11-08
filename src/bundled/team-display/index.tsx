@@ -210,7 +210,7 @@ function Profiles({ tabsHere }: { tabsHere: readonly string[] }) {
       </div>
       {profiles.map((profile) => (
         <div key={profile.name} className="flex flex-wrap items-center gap-1">
-          <span className="min-w-0 flex-1 truncate">
+          <span className="min-w-0 flex-1 truncate" data-no-translate="">
             {profile.name === last ? "● " : ""}
             {profile.name}
           </span>

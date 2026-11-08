@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DISPLAY,
   decodeDisplay,
+  darkSurfaces,
   displayStyle,
   orderTabs,
 } from "./settings";
@@ -48,7 +49,12 @@ describe("chat display settings", () => {
       "--team-message-measure": "66rem",
       "--team-message-density": "0.5",
       "--team-avatar-zoom": "1.25",
-      "--team-dark-lift": "70%",
+      "--team-dark-1": "#1b1b1b",
+      "--team-dark-2": "#252525",
+      "--team-dark-3": "#2f2f2f",
+      "--team-dark-4": "#393939",
+      "--team-dark-5": "#474747",
+      "--team-dark-6": "#555555",
       "--font-sans":
         '"Apple SD Gothic Neo", system-ui, -apple-system, sans-serif',
     });
@@ -87,5 +93,10 @@ describe("chat display settings", () => {
     expect(old.avatar).toBe(160);
     expect(old.dark).toBe(0);
     expect(decodeDisplay('{"text":"huge"}').text).toBe(100);
+  });
+
+  it("keeps the app's own dark colors at 0% and the lightest at 100%", () => {
+    expect(darkSurfaces(0)["--team-dark-1"]).toBe("#000000");
+    expect(darkSurfaces(100)["--team-dark-6"]).toBe("#5e5e5e");
   });
 });

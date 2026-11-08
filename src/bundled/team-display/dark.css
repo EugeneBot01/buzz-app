@@ -1,13 +1,13 @@
-/* Team: dark mode brightness. --team-dark-lift (0–100%) mixes the app's own
-   dark surfaces toward lighter ones; above 0% quiet text and borders also
-   gain contrast so buttons stay easy to find. */
+/* Team: dark mode brightness. The store sets --team-dark-1…6 from the chosen
+   percentage; above 0% quiet text and borders also gain contrast so buttons
+   stay easy to find. At 0% the app keeps its own colors. */
 :root:root[data-color-mode="dark"][data-team-dark="on"] {
-  --neutral-1: color-mix(in srgb, #262626 var(--team-dark-lift, 70%), #000000);
-  --neutral-2: color-mix(in srgb, #2e2e2e var(--team-dark-lift, 70%), #101010);
-  --neutral-3: color-mix(in srgb, #383838 var(--team-dark-lift, 70%), #1a1a1a);
-  --neutral-4: color-mix(in srgb, #434343 var(--team-dark-lift, 70%), #232323);
-  --neutral-5: color-mix(in srgb, #505050 var(--team-dark-lift, 70%), #333333);
-  --neutral-6: color-mix(in srgb, #5e5e5e var(--team-dark-lift, 70%), #404040);
+  --neutral-1: var(--team-dark-1);
+  --neutral-2: var(--team-dark-2);
+  --neutral-3: var(--team-dark-3);
+  --neutral-4: var(--team-dark-4);
+  --neutral-5: var(--team-dark-5);
+  --neutral-6: var(--team-dark-6);
   --text-subtle: var(--neutral-11);
   --text-metadata: var(--neutral-11);
   --text-quiet-control: var(--neutral-11);

@@ -145,6 +145,24 @@ export function parseDisplay(value: Record<string, unknown>): DisplaySettings {
   };
 }
 
+// The app's own dark surfaces, and the lightest this build offers.
+const DARK_FROM = [0x00, 0x10, 0x1a, 0x23, 0x33, 0x40];
+const DARK_TO = [0x26, 0x2e, 0x38, 0x43, 0x50, 0x5e];
+
+/** Dark surface greys for a brightness percentage, computed here rather than
+ * with CSS color-mix so older macOS WebKit shows them too. */
+export function darkSurfaces(percent: number) {
+  return Object.fromEntries(
+    DARK_FROM.map((from, index) => {
+      const to = DARK_TO[index] ?? from;
+      const grey = Math.round(from + ((to - from) * percent) / 100)
+        .toString(16)
+        .padStart(2, "0");
+      return [`--team-dark-${index + 1}`, `#${grey}${grey}${grey}`];
+    }),
+  );
+}
+
 export function displayStyle(settings: DisplaySettings) {
   const font = FONTS.find(({ id }) => id === settings.font)?.stack ?? "";
   return {
@@ -155,7 +173,7 @@ export function displayStyle(settings: DisplaySettings) {
       WIDTHS.find(({ id }) => id === settings.width)?.body ?? "46rem",
     "--team-message-density": String(settings.density / 100),
     "--team-avatar-zoom": String(settings.avatar / 100),
-    "--team-dark-lift": `${settings.dark}%`,
+    ...darkSurfaces(settings.dark),
     // Empty leaves the app's own font.
     "--font-sans": font,
   };
