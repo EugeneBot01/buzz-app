@@ -186,7 +186,6 @@
     "updater:allow-install",
     "core:resources:allow-close",
     "allow-update-restart",
-    "core:webview:allow-set-webview-zoom",
     "core:window:allow-close",
     "core:window:allow-start-dragging",
     "core:window:allow-internal-toggle-maximize",
