@@ -64,13 +64,35 @@ function writeFiled(viewer: string, community: string, ids: Set<string>) {
   }
 }
 
-async function readLayout(scope: Scope, signal: AbortSignal) {
+/** How long a read team layout is reused before asking the relay again. */
+const LAYOUT_TTL_MS = 10 * 60_000;
+const layouts = new Map<
+  string,
+  { session: RelaySession; at: number; layout: TeamLayout | null }
+>();
+
+/** Reads the team layout, reusing a recent read for the same session so each
+ * newly joined channel does not fetch managers and documents again. */
+async function readLayout(scope: Scope, signal: AbortSignal, fresh = false) {
+  const known = layouts.get(scope.community);
+  if (
+    !fresh &&
+    known?.session === scope.session &&
+    Date.now() - known.at < LAYOUT_TTL_MS
+  )
+    return known.layout;
   const managers = await readManagers(scope.session, signal);
   const events = await readTeamDocs(
     scope.session,
     sectionsDTag(teamRelayUrl(scope.community)),
   );
-  return latestLayout(events, managers);
+  const layout = latestLayout(events, managers);
+  layouts.set(scope.community, {
+    session: scope.session,
+    at: Date.now(),
+    layout,
+  });
+  return layout;
 }
 
 /** Resolves with the member's own folders once they can be changed. */
@@ -219,7 +241,7 @@ function Folders({ scope }: { scope: Scope }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    readLayout(scope, controller.signal).then(
+    readLayout(scope, controller.signal, true).then(
       (next) => controller.signal.aborted || setLayout(next),
       () => controller.signal.aborted || setLayout(null),
     );
@@ -246,6 +268,11 @@ function Folders({ scope }: { scope: Scope }) {
         created_at: Math.floor(Date.now() / 1000),
       });
       setLayout(next);
+      layouts.set(scope.community, {
+        session: scope.session,
+        at: Date.now(),
+        layout: next,
+      });
       setStatus("공유했어요. 팀원이 다음에 접속하면 같은 폴더로 정리돼요.");
     } catch (reason) {
       setStatus(
