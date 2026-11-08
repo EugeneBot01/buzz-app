@@ -55,6 +55,10 @@ export const displaySettings = {
   hiddenTabs(): readonly string[] {
     return active ? displaySettings.snapshot().hiddenTabs : NONE;
   },
+  /** The member's top tab order; none while the plugin is off. */
+  tabOrder(): readonly string[] {
+    return active ? displaySettings.snapshot().tabOrder : NONE;
+  },
   subscribe(listener: () => void) {
     listeners.add(listener);
     return () => {

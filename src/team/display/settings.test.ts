@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DISPLAY, decodeDisplay, displayStyle } from "./settings";
+import {
+  DEFAULT_DISPLAY,
+  decodeDisplay,
+  displayStyle,
+  orderTabs,
+} from "./settings";
 
 describe("chat display settings", () => {
   it("falls back to defaults for missing or broken values", () => {
@@ -48,5 +53,22 @@ describe("chat display settings", () => {
     });
     // The default font leaves the app's own.
     expect(displayStyle(DEFAULT_DISPLAY)["--font-sans"]).toBe("");
+  });
+
+  it("orders top tabs: Messages first, then the member's order, then the rest", () => {
+    const pages = [
+      { key: "buzz.reminders/reminders" },
+      { key: "buzz.channels/channels" },
+      { key: "buzz.team.calendar/calendar" },
+      { key: "buzz.agents/agents" },
+    ];
+    expect(
+      orderTabs(pages, ["buzz.team.calendar/calendar"]).map((page) => page.key),
+    ).toEqual([
+      "buzz.channels/channels",
+      "buzz.team.calendar/calendar",
+      "buzz.reminders/reminders",
+      "buzz.agents/agents",
+    ]);
   });
 });

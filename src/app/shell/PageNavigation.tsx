@@ -10,6 +10,7 @@ import { Tabs } from "../../shared/design-system/ui/Tabs";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { PageIcon } from "./PageIcon";
 import { pagePresentation } from "./presentation";
+import { orderTabs } from "../../team/display/settings";
 import { displaySettings } from "../../team/display/store";
 
 export function PageNavigation({
@@ -25,14 +26,21 @@ export function PageNavigation({
   onSelect(key: string, options?: Pick<NavigationOpenOptions, "focus">): void;
   placement?: "sidebar" | "topbar" | "toolbar";
 }) {
-  // Team: tabs the member hid, except the one in use.
+  // Team: tabs the member hid (except the one in use), in the member's order.
   const hidden = useSyncExternalStore(
     displaySettings.subscribe,
     displaySettings.hiddenTabs,
   );
+  const order = useSyncExternalStore(
+    displaySettings.subscribe,
+    displaySettings.tabOrder,
+  );
   if (placement === "topbar") {
-    const shown = pages.filter(
-      (page) => page.key === selected || !hidden.includes(page.key),
+    const shown = orderTabs(
+      pages.filter(
+        (page) => page.key === selected || !hidden.includes(page.key),
+      ),
+      order,
     );
     return (
       <Tabs

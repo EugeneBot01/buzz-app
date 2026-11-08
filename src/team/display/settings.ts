@@ -58,6 +58,8 @@ export type DisplaySettings = Readonly<{
   dark: Id<typeof DARK_LEVELS>;
   /** Top tabs this member hides; the Messages tab is never hidden. */
   hiddenTabs: readonly string[];
+  /** Top tabs in the member's order, after Messages; others follow as the app orders them. */
+  tabOrder: readonly string[];
 }>;
 export const DEFAULT_DISPLAY: DisplaySettings = {
   text: "normal",
@@ -67,6 +69,7 @@ export const DEFAULT_DISPLAY: DisplaySettings = {
   font: "default",
   dark: "normal",
   hiddenTabs: [],
+  tabOrder: [],
 };
 
 const pick = <T extends readonly { id: string }[]>(
@@ -84,8 +87,20 @@ export function decodeDisplay(raw: string | null): DisplaySettings {
   }
 }
 
+const tabList = (value: unknown) =>
+  [
+    ...new Set(
+      (Array.isArray(value) ? value : []).filter(
+        (tab): tab is string =>
+          typeof tab === "string" &&
+          tab.length > 0 &&
+          tab.length <= 128 &&
+          tab !== ALWAYS_SHOWN_TAB,
+      ),
+    ),
+  ].slice(0, MAX_HIDDEN_TABS);
+
 export function parseDisplay(value: Record<string, unknown>): DisplaySettings {
-  const tabs = Array.isArray(value.hiddenTabs) ? value.hiddenTabs : [];
   return {
     text: pick(TEXT_SIZES, value.text, DEFAULT_DISPLAY.text),
     width: pick(WIDTHS, value.width, DEFAULT_DISPLAY.width),
@@ -93,17 +108,8 @@ export function parseDisplay(value: Record<string, unknown>): DisplaySettings {
     avatar: pick(AVATARS, value.avatar, DEFAULT_DISPLAY.avatar),
     font: pick(FONTS, value.font, DEFAULT_DISPLAY.font),
     dark: pick(DARK_LEVELS, value.dark, DEFAULT_DISPLAY.dark),
-    hiddenTabs: [
-      ...new Set(
-        tabs.filter(
-          (tab): tab is string =>
-            typeof tab === "string" &&
-            tab.length > 0 &&
-            tab.length <= 128 &&
-            tab !== ALWAYS_SHOWN_TAB,
-        ),
-      ),
-    ].slice(0, MAX_HIDDEN_TABS),
+    hiddenTabs: tabList(value.hiddenTabs),
+    tabOrder: tabList(value.tabOrder),
   };
 }
 
@@ -126,4 +132,21 @@ export function displayStyle(settings: DisplaySettings) {
     // Empty leaves the app's own font.
     "--font-sans": font,
   };
+}
+
+/** Top tabs in the member's order: Messages first, then their order, then the rest. */
+export function orderTabs<T extends { key: string }>(
+  pages: readonly T[],
+  order: readonly string[],
+): T[] {
+  const rank = (page: T) => {
+    if (page.key === ALWAYS_SHOWN_TAB) return -1;
+    const at = order.indexOf(page.key);
+    return at === -1 ? order.length : at;
+  };
+  // Stable: pages the member never ordered keep the app's order.
+  return pages
+    .map((page, index) => ({ page, index }))
+    .sort((a, b) => rank(a.page) - rank(b.page) || a.index - b.index)
+    .map(({ page }) => page);
 }

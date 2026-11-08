@@ -11,6 +11,7 @@ import {
   DENSITIES,
   type DisplaySettings,
   FONTS,
+  orderTabs,
   TEXT_SIZES,
   WIDTHS,
 } from "../../team/display/settings";
@@ -151,11 +152,21 @@ function DisplaySettingsCard({ pages }: { pages: PagesReader }) {
     displaySettings.snapshot,
   );
   const all = useSyncExternalStore(pages.subscribe, pages.snapshot);
-  const tabs = orderPages(
-    all.filter(
-      (page) => page.placement === "topbar" && page.key !== ALWAYS_SHOWN_TAB,
+  const tabs = orderTabs(
+    orderPages(
+      all.filter(
+        (page) => page.placement === "topbar" && page.key !== ALWAYS_SHOWN_TAB,
+      ),
     ),
+    settings.tabOrder,
   );
+  const moveTab = (index: number, by: -1 | 1) => {
+    const keys = tabs.map((page) => page.key);
+    const [moved] = keys.splice(index, 1);
+    if (moved === undefined) return;
+    keys.splice(index + by, 0, moved);
+    displaySettings.change({ ...settings, tabOrder: keys });
+  };
   const toggleTab = (key: string) =>
     displaySettings.change({
       ...settings,
@@ -202,18 +213,39 @@ function DisplaySettingsCard({ pages }: { pages: PagesReader }) {
       />
       {tabs.length > 0 && (
         <fieldset className="flex flex-wrap items-center gap-1 border-0 p-0">
-          <legend className="pb-1 text-muted">상단 탭 보이기</legend>
-          {tabs.map((page) => {
+          <legend className="pb-1 text-muted">
+            상단 탭 (보이기 · 순서, 메시지 탭은 항상 맨 앞)
+          </legend>
+          {tabs.map((page, index) => {
             const shown = !settings.hiddenTabs.includes(page.key);
             return (
-              <Button
-                key={page.key}
-                variant={shown ? "prominent" : "subtle"}
-                aria-pressed={shown}
-                onClick={() => toggleTab(page.key)}
-              >
-                {page.title}
-              </Button>
+              <span key={page.key} className="inline-flex items-center gap-1">
+                <Button
+                  variant={shown ? "prominent" : "subtle"}
+                  aria-pressed={shown}
+                  onClick={() => toggleTab(page.key)}
+                >
+                  {page.title}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  aria-label={`${page.title} 앞으로`}
+                  disabled={index === 0}
+                  onClick={() => moveTab(index, -1)}
+                >
+                  ←
+                </Button>
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  aria-label={`${page.title} 뒤로`}
+                  disabled={index === tabs.length - 1}
+                  onClick={() => moveTab(index, 1)}
+                >
+                  →
+                </Button>
+              </span>
             );
           })}
         </fieldset>
@@ -231,6 +263,7 @@ function DisplaySettingsCard({ pages }: { pages: PagesReader }) {
               font: "default",
               dark: "normal",
               hiddenTabs: [],
+              tabOrder: [],
             })
           }
         >
