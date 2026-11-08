@@ -147,5 +147,5 @@ export async function sealOutgoing(rootId: string | undefined, text: string) {
   const refusal = sealedThreadRefusal(rootId, false);
   const key = keys.get(rootId);
   if (refusal || !key) throw new Error(refusal);
-  return `🔒 ${REPLY}${await seal(key, text)}${END}`;
+  return `🔒 대외비 (SHIBALPOINT 앱에서 열람) ${REPLY}${await seal(key, text)}${END}`;
 }

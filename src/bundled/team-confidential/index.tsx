@@ -30,6 +30,7 @@ import {
   THREAD_ROOT_TOKEN,
   unlockThread,
 } from "../../team/secret/thread";
+import { MoveThread } from "./MoveThread";
 
 export const inject = ["conversation"];
 
@@ -63,7 +64,10 @@ function SecretTool({
     setBusy(true);
     try {
       const token = await startThread(text, password);
-      await session.messages.send(channelId, `🔒 대외비 스레드 ${token}`);
+      await session.messages.send(
+        channelId,
+        `🔒 대외비 스레드 (SHIBALPOINT 앱에서 비밀번호로 열람) ${token}`,
+      );
       reset();
       setOpen(false);
     } catch (reason) {
@@ -281,5 +285,18 @@ export const apply: PluginModule["apply"] = (ctx) => {
     title: "Confidential reply",
     matches: ranges(THREAD_REPLY_TOKEN),
     component: ThreadReply,
+  });
+  ctx.conversation.registerMessageAction({
+    id: "move-to-confidential",
+    title: "대외비 스레드로 옮기기",
+    icon: () => <LockIcon size={16} aria-hidden="true" />,
+    // A thread's opening message that is not confidential already.
+    matches: (message) =>
+      !message.threadRootId &&
+      !!message.content.trim() &&
+      ![THREAD_ROOT_TOKEN, THREAD_REPLY_TOKEN, SECRET_TOKEN].some((token) =>
+        new RegExp(token.source).test(message.content),
+      ),
+    component: MoveThread,
   });
 };

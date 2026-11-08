@@ -9,11 +9,15 @@ export const apply: PluginModule["apply"] = (ctx) => {
   ctx.conversation.registerInline({
     id: "group-mention",
     title: "Group mention",
-    matches: ({ text }) =>
-      [...text.matchAll(TOKEN)].map((match) => {
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        return { start, end: start + (match[2]?.length ?? 0) };
-      }),
+    // Only a message that actually tagged people (as Buzz Team sends it) is a
+    // group mention; the bare words from other apps stay plain text.
+    matches: ({ text, message }) =>
+      (message.mentions.length ? [...text.matchAll(TOKEN)] : []).map(
+        (match) => {
+          const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+          return { start, end: start + (match[2]?.length ?? 0) };
+        },
+      ),
     component: ({ text }) => (
       <span
         className={referenceStyles.link}

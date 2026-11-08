@@ -392,6 +392,8 @@ export function createMessages(
         throw new Error("A valid thread root is required");
       if (!/^[0-9a-f]{64}$/.test(parentId))
         throw new Error("A valid reply parent is required");
+      // Team: @everyone / @all reach people from threads too.
+      mentions = groupRecipients?.(channelId, content, mentions) ?? mentions;
       const message = attachmentMessage(content, attachments, relayOrigin);
       return writer(9, channelId).send({
         kind: 9,

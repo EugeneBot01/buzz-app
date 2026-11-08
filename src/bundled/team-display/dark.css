@@ -1,17 +1,17 @@
 /* Team: buttons and quiet text stay readable in dark mode. */
 :root:root[data-color-mode="dark"] {
   /* Lifted from near-black so panels and controls separate. */
-  --neutral-1: #141414;
-  --neutral-2: #1c1c1c;
-  --neutral-3: #262626;
-  --neutral-4: #303030;
-  --neutral-5: #3d3d3d;
-  --neutral-6: #4a4a4a;
+  --neutral-1: #1b1b1b;
+  --neutral-2: #232323;
+  --neutral-3: #2d2d2d;
+  --neutral-4: #383838;
+  --neutral-5: #454545;
+  --neutral-6: #545454;
   --text-subtle: var(--neutral-11);
-  --text-metadata: var(--neutral-10);
-  --text-quiet-control: var(--neutral-10);
-  --border-standard: var(--neutral-6);
-  --border-message-thread: var(--neutral-7);
+  --text-metadata: var(--neutral-11);
+  --text-quiet-control: var(--neutral-11);
+  --border-standard: var(--neutral-7);
+  --border-message-thread: var(--neutral-8);
   --border-prominent: var(--neutral-9);
   --border-floating-control: var(--neutral-10);
 }
