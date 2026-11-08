@@ -12,6 +12,8 @@ import teamShortcutsManifest from "./team-shortcuts/manifest.json";
 import * as teamShortcuts from "./team-shortcuts";
 import teamDisplayManifest from "./team-display/manifest.json";
 import * as teamDisplay from "./team-display";
+import teamWorkspaceManifest from "./team-workspace/manifest.json";
+import * as teamWorkspace from "./team-workspace";
 import teamMcpManifest from "./team-mcp/manifest.json";
 import * as teamMcp from "./team-mcp";
 import teamMentionsManifest from "./team-mentions/manifest.json";
@@ -242,6 +244,12 @@ export const bundledPlugins: readonly BundledPlugin[] = [
   {
     manifest: { ...relayStaffManifest, apiVersion: 1 },
     module: relayStaff,
+    enabledByDefault: true,
+  },
+  // Team: Premiere-style work area of page panels.
+  {
+    manifest: { ...teamWorkspaceManifest, apiVersion: 1 },
+    module: teamWorkspace,
     enabledByDefault: true,
   },
   // Team: shared team calendar.

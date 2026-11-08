@@ -480,6 +480,11 @@ pub fn bundled_manifests() -> Vec<Manifest> {
             "../../../src/bundled/relay-notes/manifest.json"
         ))
         .expect("relay notes manifest"),
+        // Buzz Team: team-workspace.
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/team-workspace/manifest.json"
+        ))
+        .expect("team-workspace manifest"),
         // Buzz Team: team-calendar.
         serde_json::from_str(include_str!(
             "../../../src/bundled/team-calendar/manifest.json"
@@ -564,6 +569,7 @@ fn enabled_by_default(id: &str) -> bool {
             | "buzz.moderation"
             | "buzz.relay-staff"
             | "buzz.team.calendar"
+            | "buzz.team.workspace"
             | "buzz.team.group-mentions"
             | "buzz.team.confidential"
             | "buzz.team.welcome"

@@ -11,6 +11,7 @@ import { type DisplaySettings, decodeDisplay, displayStyle } from "./settings";
 const KEY = "buzz-team-display.v1";
 const PROFILES_KEY = "buzz-team-ui-profiles.v1";
 const LAST_KEY = "buzz-team-ui-profile-last.v1";
+const WORKSPACE_KEY = "buzz-team-workspace.v1";
 const listeners = new Set<() => void>();
 
 function load(key: string) {
@@ -33,6 +34,8 @@ const read = () => decodeDisplay(load(KEY));
 let current: DisplaySettings | undefined;
 let profiles: readonly UiProfile[] | undefined;
 let last: string | null | undefined;
+let workspace: unknown;
+let workspaceRead = false;
 let active = false;
 
 function apply(settings: DisplaySettings) {
@@ -85,6 +88,24 @@ export const displaySettings = {
     store(KEY, JSON.stringify(next));
     notify();
   },
+  /** The saved workspace arrangement as stored; the workspace page cleans it. */
+  workspace(): unknown {
+    if (!workspaceRead) {
+      workspaceRead = true;
+      try {
+        workspace = JSON.parse(load(WORKSPACE_KEY) ?? "null");
+      } catch {
+        workspace = null;
+      }
+    }
+    return workspace;
+  },
+  setWorkspace(next: unknown) {
+    workspace = next;
+    workspaceRead = true;
+    store(WORKSPACE_KEY, JSON.stringify(next));
+    notify();
+  },
   profiles(): readonly UiProfile[] {
     profiles ??= decodeProfiles(load(PROFILES_KEY));
     return profiles;
@@ -100,6 +121,8 @@ export const displaySettings = {
       displaySettings.profiles(),
       name,
       displaySettings.snapshot(),
+      Date.now(),
+      displaySettings.workspace() ?? undefined,
     );
     store(PROFILES_KEY, JSON.stringify(profiles));
     last = profiles[0]?.name ?? null;
@@ -115,6 +138,9 @@ export const displaySettings = {
     const { settings, skipped } = readProfile(profile, tabsHere);
     last = name;
     store(LAST_KEY, name);
+    if (profile.workspace !== undefined)
+      // A fresh copy, so re-applying the same profile still rebuilds the panels.
+      displaySettings.setWorkspace(structuredClone(profile.workspace));
     displaySettings.change(settings);
     return skipped;
   },

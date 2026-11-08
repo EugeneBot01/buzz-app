@@ -21,6 +21,8 @@ export type UiProfile = Readonly<{
   name: string;
   /** As saved; read again through `parseDisplay` every time it is applied. */
   settings: Readonly<Record<string, unknown>>;
+  /** The workspace panel arrangement, when one was saved with it. */
+  workspace?: unknown;
   savedAt: number;
 }>;
 
@@ -62,13 +64,22 @@ export function saveProfile(
   name: string,
   settings: DisplaySettings,
   now = Date.now(),
+  workspace?: unknown,
 ): UiProfile[] {
   const trimmed = name.trim().slice(0, MAX_PROFILE_NAME);
   if (!trimmed) throw new Error("프로필 이름을 적어 주세요.");
   const rest = profiles.filter((profile) => profile.name !== trimmed);
   if (rest.length >= MAX_PROFILES)
     throw new Error(`프로필은 ${MAX_PROFILES}개까지 저장할 수 있어요.`);
-  return [{ name: trimmed, settings: { ...settings }, savedAt: now }, ...rest];
+  return [
+    {
+      name: trimmed,
+      settings: { ...settings },
+      ...(workspace === undefined ? {} : { workspace }),
+      savedAt: now,
+    },
+    ...rest,
+  ];
 }
 
 /**

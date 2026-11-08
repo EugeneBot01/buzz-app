@@ -1,0 +1,7 @@
+{
+  "id": "buzz.team.workspace",
+  "name": "Work area",
+  "apiVersion": 1,
+  "description": "Arrange app pages as panels you drag, split, stack and resize, like a video editor's workspace.",
+  "discovery": { "category": "productivity", "tags": ["tasks"] }
+}
