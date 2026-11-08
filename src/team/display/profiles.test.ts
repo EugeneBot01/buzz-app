@@ -13,11 +13,11 @@ it("saves by name, newest first, replacing the same name", () => {
   const again = saveProfile(
     two,
     "업무용",
-    { ...DEFAULT_DISPLAY, dark: "bright" },
+    { ...DEFAULT_DISPLAY, dark: 100 },
     3,
   );
   expect(again.map((profile) => profile.name)).toEqual(["업무용", "회의용"]);
-  expect(again[0]?.settings.dark).toBe("bright");
+  expect(again[0]?.settings.dark).toBe(100);
   expect(() => saveProfile(again, "   ", DEFAULT_DISPLAY)).toThrow();
 });
 
@@ -41,17 +41,18 @@ it("applies what this version knows and reports the rest", () => {
       savedAt: 1,
       settings: {
         text: "large",
+        density: "a-spacing-this-version-dropped",
         font: "a-font-this-version-dropped",
         hiddenTabs: ["buzz.reminders/reminders", "gone.plugin/page"],
       },
     },
     ["buzz.reminders/reminders", "buzz.team.calendar/calendar"],
   );
-  expect(settings.text).toBe("large");
+  expect(settings.text).toBe(115);
   expect(settings.font).toBe("default");
   expect(settings.hiddenTabs).toEqual([
     "buzz.reminders/reminders",
     "gone.plugin/page",
   ]);
-  expect(skipped).toEqual(["글꼴", "지금 없는 상단 탭 1개"]);
+  expect(skipped).toEqual(["글꼴", "메시지 간격", "지금 없는 상단 탭 1개"]);
 });

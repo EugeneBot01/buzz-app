@@ -4,13 +4,11 @@
  * profile survives app updates that rename or remove a choice.
  */
 import {
-  AVATARS,
-  DARK_LEVELS,
-  DENSITIES,
   type DisplaySettings,
   FONTS,
   parseDisplay,
-  TEXT_SIZES,
+  SLIDERS,
+  sliderValue,
   WIDTHS,
 } from "./settings";
 
@@ -27,12 +25,8 @@ export type UiProfile = Readonly<{
 }>;
 
 const CHOICES = {
-  text: ["채널 글자 크기", TEXT_SIZES],
   width: ["대화 폭", WIDTHS],
-  density: ["메시지 간격", DENSITIES],
-  avatar: ["프로필 사진 크기", AVATARS],
   font: ["글꼴", FONTS],
-  dark: ["다크모드 밝기", DARK_LEVELS],
 } as const;
 
 export function decodeProfiles(raw: string | null): UiProfile[] {
@@ -95,6 +89,14 @@ export function readProfile(
   for (const [key, [label, options]] of Object.entries(CHOICES)) {
     const saved = profile.settings[key];
     if (saved !== undefined && !options.some(({ id }) => id === saved))
+      skipped.push(label);
+  }
+  for (const [key, { label }] of Object.entries(SLIDERS)) {
+    const saved = profile.settings[key];
+    if (
+      saved !== undefined &&
+      sliderValue(key as keyof typeof SLIDERS, saved) === undefined
+    )
       skipped.push(label);
   }
   const missing = parsed.hiddenTabs.filter((tab) => !tabsHere.includes(tab));

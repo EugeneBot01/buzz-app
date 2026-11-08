@@ -36,10 +36,10 @@ describe("chat display settings", () => {
     expect(
       displayStyle({
         ...DEFAULT_DISPLAY,
-        text: "large",
+        text: 115,
         width: "wide",
-        density: "compact",
-        avatar: "large",
+        density: 50,
+        avatar: 125,
         font: "gothic",
       }),
     ).toEqual({
@@ -48,6 +48,7 @@ describe("chat display settings", () => {
       "--team-message-measure": "66rem",
       "--team-message-density": "0.5",
       "--team-avatar-zoom": "1.25",
+      "--team-dark-lift": "70%",
       "--font-sans":
         '"Apple SD Gothic Neo", system-ui, -apple-system, sans-serif',
     });
@@ -70,5 +71,21 @@ describe("chat display settings", () => {
       "buzz.reminders/reminders",
       "buzz.agents/agents",
     ]);
+  });
+
+  it("reads percentages, and older named choices as their percentages", () => {
+    const old = decodeDisplay(
+      JSON.stringify({
+        text: "large",
+        density: "roomy",
+        avatar: 999,
+        dark: "dim",
+      }),
+    );
+    expect(old.text).toBe(115);
+    expect(old.density).toBe(160);
+    expect(old.avatar).toBe(160);
+    expect(old.dark).toBe(0);
+    expect(decodeDisplay('{"text":"huge"}').text).toBe(100);
   });
 });

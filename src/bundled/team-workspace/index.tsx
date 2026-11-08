@@ -7,6 +7,7 @@ import {
 } from "flexlayout-react";
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PluginModule } from "../../plugins/api";
+import { pagePresentation } from "../../app/shell/presentation";
 import { PageView } from "../../features/pages/PageView";
 import type { PagesReader, RegisteredPage } from "../../features/pages/service";
 import {
@@ -55,7 +56,11 @@ function WorkspacePage({ pages }: { pages: PagesReader }) {
     () =>
       all
         .filter((page) => page.primary && page.key !== WORKSPACE_PAGE)
-        .map((page) => ({ key: page.key, title: page.title, page })),
+        .map((page) => ({
+          key: page.key,
+          title: pagePresentation(page).label,
+          page,
+        })),
     [all],
   );
   const saved = useSyncExternalStore(
@@ -130,7 +135,6 @@ function Arrangement({
     <div
       className="flex-workspace-comparison flex h-full min-h-0 flex-col"
       style={{ gap: "var(--space-2)", padding: "var(--space-2)" }}
-      data-no-translate=""
     >
       <div className="flex flex-wrap items-center gap-1">
         <span className="text-muted">패널 추가:</span>

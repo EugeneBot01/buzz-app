@@ -1,24 +1,45 @@
 /** UI EDIT (Buzz Team): how this device shows conversations and the app. */
-export const TEXT_SIZES = [
-  { id: "small", label: "작게", zoom: 0.9 },
-  { id: "normal", label: "보통", zoom: 1 },
-  { id: "large", label: "크게", zoom: 1.15 },
-  { id: "larger", label: "더 크게", zoom: 1.3 },
-] as const;
+/** Percentage sliders: range, default, and the older named choices they replace. */
+export const SLIDERS = {
+  text: {
+    label: "채널 글자 크기",
+    min: 80,
+    max: 150,
+    step: 5,
+    base: 100,
+    legacy: { small: 90, normal: 100, large: 115, larger: 130 },
+  },
+  density: {
+    label: "메시지 간격",
+    min: 30,
+    max: 200,
+    step: 10,
+    base: 100,
+    legacy: { compact: 50, normal: 100, roomy: 160 },
+  },
+  avatar: {
+    label: "프로필 사진 크기",
+    min: 60,
+    max: 160,
+    step: 5,
+    base: 100,
+    legacy: { small: 80, normal: 100, large: 125 },
+  },
+  // 0% is the app's own dark colors, 100% the lightest this build offers.
+  dark: {
+    label: "다크모드 밝기",
+    min: 0,
+    max: 100,
+    step: 5,
+    base: 70,
+    legacy: { dim: 0, normal: 70, bright: 100 },
+  },
+} as const;
+export type SliderName = keyof typeof SLIDERS;
 export const WIDTHS = [
   { id: "normal", label: "기본", measure: "52rem", body: "46rem" },
   { id: "wide", label: "넓게", measure: "72rem", body: "66rem" },
   { id: "full", label: "화면 가득", measure: "100%", body: "100%" },
-] as const;
-export const DENSITIES = [
-  { id: "compact", label: "촘촘하게", space: 0.5 },
-  { id: "normal", label: "보통", space: 1 },
-  { id: "roomy", label: "넓게", space: 1.6 },
-] as const;
-export const AVATARS = [
-  { id: "small", label: "작게", zoom: 0.8 },
-  { id: "normal", label: "보통", zoom: 1 },
-  { id: "large", label: "크게", zoom: 1.25 },
 ] as const;
 export const FONTS = [
   { id: "default", label: "기본", stack: "" },
@@ -38,36 +59,31 @@ export const FONTS = [
     stack: '"AppleMyungjo", "Nanum Myeongjo", serif',
   },
 ] as const;
-/** Dark mode surfaces: the app's own, this build's default, or lighter. */
-export const DARK_LEVELS = [
-  { id: "dim", label: "어둡게" },
-  { id: "normal", label: "보통" },
-  { id: "bright", label: "밝게" },
-] as const;
 const MAX_HIDDEN_TABS = 20;
 /** The Messages tab is how members get back; it never hides. */
 export const ALWAYS_SHOWN_TAB = "buzz.channels/channels";
 
 type Id<T extends readonly { id: string }[]> = T[number]["id"];
 export type DisplaySettings = Readonly<{
-  text: Id<typeof TEXT_SIZES>;
+  /** Percentages, within each slider's range. */
+  text: number;
+  density: number;
+  avatar: number;
+  dark: number;
   width: Id<typeof WIDTHS>;
-  density: Id<typeof DENSITIES>;
-  avatar: Id<typeof AVATARS>;
   font: Id<typeof FONTS>;
-  dark: Id<typeof DARK_LEVELS>;
   /** Top tabs this member hides; the Messages tab is never hidden. */
   hiddenTabs: readonly string[];
   /** Top tabs in the member's order, after Messages; others follow as the app orders them. */
   tabOrder: readonly string[];
 }>;
 export const DEFAULT_DISPLAY: DisplaySettings = {
-  text: "normal",
+  text: SLIDERS.text.base,
+  density: SLIDERS.density.base,
+  avatar: SLIDERS.avatar.base,
+  dark: SLIDERS.dark.base,
   width: "normal",
-  density: "normal",
-  avatar: "normal",
   font: "default",
-  dark: "normal",
   hiddenTabs: [],
   tabOrder: [],
 };
@@ -77,6 +93,22 @@ const pick = <T extends readonly { id: string }[]>(
   value: unknown,
   fallback: Id<T>,
 ): Id<T> => options.find(({ id }) => id === value)?.id ?? fallback;
+
+/** A slider value from a number, or from the named choice older builds saved;
+ * undefined when it is neither. */
+export function sliderValue(name: SliderName, value: unknown) {
+  const { min, max, legacy } = SLIDERS[name];
+  const number =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? (legacy as Record<string, number>)[value]
+        : undefined;
+  if (number === undefined || !Number.isFinite(number)) return undefined;
+  return Math.min(max, Math.max(min, Math.round(number)));
+}
+const slider = (name: SliderName, value: unknown) =>
+  sliderValue(name, value) ?? SLIDERS[name].base;
 
 export function decodeDisplay(raw: string | null): DisplaySettings {
   try {
@@ -102,12 +134,12 @@ const tabList = (value: unknown) =>
 
 export function parseDisplay(value: Record<string, unknown>): DisplaySettings {
   return {
-    text: pick(TEXT_SIZES, value.text, DEFAULT_DISPLAY.text),
+    text: slider("text", value.text),
+    density: slider("density", value.density),
+    avatar: slider("avatar", value.avatar),
+    dark: slider("dark", value.dark),
     width: pick(WIDTHS, value.width, DEFAULT_DISPLAY.width),
-    density: pick(DENSITIES, value.density, DEFAULT_DISPLAY.density),
-    avatar: pick(AVATARS, value.avatar, DEFAULT_DISPLAY.avatar),
     font: pick(FONTS, value.font, DEFAULT_DISPLAY.font),
-    dark: pick(DARK_LEVELS, value.dark, DEFAULT_DISPLAY.dark),
     hiddenTabs: tabList(value.hiddenTabs),
     tabOrder: tabList(value.tabOrder),
   };
@@ -116,19 +148,14 @@ export function parseDisplay(value: Record<string, unknown>): DisplaySettings {
 export function displayStyle(settings: DisplaySettings) {
   const font = FONTS.find(({ id }) => id === settings.font)?.stack ?? "";
   return {
-    "--team-message-zoom": String(
-      TEXT_SIZES.find(({ id }) => id === settings.text)?.zoom ?? 1,
-    ),
+    "--team-message-zoom": String(settings.text / 100),
     "--team-timeline-measure":
       WIDTHS.find(({ id }) => id === settings.width)?.measure ?? "52rem",
     "--team-message-measure":
       WIDTHS.find(({ id }) => id === settings.width)?.body ?? "46rem",
-    "--team-message-density": String(
-      DENSITIES.find(({ id }) => id === settings.density)?.space ?? 1,
-    ),
-    "--team-avatar-zoom": String(
-      AVATARS.find(({ id }) => id === settings.avatar)?.zoom ?? 1,
-    ),
+    "--team-message-density": String(settings.density / 100),
+    "--team-avatar-zoom": String(settings.avatar / 100),
+    "--team-dark-lift": `${settings.dark}%`,
     // Empty leaves the app's own font.
     "--font-sans": font,
   };

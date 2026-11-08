@@ -42,7 +42,8 @@ function apply(settings: DisplaySettings) {
   const root = document.documentElement;
   for (const [name, value] of Object.entries(displayStyle(settings)))
     root.style.setProperty(name, value);
-  root.dataset.teamDark = settings.dark;
+  // 0% keeps the app's own dark colors untouched.
+  root.dataset.teamDark = settings.dark > 0 ? "on" : "off";
 }
 
 const notify = () => {
