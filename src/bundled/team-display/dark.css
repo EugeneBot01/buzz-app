@@ -1,12 +1,9 @@
-/* Team: buttons and quiet text stay readable in dark mode. */
-:root:root[data-color-mode="dark"] {
-  /* Lifted from near-black so panels and controls separate. */
-  --neutral-1: #1b1b1b;
-  --neutral-2: #232323;
-  --neutral-3: #2d2d2d;
-  --neutral-4: #383838;
-  --neutral-5: #454545;
-  --neutral-6: #545454;
+/* Team: buttons and quiet text stay readable in dark mode. "dim" keeps the
+   app's own colors; "normal" lifts surfaces; "bright" lifts them further. */
+:root:root[data-color-mode="dark"]:is(
+  [data-team-dark="normal"],
+  [data-team-dark="bright"]
+) {
   --text-subtle: var(--neutral-11);
   --text-metadata: var(--neutral-11);
   --text-quiet-control: var(--neutral-11);
@@ -14,4 +11,20 @@
   --border-message-thread: var(--neutral-8);
   --border-prominent: var(--neutral-9);
   --border-floating-control: var(--neutral-10);
+}
+:root:root[data-color-mode="dark"][data-team-dark="normal"] {
+  --neutral-1: #1b1b1b;
+  --neutral-2: #232323;
+  --neutral-3: #2d2d2d;
+  --neutral-4: #383838;
+  --neutral-5: #454545;
+  --neutral-6: #545454;
+}
+:root:root[data-color-mode="dark"][data-team-dark="bright"] {
+  --neutral-1: #262626;
+  --neutral-2: #2e2e2e;
+  --neutral-3: #383838;
+  --neutral-4: #434343;
+  --neutral-5: #505050;
+  --neutral-6: #5e5e5e;
 }

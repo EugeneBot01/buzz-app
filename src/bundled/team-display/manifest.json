@@ -2,6 +2,6 @@
   "id": "buzz.team.display",
   "name": "Chat display",
   "apiVersion": 1,
-  "description": "Choose the text size and width of channel conversations, with clearer dark mode contrast.",
+  "description": "Personalize text size, spacing, avatars, width, font, dark mode brightness and top tabs.",
   "discovery": { "category": "productivity", "tags": ["tasks"] }
 }

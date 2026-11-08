@@ -129,15 +129,24 @@
 }
 .message {
   zoom: var(--team-message-zoom, 1);
-  --message-side-space: calc(var(--size-control-sm) + var(--space-2));
+  --message-side-space: calc(
+    var(--size-control-sm) *
+    var(--team-avatar-zoom, 1) +
+    var(--space-2)
+  );
   width: min(100%, var(--timeline-measure));
   margin-inline: auto;
   position: relative;
   container: message-row / inline-size;
   display: flex;
   gap: var(--space-3);
-  /* Match continuation bottom padding so regrouping preserves reading anchors. */
-  padding: calc(var(--space-3) + var(--space-half)) 0 var(--space-half);
+  /* Match continuation bottom padding so regrouping preserves reading anchors.
+     Team: --team-message-density spaces messages closer or further apart. */
+  padding: calc(
+      (var(--space-3) + var(--space-half)) *
+      var(--team-message-density, 1)
+    )
+    0 calc(var(--space-half) * var(--team-message-density, 1));
 }
 .message[data-layout="thread"],
 .message[data-layout="continuation"] {
@@ -147,7 +156,7 @@
   flex-direction: row-reverse;
 }
 .message[data-layout="continuation"] {
-  padding-block: var(--space-half);
+  padding-block: calc(var(--space-half) * var(--team-message-density, 1));
 }
 /* Timeline continuations keep the full-size avatar column's text alignment. */
 .feed .message[data-layout="continuation"] {
@@ -160,7 +169,8 @@
   height: var(--size-control-sm);
 }
 .messageGutter {
-  flex: 0 0 var(--size-control-sm);
+  /* Team: the avatar column grows with the chosen avatar size. */
+  flex: 0 0 calc(var(--size-control-sm) * var(--team-avatar-zoom, 1));
 }
 .messageBody {
   display: flex;
@@ -614,7 +624,10 @@ html[data-keyboard-navigation] .attachmentImage:focus-visible {
   border-radius: calc(var(--radius-icon-button) + var(--space-1h) + 1px);
   box-shadow: var(--shadow-xs);
   padding: var(--space-3) var(--space-1h) var(--space-1h);
-  width: min(calc(100% - 2 * var(--space-4)), var(--team-timeline-measure, 52rem));
+  width: min(
+    calc(100% - 2 * var(--space-4)),
+    var(--team-timeline-measure, 52rem)
+  );
   margin: 0 auto var(--space-4);
   display: flex;
   flex-shrink: 0;
@@ -649,7 +662,10 @@ html[data-keyboard-navigation] .attachmentImage:focus-visible {
     padding-block: var(--space-3);
   }
   .composer {
-    width: min(calc(100% - 2 * var(--space-3)), var(--team-timeline-measure, 52rem));
+    width: min(
+      calc(100% - 2 * var(--space-3)),
+      var(--team-timeline-measure, 52rem)
+    );
     margin: 0 auto var(--space-3);
   }
 }
@@ -3013,6 +3029,8 @@ html[data-keyboard-navigation] .rawDiff:focus-visible {
 
 /* Keep sent and received avatars close to their message in every layout. */
 .messageAvatar {
+  /* Team: the member's chosen avatar size. */
+  zoom: var(--team-avatar-zoom, 1);
   user-select: none;
   position: absolute;
   bottom: 0;

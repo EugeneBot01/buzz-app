@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import type { RegisteredPage } from "../../features/pages/service";
 import type { NavigationOpenOptions } from "../../features/navigation/controller";
 import {
@@ -9,6 +10,7 @@ import { Tabs } from "../../shared/design-system/ui/Tabs";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { PageIcon } from "./PageIcon";
 import { pagePresentation } from "./presentation";
+import { displaySettings } from "../../team/display/store";
 
 export function PageNavigation({
   pages,
@@ -23,17 +25,25 @@ export function PageNavigation({
   onSelect(key: string, options?: Pick<NavigationOpenOptions, "focus">): void;
   placement?: "sidebar" | "topbar" | "toolbar";
 }) {
+  // Team: tabs the member hid, except the one in use.
+  const hidden = useSyncExternalStore(
+    displaySettings.subscribe,
+    displaySettings.hiddenTabs,
+  );
   if (placement === "topbar") {
+    const shown = pages.filter(
+      (page) => page.key === selected || !hidden.includes(page.key),
+    );
     return (
       <Tabs
         label="Topbar pages"
         variant="chrome"
-        value={pages.some((page) => page.key === selected) ? selected : null}
+        value={shown.some((page) => page.key === selected) ? selected : null}
         onValueChange={(key) => onSelect(key, { focus: "preserve" })}
         onReselect={(key) => {
           if (key !== currentPage) onSelect(key, { focus: "preserve" });
         }}
-        items={pages.map((page) => {
+        items={shown.map((page) => {
           const Badge = page.badge;
           const { icon, image } = pagePresentation(page);
           return {
