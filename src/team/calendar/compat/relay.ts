@@ -74,6 +74,59 @@ export async function signRelayEvent(template: EventTemplate) {
   return template;
 }
 
+type Watcher = {
+  rest: Record<string, unknown>;
+  onEvent: (event: RelayEvent) => void;
+  since: number;
+};
+const watchers = new Set<Watcher>();
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+const loads = new Set<() => void>();
+let reloadTimer: ReturnType<typeof setInterval> | undefined;
+
+/** One read per group of subscriptions that differ only in `#d`. */
+async function poll() {
+  if (!current) return;
+  const groups = new Map<string, Watcher[]>();
+  for (const watcher of watchers) {
+    const { "#d": _d, ...shape } = watcher.rest;
+    const key = JSON.stringify(shape);
+    groups.set(key, [...(groups.get(key) ?? []), watcher]);
+  }
+  for (const group of groups.values()) {
+    const first = group[0];
+    if (!first) continue;
+    const { "#d": _d, ...shape } = first.rest;
+    const tags = group.flatMap((watcher) =>
+      Array.isArray(watcher.rest["#d"]) ? (watcher.rest["#d"] as string[]) : [],
+    );
+    const anyWithoutD = group.some((watcher) => !watcher.rest["#d"]);
+    const since = Math.min(...group.map((watcher) => watcher.since));
+    try {
+      const events = (await current.session.read([
+        {
+          ...shape,
+          ...(anyWithoutD ? {} : { "#d": [...new Set(tags)] }),
+          since,
+          limit: 200,
+        } as never,
+      ])) as unknown as RelayEvent[];
+      for (const watcher of group) {
+        const wanted = watcher.rest["#d"] as string[] | undefined;
+        for (const event of events) {
+          if (event.created_at < watcher.since) continue;
+          const d = event.tags.find((tag) => tag[0] === "d")?.[1];
+          if (wanted && (!d || !wanted.includes(d))) continue;
+          watcher.since = Math.max(watcher.since, event.created_at);
+          watcher.onEvent(event);
+        }
+      }
+    } catch {
+      // The next tick tries again.
+    }
+  }
+}
+
 export const relayClient = {
   async fetchEvents(filter: Filter): Promise<RelayEvent[]> {
     const { session } = need();
@@ -97,41 +150,43 @@ export const relayClient = {
       created_at: event.createdAt ?? Math.floor(Date.now() / 1000),
     });
   },
-  /** Live updates as polling: new matching events every 15 seconds. */
+  /** Live updates as polling: new matching events every 15 seconds. Every
+   * open subscription shares one timer, and those that differ only in their
+   * `d` tags share one read. */
   async subscribeLive(
     filter: Filter,
     onEvent: (event: RelayEvent) => void,
   ): Promise<() => Promise<void>> {
-    let since = Math.floor(Date.now() / 1000) - 5;
-    let stopped = false;
     const { limit: _limit, ...rest } = filter as Record<string, unknown>;
-    const tick = async () => {
-      if (stopped || !current) return;
-      try {
-        const events = await current.session.read([
-          { ...rest, since, limit: 200 } as never,
-        ]);
-        for (const event of events as unknown as RelayEvent[]) {
-          since = Math.max(since, event.created_at);
-          onEvent(event);
-        }
-      } catch {
-        // The next tick tries again.
+    const watcher: Watcher = {
+      rest,
+      onEvent,
+      since: Math.floor(Date.now() / 1000) - 5,
+    };
+    watchers.add(watcher);
+    pollTimer ??= setInterval(() => void poll(), 15_000);
+    return async () => {
+      watchers.delete(watcher);
+      if (!watchers.size && pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = undefined;
       }
     };
-    const timer = setInterval(() => void tick(), 15_000);
-    return async () => {
-      stopped = true;
-      clearInterval(timer);
-    };
   },
-  /** Runs `load` when the connection comes back, and every 30 seconds so
-   * other members' changes show up without a live subscription. */
+  /** Runs `load` when the connection comes back, and every minute so other
+   * members' changes show up even if a poll was missed. One shared timer. */
   subscribeToReconnects(load: () => void) {
-    const timer = setInterval(load, 30_000);
+    loads.add(load);
+    reloadTimer ??= setInterval(() => {
+      for (const each of loads) each();
+    }, 60_000);
     const stop = subscribeTeamRelay(load);
     return () => {
-      clearInterval(timer);
+      loads.delete(load);
+      if (!loads.size && reloadTimer) {
+        clearInterval(reloadTimer);
+        reloadTimer = undefined;
+      }
       stop();
     };
   },
