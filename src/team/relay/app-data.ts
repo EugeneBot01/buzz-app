@@ -10,6 +10,7 @@ export const TEAM_APP_DATA_PREFIXES = [
   "team-sections:",
   "team-shortcuts:",
   "team-onboarding:",
+  "team-ui-profiles:",
 ] as const;
 
 /** The largest document the relay keeps comfortably (about 60 KB). */

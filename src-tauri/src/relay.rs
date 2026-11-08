@@ -407,13 +407,14 @@ fn validate_event(community: &str, event: &EventTemplate) -> Result<()> {
 
 /// Team: `d` prefixes of the plaintext app data the team build shares in a
 /// community. Mirrors `src/team/relay/app-data.ts`.
-const TEAM_APP_DATA_PREFIXES: [&str; 6] = [
+const TEAM_APP_DATA_PREFIXES: [&str; 7] = [
     "team-calendar:",
     "team-calendar-polls:",
     "team-calendar-digest:",
     "team-sections:",
     "team-shortcuts:",
     "team-onboarding:",
+    "team-ui-profiles:",
 ];
 
 /// Team: one `d` tag with a team prefix, at most one `team-*` `t` tag, no

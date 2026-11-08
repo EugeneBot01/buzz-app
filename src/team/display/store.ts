@@ -2,10 +2,15 @@
  * the settings card and the shell parts that follow them. */
 import {
   decodeProfiles,
+  MAX_PROFILE_NAME,
+  MAX_PROFILES,
   readProfile,
+  renameProfile,
   saveProfile,
+  shareProfile,
   type UiProfile,
 } from "./profiles";
+import { MAX_SHARED } from "./sharing";
 import { type DisplaySettings, decodeDisplay, displayStyle } from "./settings";
 
 const KEY = "buzz-team-display.v1";
@@ -144,6 +149,63 @@ export const displaySettings = {
       displaySettings.setWorkspace(structuredClone(profile.workspace));
     displaySettings.change(settings);
     return skipped;
+  },
+  /** Applies a teammate's shared look; their work area is never shared. */
+  applyShared(profile: UiProfile, tabsHere: readonly string[]) {
+    const { settings, skipped } = readProfile(profile, tabsHere);
+    displaySettings.change(settings);
+    return skipped;
+  },
+  /** Replaces the saved look of `name` with the current one. */
+  updateProfile(name: string) {
+    displaySettings.saveProfile(name);
+  },
+  renameProfile(from: string, to: string) {
+    profiles = renameProfile(displaySettings.profiles(), from, to);
+    store(PROFILES_KEY, JSON.stringify(profiles));
+    if (displaySettings.lastProfile() === from) {
+      last = to.trim();
+      store(LAST_KEY, last);
+    }
+    notify();
+  },
+  shareProfile(name: string, community: string, shared: boolean) {
+    profiles = shareProfile(
+      displaySettings.profiles(),
+      name,
+      community,
+      shared,
+      MAX_SHARED,
+    );
+    store(PROFILES_KEY, JSON.stringify(profiles));
+    notify();
+  },
+  /** The profiles this member shares in one community, as published. */
+  sharedProfiles(community: string): UiProfile[] {
+    return displaySettings
+      .profiles()
+      .filter((profile) => profile.sharedIn?.includes(community));
+  },
+  /** Copies a teammate's profile into this member's own, under a free name. */
+  copyProfile(profile: UiProfile, from: string) {
+    const taken = new Set(displaySettings.profiles().map((item) => item.name));
+    if (taken.size >= MAX_PROFILES)
+      throw new Error(`프로필은 ${MAX_PROFILES}개까지 저장할 수 있어요.`);
+    // The suffix always fits, so each try is a different name.
+    const named = (n: number) => {
+      const suffix = ` (${from.slice(0, 12)}${n > 1 ? ` ${n}` : ""})`;
+      return `${profile.name.slice(0, MAX_PROFILE_NAME - suffix.length)}${suffix}`;
+    };
+    let n = 1;
+    while (taken.has(named(n)) && n <= MAX_PROFILES + 1) n++;
+    const name = named(n);
+    profiles = [
+      { name, settings: profile.settings, savedAt: Date.now() },
+      ...displaySettings.profiles(),
+    ];
+    store(PROFILES_KEY, JSON.stringify(profiles));
+    notify();
+    return name;
   },
   deleteProfile(name: string) {
     profiles = displaySettings.profiles().filter((item) => item.name !== name);

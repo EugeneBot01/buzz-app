@@ -22,6 +22,8 @@ export type UiProfile = Readonly<{
   /** The workspace panel arrangement, when one was saved with it. */
   workspace?: unknown;
   savedAt: number;
+  /** Communities (their shared-profile `d` tags) this profile is shared in. */
+  sharedIn?: readonly string[];
 }>;
 
 const CHOICES = {
@@ -63,6 +65,7 @@ export function saveProfile(
   const trimmed = name.trim().slice(0, MAX_PROFILE_NAME);
   if (!trimmed) throw new Error("프로필 이름을 적어 주세요.");
   const rest = profiles.filter((profile) => profile.name !== trimmed);
+  const before = profiles.find((profile) => profile.name === trimmed);
   if (rest.length >= MAX_PROFILES)
     throw new Error(`프로필은 ${MAX_PROFILES}개까지 저장할 수 있어요.`);
   return [
@@ -71,10 +74,57 @@ export function saveProfile(
       settings: { ...settings },
       ...(workspace === undefined ? {} : { workspace }),
       savedAt: now,
+      ...(before?.sharedIn?.length ? { sharedIn: before.sharedIn } : {}),
     },
     ...rest,
   ];
 }
+
+/** Renames a profile; the new name must be free. */
+export function renameProfile(
+  profiles: readonly UiProfile[],
+  from: string,
+  to: string,
+): UiProfile[] {
+  const name = to.trim().slice(0, MAX_PROFILE_NAME);
+  if (!name) throw new Error("프로필 이름을 적어 주세요.");
+  if (name !== from && profiles.some((profile) => profile.name === name))
+    throw new Error(`"${name}" 이름의 프로필이 이미 있어요.`);
+  return profiles.map((profile) =>
+    profile.name === from ? { ...profile, name } : profile,
+  );
+}
+
+/** Shares or stops sharing a profile in one community; at most `limit` there. */
+export function shareProfile(
+  profiles: readonly UiProfile[],
+  name: string,
+  community: string,
+  shared: boolean,
+  limit: number,
+): UiProfile[] {
+  if (
+    shared &&
+    profiles.filter(
+      (profile) =>
+        profile.name !== name && profile.sharedIn?.includes(community),
+    ).length >= limit
+  )
+    throw new Error(`공유는 ${limit}개까지 할 수 있어요.`);
+  return profiles.map((profile) => {
+    if (profile.name !== name) return profile;
+    const rest = (profile.sharedIn ?? []).filter((tag) => tag !== community);
+    return { ...profile, sharedIn: shared ? [...rest, community] : rest };
+  });
+}
+
+/** What a teammate sees: the look and tabs only, never the work area layout
+ * or where it is shared. */
+export const publicProfile = ({ name, settings, savedAt }: UiProfile) => ({
+  name,
+  settings,
+  savedAt,
+});
 
 /**
  * The settings a profile gives on this version, and what it could not apply:

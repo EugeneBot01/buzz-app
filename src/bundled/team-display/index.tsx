@@ -1,13 +1,29 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { PluginModule } from "../../plugins/api";
 import type { PagesReader } from "../../features/pages/service";
-import { Button } from "../../shared/design-system/ui/Button";
-import { Input } from "../../shared/design-system/ui/Input";
+import type { RelayData } from "../../features/relay/service";
 import {
   orderPages,
   pagePlacement,
   pagePresentation,
 } from "../../app/shell/presentation";
+import { DotsThreeIcon } from "../../shared/design-system/icons/index";
+import { Button } from "../../shared/design-system/ui/Button";
+import { InlineHeader } from "../../shared/design-system/ui/Header";
+import { IconButton } from "../../shared/design-system/ui/IconButton";
+import { Input } from "../../shared/design-system/ui/Input";
+import {
+  MenuItem,
+  MenuPopup,
+  MenuRoot,
+  MenuTrigger,
+} from "../../shared/design-system/ui/Menu";
+import { PreferenceRow } from "../../shared/design-system/ui/PreferenceRow";
+import { Select } from "../../shared/design-system/ui/Select";
+import { SettingsGroup } from "../../shared/design-system/ui/SettingsGroup";
+import { Switch } from "../../shared/design-system/ui/Switch";
+import { scopeOf } from "../reminders/react";
+import { readTeamDocs, teamRelayUrl } from "../../team/relay/community";
 import {
   ALWAYS_SHOWN_TAB,
   DEFAULT_DISPLAY,
@@ -18,75 +34,132 @@ import {
   type SliderName,
   WIDTHS,
 } from "../../team/display/settings";
+import {
+  encodeShared,
+  readShared,
+  SHARED_TAG,
+  type SharedProfiles,
+  sharedDTag,
+} from "../../team/display/sharing";
 import { displaySettings } from "../../team/display/store";
 import "./dark.css";
 
-export const inject = ["settingsCards", "pages"];
+export const inject = ["settingsCards", "pages", "relay"];
 
-function Choices<K extends keyof DisplaySettings>({
-  legend,
-  name,
-  options,
-  settings,
-}: {
-  legend: string;
-  name: K;
-  options: readonly { id: DisplaySettings[K] & string; label: string }[];
-  settings: DisplaySettings;
-}) {
-  return (
-    <fieldset className="flex flex-wrap items-center gap-1 border-0 p-0">
-      <legend className="pb-1 text-muted">{legend}</legend>
-      {options.map(({ id, label }) => (
-        <Button
-          key={id}
-          variant={settings[name] === id ? "prominent" : "subtle"}
-          aria-pressed={settings[name] === id}
-          onClick={() => displaySettings.change({ ...settings, [name]: id })}
-        >
-          {label}
-        </Button>
-      ))}
-    </fieldset>
-  );
+const useSettings = () =>
+  useSyncExternalStore(displaySettings.subscribe, displaySettings.snapshot);
+
+/** The community this window is in, for shared profiles. */
+function communityOf(relay: RelayData) {
+  const connection = relay.snapshot();
+  const scope = connection.status === "ready" ? scopeOf(connection) : undefined;
+  if (!scope || !connection.session) return undefined;
+  return {
+    session: connection.session,
+    viewer: scope.viewer,
+    dTag: sharedDTag(teamRelayUrl(scope.communityOrigin)),
+  };
 }
 
+/** The community this window is in now; changes when the member switches. */
+function useCommunity(relay: RelayData) {
+  const connection = useSyncExternalStore(relay.subscribe, relay.snapshot);
+  const scope = connection.status === "ready" ? scopeOf(connection) : undefined;
+  return scope && connection.session
+    ? {
+        session: connection.session,
+        viewer: scope.viewer,
+        dTag: sharedDTag(teamRelayUrl(scope.communityOrigin)),
+      }
+    : undefined;
+}
+type Community = NonNullable<ReturnType<typeof useCommunity>>;
+
+/** Runs an action and reports its message, or the error it threw. */
+const report = (say: (message: string) => void, action: () => string) => {
+  try {
+    say(action());
+  } catch (reason) {
+    say(reason instanceof Error ? reason.message : String(reason));
+  }
+};
+
+const applied = (name: string, skipped: readonly string[]) =>
+  skipped.length
+    ? `"${name}" 적용함. 이번 버전에서 적용 못 한 항목: ${skipped.join(", ")}`
+    : `"${name}" 적용함.`;
+
 /** Drag to change; the percentage shows beside the bar as it moves. */
-function Slider({
-  name,
-  settings,
-}: {
-  name: SliderName;
-  settings: DisplaySettings;
-}) {
+function SliderRow({ name }: { name: SliderName }) {
+  const settings = useSettings();
   const { label, min, max, step } = SLIDERS[name];
   const id = `ui-edit-${name}`;
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-muted">
-        {label}
-      </label>
-      <div className="flex items-center gap-3">
-        <input
-          id={id}
-          type="range"
-          min={min}
-          max={max}
-          step={step}
+    <PreferenceRow
+      title={label}
+      controlId={id}
+      trailing={
+        <span className="flex w-64 max-w-full items-center gap-3">
+          <input
+            id={id}
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={settings[name]}
+            className="min-w-0 flex-1 accent-[var(--accent-9)]"
+            onChange={(event) =>
+              displaySettings.change({
+                ...displaySettings.snapshot(),
+                [name]: Number(event.target.value),
+              })
+            }
+          />
+          <output htmlFor={id} className="w-11 text-right tabular-nums">
+            {settings[name]}%
+          </output>
+        </span>
+      }
+    />
+  );
+}
+
+function ChoiceRow<K extends "width" | "font">({
+  name,
+  label,
+  options,
+}: {
+  name: K;
+  label: string;
+  options: readonly { id: DisplaySettings[K]; label: string }[];
+}) {
+  const settings = useSettings();
+  return (
+    <PreferenceRow
+      title={label}
+      trailing={
+        <Select
+          variant="compact"
+          label={label}
           value={settings[name]}
-          className="min-w-0 flex-1 accent-[var(--accent-9)]"
-          onChange={(event) =>
+          groups={[
+            {
+              label,
+              options: options.map((option) => ({
+                value: option.id,
+                label: option.label,
+              })),
+            },
+          ]}
+          onValueChange={(value) =>
             displaySettings.change({
-              ...settings,
-              [name]: Number(event.target.value),
+              ...displaySettings.snapshot(),
+              [name]: value,
             })
           }
         />
-        <output htmlFor={id} className="w-12 text-right tabular-nums">
-          {settings[name]}%
-        </output>
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -115,10 +188,9 @@ function Preview() {
         background: "var(--bg-app, var(--neutral-1))",
         borderColor: "var(--border-standard)",
         fontFamily: "var(--font-sans)",
-        padding: "var(--space-3)",
+        padding: "var(--space-3) var(--space-4)",
       }}
     >
-      <p className="pb-2 text-muted">미리보기</p>
       <div style={{ zoom: "var(--team-message-zoom, 1)" }}>
         {rows.map((row) => (
           <div
@@ -138,7 +210,9 @@ function Preview() {
               className="min-w-0 rounded-lg px-3 py-2"
               style={{ background: "var(--neutral-3)" }}
             >
-              <div className="text-muted">{row.who}</div>
+              <div className="text-muted" data-no-translate="">
+                {row.who}
+              </div>
               <div>{row.text}</div>
             </div>
           </div>
@@ -148,109 +222,8 @@ function Preview() {
   );
 }
 
-/** Save the current look under a name, switch between saved looks, and put
- * the last one back after an update moved things around. */
-function Profiles({ tabsHere }: { tabsHere: readonly string[] }) {
-  const profiles = useSyncExternalStore(
-    displaySettings.subscribe,
-    displaySettings.profiles,
-  );
-  const last = useSyncExternalStore(
-    displaySettings.subscribe,
-    displaySettings.lastProfile,
-  );
-  const [name, setName] = useState("");
-  const [status, setStatus] = useState("");
-  const run = (action: () => string) => {
-    try {
-      setStatus(action());
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-  const applied = (profile: string, skipped: readonly string[]) =>
-    skipped.length
-      ? `"${profile}" 적용함. 이번 버전에서 적용 못 한 항목: ${skipped.join(", ")}`
-      : `"${profile}" 적용함.`;
-  return (
-    <fieldset className="flex flex-col gap-2 border-0 p-0">
-      <legend className="pb-1 text-muted">UI 프로필</legend>
-      <div className="flex flex-wrap items-center gap-1">
-        <Input
-          aria-label="프로필 이름"
-          placeholder="이름 (예: 업무용)"
-          value={name}
-          maxLength={40}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <Button
-          disabled={!name.trim()}
-          onClick={() =>
-            run(() => {
-              displaySettings.saveProfile(name);
-              setName("");
-              return `"${name.trim()}"로 저장했어요.`;
-            })
-          }
-        >
-          지금 모습 저장
-        </Button>
-        {last && profiles.some((profile) => profile.name === last) && (
-          <Button
-            variant="prominent"
-            onClick={() =>
-              run(() =>
-                applied(last, displaySettings.applyProfile(last, tabsHere)),
-              )
-            }
-          >
-            다시 적용 ({last})
-          </Button>
-        )}
-      </div>
-      {profiles.map((profile) => (
-        <div key={profile.name} className="flex flex-wrap items-center gap-1">
-          <span className="min-w-0 flex-1 truncate" data-no-translate="">
-            {profile.name === last ? "● " : ""}
-            {profile.name}
-          </span>
-          <Button
-            size="sm"
-            onClick={() =>
-              run(() =>
-                applied(
-                  profile.name,
-                  displaySettings.applyProfile(profile.name, tabsHere),
-                ),
-              )
-            }
-          >
-            적용
-          </Button>
-          <Button
-            size="sm"
-            variant="subtle"
-            onClick={() =>
-              run(() => {
-                displaySettings.deleteProfile(profile.name);
-                return `"${profile.name}"를 지웠어요.`;
-              })
-            }
-          >
-            삭제
-          </Button>
-        </div>
-      ))}
-      {status && <p role="status">{status}</p>}
-    </fieldset>
-  );
-}
-
-function DisplaySettingsCard({ pages }: { pages: PagesReader }) {
-  const settings = useSyncExternalStore(
-    displaySettings.subscribe,
-    displaySettings.snapshot,
-  );
+function TopTabs({ pages }: { pages: PagesReader }) {
+  const settings = useSettings();
   const all = useSyncExternalStore(pages.subscribe, pages.snapshot);
   const tabs = orderTabs(
     orderPages(
@@ -261,81 +234,433 @@ function DisplaySettingsCard({ pages }: { pages: PagesReader }) {
     ),
     settings.tabOrder,
   );
-  const moveTab = (index: number, by: -1 | 1) => {
+  const move = (index: number, by: -1 | 1) => {
     const keys = tabs.map((page) => page.key);
     const [moved] = keys.splice(index, 1);
     if (moved === undefined) return;
     keys.splice(index + by, 0, moved);
     displaySettings.change({ ...settings, tabOrder: keys });
   };
-  const toggleTab = (key: string) =>
-    displaySettings.change({
-      ...settings,
-      hiddenTabs: settings.hiddenTabs.includes(key)
-        ? settings.hiddenTabs.filter((tab) => tab !== key)
-        : [...settings.hiddenTabs, key],
-    });
   return (
-    <div className="flex flex-col gap-3 text-sm">
-      <Profiles tabsHere={all.map((page) => page.key)} />
-      <p className="text-muted">
-        화면 전체 크기는 Appearance의 Interface size나 ⌘+ / ⌘−로 바꿀 수 있어요.
-      </p>
-      <Preview />
-      <Slider name="text" settings={settings} />
-      <Slider name="density" settings={settings} />
-      <Slider name="avatar" settings={settings} />
-      <Slider name="dark" settings={settings} />
-      <Choices
-        legend="대화 폭"
-        name="width"
-        options={WIDTHS}
-        settings={settings}
-      />
-      <Choices legend="글꼴" name="font" options={FONTS} settings={settings} />
-      {tabs.length > 0 && (
-        <fieldset className="flex flex-wrap items-center gap-1 border-0 p-0">
-          <legend className="pb-1 text-muted">
-            상단 탭 (보이기 · 순서, 메시지 탭은 항상 맨 앞)
-          </legend>
-          {tabs.map((page, index) => {
-            const shown = !settings.hiddenTabs.includes(page.key);
-            return (
-              <span key={page.key} className="inline-flex items-center gap-1">
-                <Button
-                  variant={shown ? "prominent" : "subtle"}
-                  aria-pressed={shown}
-                  onClick={() => toggleTab(page.key)}
-                >
-                  {pagePresentation(page).label}
-                </Button>
-                <Button
+    <SettingsGroup>
+      {tabs.map((page, index) => {
+        const label = pagePresentation(page).label;
+        const shown = !settings.hiddenTabs.includes(page.key);
+        return (
+          <PreferenceRow
+            key={page.key}
+            title={label}
+            trailing={
+              <span className="flex items-center gap-1">
+                <IconButton
                   size="sm"
-                  variant="subtle"
-                  aria-label={`${pagePresentation(page).label} 앞으로`}
+                  variant="ghost"
+                  aria-label={`${label} 앞으로`}
+                  title="앞으로"
                   disabled={index === 0}
-                  onClick={() => moveTab(index, -1)}
+                  onClick={() => move(index, -1)}
+                  icon={<span aria-hidden="true">↑</span>}
+                />
+                <IconButton
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`${label} 뒤로`}
+                  title="뒤로"
+                  disabled={index === tabs.length - 1}
+                  onClick={() => move(index, 1)}
+                  icon={<span aria-hidden="true">↓</span>}
+                />
+                <Switch
+                  aria-label={`${label} 보이기`}
+                  checked={shown}
+                  onCheckedChange={(next) =>
+                    displaySettings.change({
+                      ...settings,
+                      hiddenTabs: next
+                        ? settings.hiddenTabs.filter((tab) => tab !== page.key)
+                        : [...settings.hiddenTabs, page.key],
+                    })
+                  }
+                />
+              </span>
+            }
+          />
+        );
+      })}
+    </SettingsGroup>
+  );
+}
+
+function MyProfiles({
+  tabsHere,
+  community,
+  say,
+}: {
+  tabsHere: readonly string[];
+  community: string | undefined;
+  say(message: string): void;
+}) {
+  const profiles = useSyncExternalStore(
+    displaySettings.subscribe,
+    displaySettings.profiles,
+  );
+  const last = useSyncExternalStore(
+    displaySettings.subscribe,
+    displaySettings.lastProfile,
+  );
+  const [name, setName] = useState("");
+  const [renaming, setRenaming] = useState<{ from: string; to: string }>();
+  return (
+    <SettingsGroup>
+      <PreferenceRow
+        title="지금 모습 저장"
+        subtitle="글자·간격·색·탭·작업 영역 배치를 한 번에 저장해요"
+        trailing={
+          <form
+            className="flex items-center gap-1"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmed = name.trim();
+              if (!trimmed) return;
+              report(say, () => {
+                displaySettings.saveProfile(trimmed);
+                setName("");
+                return `"${trimmed}"로 저장했어요.`;
+              });
+            }}
+          >
+            <Input
+              aria-label="프로필 이름"
+              placeholder="이름 (예: 업무용)"
+              value={name}
+              maxLength={40}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <Button type="submit" disabled={!name.trim()}>
+              저장
+            </Button>
+          </form>
+        }
+      />
+      {profiles.map((profile) => {
+        const shared = !!community && !!profile.sharedIn?.includes(community);
+        return renaming?.from === profile.name ? (
+          <PreferenceRow
+            key={profile.name}
+            title="이름 바꾸기"
+            trailing={
+              <form
+                className="flex items-center gap-1"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  report(say, () => {
+                    displaySettings.renameProfile(renaming.from, renaming.to);
+                    setRenaming(undefined);
+                    return `"${renaming.to.trim()}"로 바꿨어요.`;
+                  });
+                }}
+              >
+                <Input
+                  aria-label="새 이름"
+                  value={renaming.to}
+                  maxLength={40}
+                  onChange={(event) =>
+                    setRenaming({ ...renaming, to: event.target.value })
+                  }
+                />
+                <Button type="submit" disabled={!renaming.to.trim()}>
+                  확인
+                </Button>
+                <Button
+                  type="button"
+                  variant="subtle"
+                  onClick={() => setRenaming(undefined)}
                 >
-                  ←
+                  취소
+                </Button>
+              </form>
+            }
+          />
+        ) : (
+          <PreferenceRow
+            key={profile.name}
+            title={<span data-no-translate="">{profile.name}</span>}
+            subtitle={
+              [
+                profile.name === last ? "마지막으로 적용" : "",
+                shared ? "이 커뮤니티에 공유 중" : "",
+              ]
+                .filter(Boolean)
+                .join(" · ") || undefined
+            }
+            trailing={
+              <span className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant={profile.name === last ? "prominent" : "subtle"}
+                  onClick={() =>
+                    report(say, () =>
+                      applied(
+                        profile.name,
+                        displaySettings.applyProfile(profile.name, tabsHere),
+                      ),
+                    )
+                  }
+                >
+                  {profile.name === last ? "다시 적용" : "적용"}
+                </Button>
+                <MenuRoot>
+                  <MenuTrigger
+                    render={
+                      <IconButton
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`${profile.name} 메뉴`}
+                        icon={<DotsThreeIcon size={16} aria-hidden="true" />}
+                      />
+                    }
+                  />
+                  <MenuPopup align="end">
+                    <MenuItem
+                      onClick={() =>
+                        report(say, () => {
+                          displaySettings.updateProfile(profile.name);
+                          return `"${profile.name}"를 지금 모습으로 바꿨어요.`;
+                        })
+                      }
+                    >
+                      지금 모습으로 덮어쓰기
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() =>
+                        setRenaming({ from: profile.name, to: profile.name })
+                      }
+                    >
+                      이름 바꾸기
+                    </MenuItem>
+                    <MenuItem
+                      disabled={!community}
+                      onClick={() =>
+                        report(say, () => {
+                          if (!community)
+                            throw new Error(
+                              "커뮤니티에 연결된 뒤 공유할 수 있어요.",
+                            );
+                          displaySettings.shareProfile(
+                            profile.name,
+                            community,
+                            !shared,
+                          );
+                          return shared
+                            ? `"${profile.name}" 공유를 멈췄어요.`
+                            : `"${profile.name}"를 이 커뮤니티 팀원에게 공유했어요.`;
+                        })
+                      }
+                    >
+                      {shared ? "공유 그만하기" : "팀에 공유하기"}
+                    </MenuItem>
+                    <MenuItem
+                      tone="danger"
+                      onClick={() =>
+                        report(say, () => {
+                          displaySettings.deleteProfile(profile.name);
+                          return `"${profile.name}"를 지웠어요.`;
+                        })
+                      }
+                    >
+                      삭제
+                    </MenuItem>
+                  </MenuPopup>
+                </MenuRoot>
+              </span>
+            }
+          />
+        );
+      })}
+    </SettingsGroup>
+  );
+}
+
+function TeamProfiles({
+  community,
+  tabsHere,
+  say,
+}: {
+  community: Community | undefined;
+  tabsHere: readonly string[];
+  say(message: string): void;
+}) {
+  const [shared, setShared] = useState<readonly SharedProfiles[]>();
+  const [revision, setRevision] = useState(0);
+  const session = community?.session;
+  const dTag = community?.dTag;
+  const viewer = community?.viewer;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision re-reads on request.
+  useEffect(() => {
+    if (!session || !dTag) {
+      setShared([]);
+      return;
+    }
+    let live = true;
+    void readTeamDocs(session, dTag)
+      .then((events) => {
+        if (live)
+          setShared(
+            readShared(events).filter((entry) => entry.author !== viewer),
+          );
+      })
+      .catch(() => {
+        if (live) setShared([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [session, dTag, viewer, revision]);
+  const names = session?.profiles.snapshot();
+  const who = (author: string) =>
+    names?.get(author)?.name ?? author.slice(0, 8);
+  const rows = (shared ?? []).flatMap((entry) =>
+    entry.profiles.map((profile) => ({ author: entry.author, profile })),
+  );
+  return (
+    <SettingsGroup>
+      {shared === undefined ? (
+        <PreferenceRow title="불러오는 중…" />
+      ) : rows.length === 0 ? (
+        <PreferenceRow
+          title="아직 공유된 프로필이 없어요"
+          subtitle="내 프로필의 ⋯ 메뉴에서 팀에 공유할 수 있어요"
+        />
+      ) : (
+        // Names are unique per teammate (readShared drops repeats).
+        rows.map(({ author, profile }) => (
+          <PreferenceRow
+            key={`${author}:${profile.name}`}
+            title={<span data-no-translate="">{profile.name}</span>}
+            subtitle={<span data-no-translate="">{who(author)}</span>}
+            trailing={
+              <span className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  onClick={() =>
+                    report(say, () =>
+                      applied(
+                        profile.name,
+                        displaySettings.applyShared(profile, tabsHere),
+                      ),
+                    )
+                  }
+                >
+                  적용
                 </Button>
                 <Button
                   size="sm"
                   variant="subtle"
-                  aria-label={`${pagePresentation(page).label} 뒤로`}
-                  disabled={index === tabs.length - 1}
-                  onClick={() => moveTab(index, 1)}
+                  onClick={() =>
+                    report(
+                      say,
+                      () =>
+                        `"${displaySettings.copyProfile(profile, who(author))}"로 내 프로필에 넣었어요.`,
+                    )
+                  }
                 >
-                  →
+                  내 프로필로
                 </Button>
               </span>
-            );
-          })}
-        </fieldset>
+            }
+          />
+        ))
       )}
+      <PreferenceRow
+        title="다시 불러오기"
+        trailing={
+          <Button
+            size="sm"
+            variant="subtle"
+            onClick={() => {
+              setShared(undefined);
+              setRevision((count) => count + 1);
+            }}
+          >
+            새로고침
+          </Button>
+        }
+      />
+    </SettingsGroup>
+  );
+}
+
+function UiEditCard({
+  pages,
+  relay,
+}: {
+  pages: PagesReader;
+  relay: RelayData;
+}) {
+  const all = useSyncExternalStore(pages.subscribe, pages.snapshot);
+  const tabsHere = all.map((page) => page.key);
+  const community = useCommunity(relay);
+  const [status, setStatus] = useState("");
+  return (
+    <div className="flex flex-col gap-6 text-sm">
+      <Preview />
+      {status && (
+        <p role="status" className="text-muted">
+          {status}
+        </p>
+      )}
+      <section aria-label="모양">
+        <InlineHeader
+          title="모양"
+          subtitle="화면 전체 크기는 Appearance의 Interface size나 ⌘+ / ⌘−로 바꿔요"
+        />
+        <SettingsGroup>
+          <SliderRow name="text" />
+          <SliderRow name="density" />
+          <SliderRow name="avatar" />
+          <SliderRow name="dark" />
+          <ChoiceRow name="width" label="대화 폭" options={WIDTHS} />
+          <ChoiceRow name="font" label="글꼴" options={FONTS} />
+        </SettingsGroup>
+      </section>
+      <section aria-label="상단 탭">
+        <InlineHeader
+          title="상단 탭"
+          subtitle="메시지 탭은 항상 맨 앞에 보여요"
+        />
+        <TopTabs pages={pages} />
+      </section>
+      <section aria-label="내 UI 프로필">
+        <InlineHeader
+          title="내 UI 프로필"
+          subtitle="업데이트로 화면이 바뀌면 다시 적용으로 되돌려요"
+        />
+        <MyProfiles
+          tabsHere={tabsHere}
+          community={community?.dTag}
+          say={setStatus}
+        />
+      </section>
+      <section aria-label="팀 UI 프로필">
+        <InlineHeader
+          title="팀 UI 프로필"
+          subtitle="팀원이 공유한 모습이에요"
+        />
+        <TeamProfiles
+          key={community?.dTag ?? "none"}
+          community={community}
+          tabsHere={tabsHere}
+          say={setStatus}
+        />
+      </section>
       <div>
         <Button
           variant="subtle"
-          onClick={() => displaySettings.change(DEFAULT_DISPLAY)}
+          onClick={() => {
+            displaySettings.change(DEFAULT_DISPLAY);
+            setStatus("모두 원래대로 돌렸어요.");
+          }}
         >
           모두 원래대로
         </Button>
@@ -344,11 +669,60 @@ function DisplaySettingsCard({ pages }: { pages: PagesReader }) {
   );
 }
 
+/** Publishes this member's shared profiles for the community the window is
+ * in, whenever that list changes there. Each community keeps its own list. */
+function publishShared(relay: RelayData) {
+  // What each community last had from this device; a community first seen
+  // this run is taken as already up to date.
+  const published = new Map<string, string>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const sync = () => {
+    const community = communityOf(relay);
+    if (!community) return;
+    const next = JSON.stringify(displaySettings.sharedProfiles(community.dTag));
+    if (!published.has(community.dTag)) published.set(community.dTag, next);
+    if (published.get(community.dTag) === next) return;
+    clearTimeout(timer);
+    // Renames and shares settle before one publication.
+    timer = setTimeout(() => {
+      const now = communityOf(relay);
+      const publish = now?.session.teamAppData?.publish;
+      if (!now || now.dTag !== community.dTag || !publish) return;
+      let content: string;
+      try {
+        content = encodeShared(displaySettings.sharedProfiles(now.dTag));
+      } catch {
+        return;
+      }
+      void publish({
+        kind: 30078,
+        content,
+        tags: [
+          ["d", now.dTag],
+          ["t", SHARED_TAG],
+        ],
+        created_at: Math.floor(Date.now() / 1000),
+      })
+        .then(() => published.set(now.dTag, next))
+        .catch(() => {});
+    }, 800);
+  };
+  const stopSettings = displaySettings.subscribe(sync);
+  const stopRelay = relay.subscribe(sync);
+  sync();
+  return () => {
+    clearTimeout(timer);
+    stopSettings();
+    stopRelay();
+  };
+}
+
 export const apply: PluginModule["apply"] = (ctx) => {
   ctx.effect(() => displaySettings.start());
+  ctx.effect(() => publishShared(ctx.relay));
   ctx.settingsCards.register({
     id: "chat-display",
     title: "UI EDIT",
-    component: () => <DisplaySettingsCard pages={ctx.pages} />,
+    component: () => <UiEditCard pages={ctx.pages} relay={ctx.relay} />,
   });
 };
