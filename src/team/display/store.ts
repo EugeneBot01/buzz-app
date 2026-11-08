@@ -88,6 +88,12 @@ export const displaySettings = {
       notify();
     };
   },
+  /** Shows `next` at once without saving or telling anyone, for a slider
+   * mid-drag; `change` afterwards saves it. */
+  preview(next: DisplaySettings) {
+    current = next;
+    if (active) apply(next);
+  },
   change(next: DisplaySettings) {
     current = next;
     if (active) apply(next);

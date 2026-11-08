@@ -75,6 +75,8 @@ export async function startThread(text: string, password: string) {
   const key = await keyFrom(password, salt);
   const token = `${ROOT}${hex(salt)}${await seal(key, text)}${END}`;
   started.set(token, key);
+  // Only threads whose root has yet to arrive wait here; drop the oldest.
+  if (started.size > 20) started.delete(started.keys().next().value ?? "");
   return token;
 }
 

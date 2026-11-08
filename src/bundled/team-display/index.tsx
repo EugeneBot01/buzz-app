@@ -89,11 +89,19 @@ const applied = (name: string, skipped: readonly string[]) =>
     ? `"${name}" 적용함. 이번 버전에서 적용 못 한 항목: ${skipped.join(", ")}`
     : `"${name}" 적용함.`;
 
-/** Drag to change; the percentage shows beside the bar as it moves. */
+/** Drag to change; the percentage shows beside the bar as it moves. The
+ * screen follows the drag; saving waits until the bar is let go. */
 function SliderRow({ name }: { name: SliderName }) {
   const settings = useSettings();
+  const [dragging, setDragging] = useState<number>();
   const { label, min, max, step } = SLIDERS[name];
   const id = `ui-edit-${name}`;
+  const value = dragging ?? settings[name];
+  const commit = () => {
+    if (dragging === undefined) return;
+    setDragging(undefined);
+    displaySettings.change({ ...displaySettings.snapshot(), [name]: dragging });
+  };
   return (
     <PreferenceRow
       title={label}
@@ -106,17 +114,22 @@ function SliderRow({ name }: { name: SliderName }) {
             min={min}
             max={max}
             step={step}
-            value={settings[name]}
+            value={value}
             className="min-w-0 flex-1 accent-[var(--accent-9)]"
-            onChange={(event) =>
-              displaySettings.change({
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              setDragging(next);
+              displaySettings.preview({
                 ...displaySettings.snapshot(),
-                [name]: Number(event.target.value),
-              })
-            }
+                [name]: next,
+              });
+            }}
+            onPointerUp={commit}
+            onKeyUp={commit}
+            onBlur={commit}
           />
           <output htmlFor={id} className="w-11 text-right tabular-nums">
-            {settings[name]}%
+            {value}%
           </output>
         </span>
       }

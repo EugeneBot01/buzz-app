@@ -102,9 +102,38 @@ function compilePatterns(
   );
 }
 
+/** Distinct strings remembered before the cache starts over. */
+const CACHE_LIMIT = 5000;
+
 export function createTranslator(table: TranslationTable) {
   const exact = new Map(Object.entries(table.exact));
   const patterns = compilePatterns(table.patterns);
+  // Team: the same strings (and the many that never match) come back on every
+  // scroll and rerender; remember each result instead of rescanning patterns.
+  const cache = new Map<string, string | null>();
+  const lookup = (normalized: string, ui: boolean) => {
+    const key = `${ui ? 1 : 0}${normalized}`;
+    const known = cache.get(key);
+    if (known !== undefined) return known;
+    let hit = exact.get(normalized) ?? null;
+    if (hit === null) {
+      for (const { regex, template, generic } of patterns) {
+        const match = regex.exec(normalized);
+        if (!match) continue;
+        if (
+          generic &&
+          !ui &&
+          match.slice(1).some((captured) => /\s/.test(captured))
+        )
+          continue;
+        hit = normalized.replace(regex, template);
+        break;
+      }
+    }
+    if (cache.size >= CACHE_LIMIT) cache.clear();
+    cache.set(key, hit);
+    return hit;
+  };
 
   /**
    * `ui: true` when the string is known to be app copy rather than user
@@ -118,21 +147,7 @@ export function createTranslator(table: TranslationTable) {
     const trimmed = value.trim();
     if (trimmed.length < 2 || !/[A-Za-z]/.test(trimmed)) return null;
     const normalized = trimmed.replace(/\s+/g, " ");
-    let hit = exact.get(normalized) ?? null;
-    if (hit === null) {
-      for (const { regex, template, generic } of patterns) {
-        const match = regex.exec(normalized);
-        if (!match) continue;
-        if (
-          generic &&
-          !options?.ui &&
-          match.slice(1).some((captured) => /\s/.test(captured))
-        )
-          continue;
-        hit = normalized.replace(regex, template);
-        break;
-      }
-    }
+    const hit = lookup(normalized, !!options?.ui);
     if (hit === null) return null;
     // Preserve surrounding whitespace so inline layout does not shift.
     const lead = value.match(/^\s*/)?.[0] ?? "";
@@ -263,12 +278,16 @@ export function startDomTranslator(
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
+      // Team: a node React already replaced in this batch needs no work.
+      if (!mutation.target.isConnected) continue;
       if (mutation.type === "characterData") {
         translateText(mutation.target as Text);
       } else if (mutation.type === "attributes") {
         translateAttrs(mutation.target as Element);
       } else {
-        mutation.addedNodes.forEach(translateTree);
+        mutation.addedNodes.forEach((node) => {
+          if (node.isConnected) translateTree(node);
+        });
       }
     }
   });
