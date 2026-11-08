@@ -208,8 +208,8 @@ jobs:
           LIPO: ${{ matrix.lipo }}
         run: |
           set -euo pipefail
-          APP="$BUNDLE_DIR/macos/Buzz Team.app"
-          test -d "$APP" || { echo "::error::Buzz Team.app not found"; ls -la "$BUNDLE_DIR/macos"; exit 1; }
+          APP="$BUNDLE_DIR/macos/SHIBALPOINT.app"
+          test -d "$APP" || { echo "::error::SHIBALPOINT.app not found"; ls -la "$BUNDLE_DIR/macos"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$APP"
           codesign -dv "$APP" 2>&1 | grep -q "Signature=adhoc" || { echo "::error::app is not ad-hoc signed"; exit 1; }
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = xyz.buzzteam.desktop

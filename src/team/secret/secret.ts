@@ -13,10 +13,13 @@ export const MIN_PASSWORD = 8;
 // Hex only, so Markdown can never split a token.
 export const SECRET_TOKEN = new RegExp(`${MARK}[0-9a-f]+${END}`, "g");
 
-const hex = (bytes: Uint8Array) =>
+export const hex = (bytes: Uint8Array) =>
   [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
-async function keyFrom(password: string, salt: Uint8Array<ArrayBuffer>) {
+export const unhex = (body: string) =>
+  Uint8Array.from(body.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
+
+export async function keyFrom(password: string, salt: Uint8Array<ArrayBuffer>) {
   const base = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(password),
@@ -51,9 +54,7 @@ export async function decryptSecret(token: string, password: string) {
   const body = token.slice(MARK.length, -END.length);
   if (!token.startsWith(MARK) || !token.endsWith(END) || body.length % 2)
     return null;
-  const bytes = Uint8Array.from(body.match(/../g) ?? [], (pair) =>
-    Number.parseInt(pair, 16),
-  );
+  const bytes = unhex(body);
   if (bytes.length <= SALT + IV) return null;
   try {
     const opened = await crypto.subtle.decrypt(

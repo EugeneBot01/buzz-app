@@ -237,8 +237,8 @@ test("the app runtime exposes ready bundled pages and removes them on disable", 
       services.conversation.attachments.snapshot().map((item) => item.pluginId),
       ["buzz.agents"],
     );
-    // Team: custom emoji, @everyone/@all chips and confidential messages.
-    assert.equal(services.conversation.inline.snapshot().length, 3);
+    // Team: custom emoji, @everyone/@all chips and confidential messages, threads and replies.
+    assert.equal(services.conversation.inline.snapshot().length, 5);
     const linkPlugins = () =>
       services.conversation.links
         .snapshot()

@@ -152,6 +152,12 @@ import { avatarMedia } from "../../shared/avatar-source";
 import { followUpBehaviorPreference } from "./follow-up-preference";
 import { followUpQueue } from "./follow-up-queue";
 import { QueuedFollowUps } from "./QueuedFollowUps";
+import {
+  isSealedThread,
+  sealedThreadRefusal,
+  subscribeThreads,
+  sealOutgoing,
+} from "../../team/secret/thread";
 
 const noChannels: ReturnType<ComposerSession["channels"]["list"]> = {
   status: "idle",
@@ -1087,9 +1093,15 @@ function Composer({
     });
   });
   useLayoutEffect(() => () => handOffFocus(), []);
-  const canAttach = submission
-    ? !!submission.attachments && !!session.attachments?.uploadForNewChat
-    : !!session.attachments;
+  // Buzz Team: files would upload unencrypted, so a confidential thread takes none.
+  const sealedThread = useSyncExternalStore(subscribeThreads, () =>
+    isSealedThread(threadRootId),
+  );
+  const canAttach =
+    !sealedThread &&
+    (submission
+      ? !!submission.attachments && !!session.attachments?.uploadForNewChat
+      : !!session.attachments);
   const voice = useVoiceCapture(
     attachments.store,
     !active || editingDisabled || !!editing.target || !canAttach,
@@ -1150,9 +1162,11 @@ function Composer({
     }
     if (!canAttach) {
       setAttachmentError(
-        submission
-          ? "Create this conversation before attaching files."
-          : "Uploads are unavailable on this connection.",
+        sealedThread
+          ? (sealedThreadRefusal(threadRootId, true) ?? "")
+          : submission
+            ? "Create this conversation before attaching files."
+            : "Uploads are unavailable on this connection.",
       );
       return;
     }
@@ -2206,6 +2220,16 @@ function Composer({
         }
         return;
       }
+      // Buzz Team: an edit would publish confidential-thread text unencrypted.
+      if (
+        isSealedThread(editing.target.threadRootId) ||
+        isSealedThread(editing.target.id)
+      ) {
+        setError(
+          "대외비 스레드 메시지는 수정할 수 없어요. 지우고 다시 보내 주세요.",
+        );
+        return;
+      }
       editing.save(
         composerMarkdown(valueRef.current),
         editableRows().find((row) => row.id === editing.target?.id),
@@ -2226,6 +2250,16 @@ function Composer({
       !outbox
     )
       return;
+    // Buzz Team: refuse before any upload, so nothing leaves a locked or
+    // file-bearing confidential thread.
+    const sealedRefusal = sealedThreadRefusal(
+      threadRootId,
+      attachments.store.snapshot().length > 0 || !!gifs?.length,
+    );
+    if (sealedRefusal) {
+      setError(sealedRefusal);
+      return;
+    }
     if (valueRef.current.pending?.length) {
       // Enter straight after Space is the case a pending mention exists for.
       // Wait for its recipient rather than send prose; the composer shows
@@ -2482,10 +2516,15 @@ function Composer({
         setConflict(true);
         return;
       }
-      const content =
+      let content =
         threadRootId && mediaTimeSeconds !== undefined
           ? mediaTimeReply(mediaTimeSeconds, composerMarkdown(captured))
           : composerMarkdown(captured);
+      // Buzz Team: confidential-thread replies leave encrypted.
+      if (isSealedThread(threadRootId)) {
+        content = await sealOutgoing(threadRootId, content);
+        attempt.signal.throwIfAborted();
+      }
       // Alone with agents, the toolbar keeps the agents; the next draft starts empty.
       const next = routing
         ? mentionDraft("")

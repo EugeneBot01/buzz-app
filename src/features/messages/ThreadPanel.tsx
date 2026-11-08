@@ -45,6 +45,7 @@ import { messageViewKey } from "./view-key";
 import { useKnownAgentPubkeys } from "../agents/use-known";
 import { JumpToLatestButton } from "./JumpToLatestButton";
 import { correctScrollTop } from "./scroll-correction";
+import { noteThreadRoot } from "../../team/secret/thread";
 
 export type ThreadPanelProps = {
   extensions?: ConversationExtensions | undefined;
@@ -558,6 +559,12 @@ function ThreadMessages({
     view.snapshot,
   );
   const resolvedRoot = snapshot.root?.id;
+  // Buzz Team: mark a confidential thread before its reply box can send,
+  // whether or not its opening message has rendered.
+  const rootContent = snapshot.root?.content;
+  useLayoutEffect(() => {
+    if (resolvedRoot && rootContent) noteThreadRoot(resolvedRoot, rootContent);
+  }, [resolvedRoot, rootContent]);
   const reportRoot = useRef(onResolvedRoot);
   reportRoot.current = onResolvedRoot;
   useEffect(() => {
