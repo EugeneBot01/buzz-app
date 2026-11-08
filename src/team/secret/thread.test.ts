@@ -76,3 +76,12 @@ it("locks a file's name, type and bytes, and opens it only with the thread key",
   expect(sealedFor(sealed)).toBe("a".repeat(64));
   expect(sealedFor(new File(["plain"], sealed.name))).toBeUndefined();
 }, 60_000);
+
+it("keeps @everyone / @all outside the ciphertext so they still notify", async () => {
+  const token = await startThread("공지 스레드", "correct-horse");
+  registerRoot("c".repeat(64), token);
+  const reply = await sealOutgoing("c".repeat(64), "@everyone 회의 자료 확인");
+  expect(reply.endsWith(" @everyone")).toBe(true);
+  expect(reply).not.toContain("회의");
+  expect(await sealOutgoing("c".repeat(64), "그냥 답글")).not.toContain("@");
+}, 60_000);

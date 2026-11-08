@@ -4,6 +4,7 @@
  * thread's password derives from that salt. Keys live in memory only, until
  * the app quits.
  */
+import { groupMentions } from "../mentions/group-mentions";
 import { hex, keyFrom, MIN_PASSWORD, unhex } from "./secret";
 
 const ROOT = "BUZZTHREAD1";
@@ -203,5 +204,8 @@ export async function sealOutgoing(rootId: string | undefined, text: string) {
   const refusal = sealedThreadRefusal(rootId, false);
   const key = keys.get(rootId);
   if (refusal || !key) throw new Error(refusal);
-  return `🔒 대외비 (SHIBALPOINT 앱에서 열람) ${REPLY}${await seal(key, text)}${END}`;
+  // The group words stay outside the ciphertext so @everyone / @all still
+  // reach people; they say nothing about the content.
+  const groups = [...groupMentions(text)].map((group) => ` @${group}`).join("");
+  return `🔒 대외비 (SHIBALPOINT 앱에서 열람) ${REPLY}${await seal(key, text)}${END}${groups}`;
 }
