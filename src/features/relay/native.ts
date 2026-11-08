@@ -4,6 +4,7 @@ import {
 } from "./verified-profile";
 import { nativeSocket } from "./native-socket";
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { relayMetrics } from "../../team/metrics/relay-metrics";
 import { isTeamAppData } from "../../team/relay/app-data";
 import type { EventTemplate } from "nostr-tools";
 import { communityDestination, relayOrigin } from "../communities/destination";
@@ -122,6 +123,11 @@ export async function nativeRelayRequest(
     method: body === undefined ? "GET" : "POST",
     body: body === undefined ? null : JSON.stringify(body),
   });
+  // Team: the connection meter counts reads and their size only.
+  relayMetrics.read(
+    communityDestination(community).url,
+    result.body?.length ?? 0,
+  );
   // IPC cannot abort reqwest. Retain the shared admission slot until native work
   // settles (bounded by its timeout), then reject any obsolete result.
   bounded.throwIfAborted();

@@ -19,6 +19,7 @@ import {
 import styles from "./NotificationSettings.module.css";
 import { ChannelAlertSettings } from "../team/notifications/ChannelAlertSettings";
 import { CommunityAlertSettings } from "../team/notifications/CommunityAlertSettings";
+import { ConnectionMeter } from "../team/metrics/ConnectionMeter";
 
 // Reference row order: direct messages, mentions, thread replies.
 const SOUND_ROWS: readonly NotificationCategory[] = [
@@ -194,6 +195,7 @@ export function NotificationSettings({
         </section>
         {desktopAlertsEnabled && <ChannelAlertSettings />}
         {desktopAlertsEnabled && <CommunityAlertSettings />}
+        <ConnectionMeter />
         <section id="setting-delivery" aria-label="Desktop delivery">
           <InlineHeader title="Delivery" />
           <SettingsGroup>

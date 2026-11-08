@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { LiveSocket } from "./live";
+import { relayMetrics } from "../../team/metrics/relay-metrics";
 
 /** No reconnect policy here. live.ts owns connection generations and NIP-42. */
 export class NativeSocket implements LiveSocket {
@@ -14,7 +15,10 @@ export class NativeSocket implements LiveSocket {
   private readonly id = crypto.randomUUID();
   private browser?: WebSocket;
   private closed = false;
+  private subscriptions = 0;
   constructor(private readonly url: string) {
+    // Team: the connection meter counts sizes and message types only.
+    relayMetrics.socketOpened(url);
     void this.connect();
   }
   private async connect() {
@@ -26,9 +30,10 @@ export class NativeSocket implements LiveSocket {
         | { type: "refused"; reason: string }
       >((event) => {
         if (this.closed) return;
-        if (event.type === "text")
+        if (event.type === "text") {
+          relayMetrics.received(this.url, event.data);
           this.onmessage?.(new MessageEvent("message", { data: event.data }));
-        else if (event.type === "refused") this.refuse(event.reason);
+        } else if (event.type === "refused") this.refuse(event.reason);
         else this.finish(event.code ?? undefined, event.reason ?? undefined);
       });
       const mode = await invoke<"public" | "native">("relay_socket_connect", {
@@ -51,7 +56,10 @@ export class NativeSocket implements LiveSocket {
           }
         };
         ws.onmessage = (event) => {
-          if (!this.closed) return this.onmessage?.(event);
+          if (this.closed) return;
+          if (typeof event.data === "string")
+            relayMetrics.received(this.url, event.data);
+          return this.onmessage?.(event);
         };
         ws.onerror = (event) => {
           if (!this.closed) this.onerror?.(event);
@@ -103,6 +111,10 @@ export class NativeSocket implements LiveSocket {
   }
   send(data: string) {
     if (this.readyState !== 1) throw new Error("Socket is not open");
+    this.subscriptions = Math.max(
+      0,
+      this.subscriptions + relayMetrics.sent(this.url, data),
+    );
     if (this.browser) this.browser.send(data);
     else
       void invoke("relay_socket_send", { id: this.id, data }).catch(() =>
@@ -123,6 +135,7 @@ export class NativeSocket implements LiveSocket {
     if (this.closed) return;
     this.closed = true;
     this.readyState = 3;
+    relayMetrics.socketClosed(this.url, this.subscriptions);
     this.browser?.close();
     void invoke("relay_socket_close", { id: this.id }).catch(() => {});
   }
