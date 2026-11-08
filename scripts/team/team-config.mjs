@@ -26,6 +26,8 @@ const config = {
     windows: base.app.windows.map((window) => ({
       ...window,
       title: "SHIBALPOINT",
+      // ⌘+ / ⌘- / ⌘0 scale the whole window.
+      zoomHotkeysEnabled: true,
     })),
   },
   bundle: {
