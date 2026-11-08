@@ -154,6 +154,8 @@ import { followUpQueue } from "./follow-up-queue";
 import { QueuedFollowUps } from "./QueuedFollowUps";
 import {
   isSealedThread,
+  sealedFor,
+  sealFile,
   sealedThreadRefusal,
   subscribeThreads,
   sealOutgoing,
@@ -1093,18 +1095,21 @@ function Composer({
     });
   });
   useLayoutEffect(() => () => handOffFocus(), []);
-  // Buzz Team: files would upload unencrypted, so a confidential thread takes none.
+  // Buzz Team: a confidential thread takes only files encrypted on attach;
+  // voice notes record straight into an upload, so they stay off there.
   const sealedThread = useSyncExternalStore(subscribeThreads, () =>
     isSealedThread(threadRootId),
   );
-  const canAttach =
-    !sealedThread &&
-    (submission
-      ? !!submission.attachments && !!session.attachments?.uploadForNewChat
-      : !!session.attachments);
+  const canAttach = submission
+    ? !!submission.attachments && !!session.attachments?.uploadForNewChat
+    : !!session.attachments;
   const voice = useVoiceCapture(
     attachments.store,
-    !active || editingDisabled || !!editing.target || !canAttach,
+    !active ||
+      editingDisabled ||
+      !!editing.target ||
+      !canAttach ||
+      sealedThread,
     setAttachmentError,
   );
   useEffect(() => {
@@ -1162,12 +1167,29 @@ function Composer({
     }
     if (!canAttach) {
       setAttachmentError(
-        sealedThread
-          ? (sealedThreadRefusal(threadRootId, true) ?? "")
-          : submission
-            ? "Create this conversation before attaching files."
-            : "Uploads are unavailable on this connection.",
+        submission
+          ? "Create this conversation before attaching files."
+          : "Uploads are unavailable on this connection.",
       );
+      return;
+    }
+    if (sealedThread && threadRootId) {
+      // Encrypted here, before the store starts uploading anything.
+      const rootId = threadRootId;
+      void Promise.all(files.map((file) => sealFile(rootId, file)))
+        .then((sealed) => {
+          if (!live.current) return;
+          attachments.store.add(sealed);
+          setAttachmentError(undefined);
+        })
+        .catch((reason: unknown) => {
+          if (live.current)
+            setAttachmentError(
+              reason instanceof Error
+                ? reason.message
+                : "Could not attach files.",
+            );
+        });
       return;
     }
     try {
@@ -2254,7 +2276,10 @@ function Composer({
     // file-bearing confidential thread.
     const sealedRefusal = sealedThreadRefusal(
       threadRootId,
-      attachments.store.snapshot().length > 0 || !!gifs?.length,
+      attachments.store
+        .snapshot()
+        .some((item) => sealedFor(item.file) !== threadRootId) ||
+        !!gifs?.length,
     );
     if (sealedRefusal) {
       setError(sealedRefusal);

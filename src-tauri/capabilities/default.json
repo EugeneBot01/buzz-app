@@ -86,6 +86,7 @@
     "allow-team-download-folder",
     "allow-team-media-save",
     "allow-team-media-saved",
+    "allow-team-bytes-save",
     "allow-team-media-show",
     "allow-file-download",
     "allow-media-copy-image",

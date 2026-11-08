@@ -137,8 +137,64 @@ export function sealedThreadRefusal(
   if (!keys.has(rootId))
     return "대외비 스레드예요. 위의 첫 메시지에서 비밀번호로 먼저 열어 주세요.";
   if (withFiles)
-    return "대외비 스레드에는 아직 파일을 올릴 수 없어요. 파일은 다음 업데이트에서 잠글 수 있게 돼요.";
+    return "대외비 스레드에는 잠근 파일만 올릴 수 있어요. 파일을 다시 첨부해 주세요.";
   return undefined;
+}
+
+/** A confidential file's upload name: it says which thread's key opens it. */
+const LOCKED_FILE = /^locked\.([0-9a-f]{64})\.buzzlock$/;
+export const lockedFileThread = (name: string | undefined) =>
+  name?.match(LOCKED_FILE)?.[1];
+
+/** Files this device encrypted, by the thread whose key sealed them. A
+ * matching name is never proof: only these may upload in a confidential thread. */
+const sealedFiles = new WeakMap<File, string>();
+export const sealedFor = (file: File) => sealedFiles.get(file);
+export const SEALED_FILE_MAX = 256 * 1024 * 1024;
+
+/** The file as it is uploaded: its name, type and bytes encrypted together. */
+export async function sealFile(rootId: string, file: File) {
+  if (file.size > SEALED_FILE_MAX) throw new Error("파일이 너무 커요.");
+  const key = keys.get(rootId);
+  if (!key) throw new Error(sealedThreadRefusal(rootId, false));
+  const header = new TextEncoder().encode(
+    JSON.stringify({ name: file.name, type: file.type }),
+  );
+  const plain = new Uint8Array(4 + header.length + file.size);
+  new DataView(plain.buffer).setUint32(0, header.length);
+  plain.set(header, 4);
+  plain.set(new Uint8Array(await file.arrayBuffer()), 4 + header.length);
+  const iv = crypto.getRandomValues(new Uint8Array(IV));
+  const body = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
+  const sealed = new File([iv, body], `locked.${rootId}.buzzlock`, {
+    type: "application/octet-stream",
+  });
+  sealedFiles.set(sealed, rootId);
+  return sealed;
+}
+
+/** Null while the thread is locked or when the bytes were altered. */
+export async function openFile(rootId: string, sealed: ArrayBuffer) {
+  const key = keys.get(rootId);
+  if (!key) return null;
+  const bytes = new Uint8Array(sealed);
+  if (bytes.length <= IV || bytes.length > SEALED_FILE_MAX + 4096) return null;
+  try {
+    const plain = new Uint8Array(
+      await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: bytes.slice(0, IV) },
+        key,
+        bytes.slice(IV),
+      ),
+    );
+    const size = new DataView(plain.buffer).getUint32(0);
+    const { name, type } = JSON.parse(
+      new TextDecoder().decode(plain.slice(4, 4 + size)),
+    ) as { name: string; type: string };
+    return { name, type, bytes: plain.slice(4 + size) };
+  } catch {
+    return null;
+  }
 }
 
 /** What the composer sends: encrypted inside confidential threads. */

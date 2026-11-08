@@ -1,6 +1,10 @@
 import { expect, it } from "vitest";
 import {
   isSealedThread,
+  lockedFileThread,
+  openFile,
+  sealFile,
+  sealedFor,
   noteThreadRoot,
   openReply,
   openRoot,
@@ -48,4 +52,27 @@ it("marks a thread from its loaded opening message, ignoring plain ones", async 
   expect(isSealedThread("root-plain")).toBe(false);
   noteThreadRoot("root-f", `🔒 대외비 스레드 ${token}`);
   expect(isSealedThread("root-f")).toBe(true);
+}, 60_000);
+
+it("locks a file's name, type and bytes, and opens it only with the thread key", async () => {
+  const token = await startThread("파일 스레드", "correct-horse");
+  registerRoot("a".repeat(64), token);
+  const original = new File(["견적서 PDF 내용"], "견적서.pdf", {
+    type: "application/pdf",
+  });
+  const sealed = await sealFile("a".repeat(64), original);
+  expect(sealed.name).toBe(`locked.${"a".repeat(64)}.buzzlock`);
+  expect(lockedFileThread(sealed.name)).toBe("a".repeat(64));
+  const raw = new Uint8Array(await sealed.arrayBuffer());
+  expect(new TextDecoder().decode(raw)).not.toContain("견적서");
+  const opened = await openFile("a".repeat(64), await sealed.arrayBuffer());
+  expect(opened?.name).toBe("견적서.pdf");
+  expect(opened?.type).toBe("application/pdf");
+  expect(new TextDecoder().decode(opened?.bytes)).toBe("견적서 PDF 내용");
+  registerRoot("b".repeat(64), token);
+  expect(await openFile("b".repeat(64), await sealed.arrayBuffer())).toBeNull();
+  expect(lockedFileThread("견적서.pdf")).toBeUndefined();
+  // Only files this device sealed count; a look-alike name does not.
+  expect(sealedFor(sealed)).toBe("a".repeat(64));
+  expect(sealedFor(new File(["plain"], sealed.name))).toBeUndefined();
 }, 60_000);

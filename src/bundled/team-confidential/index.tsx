@@ -21,6 +21,7 @@ import {
 } from "../../team/secret/secret";
 import {
   isUnlocked,
+  lockedFileThread,
   openReply,
   openRoot,
   registerRoot,
@@ -30,6 +31,7 @@ import {
   THREAD_ROOT_TOKEN,
   unlockThread,
 } from "../../team/secret/thread";
+import { LockedFile } from "./LockedFile";
 import { MoveThread } from "./MoveThread";
 
 export const inject = ["conversation"];
@@ -285,6 +287,12 @@ export const apply: PluginModule["apply"] = (ctx) => {
     title: "Confidential reply",
     matches: ranges(THREAD_REPLY_TOKEN),
     component: ThreadReply,
+  });
+  ctx.conversation.registerAttachment({
+    id: "locked-file",
+    title: "Confidential file",
+    matches: (attachment) => !!lockedFileThread(attachment.name),
+    component: LockedFile,
   });
   ctx.conversation.registerMessageAction({
     id: "move-to-confidential",

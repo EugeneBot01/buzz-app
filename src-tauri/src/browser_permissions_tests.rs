@@ -136,6 +136,7 @@ fn native_command_permissions_isolate_webviews() {
         "team_download_folder",
         "team_media_save",
         "team_media_saved",
+        "team_bytes_save",
         "team_media_show",
         "file_download",
         "media_copy_image",

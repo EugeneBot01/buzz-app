@@ -2149,6 +2149,115 @@ pub(crate) async fn team_media_save<R: tauri::Runtime>(
     .map_err(|_| "Media download interrupted".to_owned())?
 }
 
+/// Largest decrypted confidential file the team build accepts.
+const TEAM_BYTES_MAX: usize = 256 * 1024 * 1024;
+/// How long an opened confidential file's plaintext copy lasts.
+const TEAM_SEALED_OPEN_SECS: u64 = 10 * 60;
+
+/// Team build: bytes this window decrypted (a confidential file). `x-team-open`
+/// opens a private temporary copy; otherwise the member picks where to save it.
+#[tauri::command]
+pub(crate) async fn team_bytes_save<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    webview: tauri::Webview<R>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<()> {
+    use tauri::Manager as _;
+    use tauri_plugin_dialog::DialogExt as _;
+    team_main_window(&webview)?;
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok());
+    let decoded = header("x-team-name")
+        .and_then(|v| {
+            let encoded = format!("n={v}");
+            url::form_urlencoded::parse(encoded.as_bytes())
+                .next()
+                .map(|(_, value)| value.into_owned())
+        })
+        .unwrap_or_default();
+    let filename = if safe_download_name(&decoded) {
+        decoded
+    } else {
+        "file".to_owned()
+    };
+    let open = header("x-team-open") == Some("1");
+    let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
+        return Err("Body must be raw bytes".into());
+    };
+    if body.len() > TEAM_BYTES_MAX {
+        return Err("File is too large".into());
+    }
+    let body = body.clone();
+    if open {
+        return tauri::async_runtime::spawn_blocking(move || {
+            let directory = std::env::temp_dir()
+                .join("buzz-team-sealed")
+                .join(uuid::Uuid::new_v4().to_string());
+            std::fs::create_dir_all(&directory).map_err(|_| "Could not prepare the file")?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                let _ = std::fs::set_permissions(
+                    &directory,
+                    std::fs::Permissions::from_mode(0o700),
+                );
+            }
+            let path = save_download(&directory, &filename, &body)?;
+            // The opened copy is plaintext: gone once the app had time to read it.
+            let doomed = directory.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(TEAM_SEALED_OPEN_SECS));
+                let _ = std::fs::remove_dir_all(doomed);
+            });
+            let status = std::process::Command::new("/usr/bin/open")
+                .arg(&path)
+                .status()
+                .map_err(|_| "Could not open the file")?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err("Could not open the file".to_owned())
+            }
+        })
+        .await
+        .map_err(|_| "Opening was interrupted".to_owned())?;
+    }
+    let file = team_downloads_file(&app)?;
+    let start = {
+        let _guard = TEAM_DOWNLOADS_LOCK
+            .lock()
+            .map_err(|_| "Downloads unavailable")?;
+        team_downloads_read(&file).folder
+    }
+    .filter(|folder| folder.is_dir())
+    .or_else(|| app.path().download_dir().ok())
+    .ok_or("Downloads unavailable")?;
+    let dialog = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        dialog
+            .dialog()
+            .file()
+            .set_title("저장할 위치 선택")
+            .set_directory(start)
+            .set_file_name(filename)
+            .blocking_save_file()
+            .and_then(|path| path.into_path().ok())
+    })
+    .await
+    .map_err(|_| "Saving was interrupted".to_owned())?
+    .ok_or("Download cancelled")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let directory = picked.parent().ok_or("Invalid save location")?;
+        let name = picked
+            .file_name()
+            .ok_or("Invalid save location")?
+            .to_string_lossy()
+            .into_owned();
+        replace_download(directory, &name, &body).map(|_| ())
+    })
+    .await
+    .map_err(|_| "Saving was interrupted".to_owned())?
+}
+
 /// Team build: which of these attachments still have a saved copy on disk.
 #[tauri::command]
 pub(crate) async fn team_media_saved<R: tauri::Runtime>(
