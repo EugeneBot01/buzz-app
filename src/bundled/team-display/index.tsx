@@ -683,40 +683,59 @@ function UiEditCard({
 }
 
 /** Publishes this member's shared profiles for the community the window is
- * in, whenever that list changes there. Each community keeps its own list. */
+ * in whenever they differ from what that community's relay holds. */
 function publishShared(relay: RelayData) {
-  // What each community last had from this device; a community first seen
-  // this run is taken as already up to date.
-  const published = new Map<string, string>();
+  // What each community's relay holds from this member, as published content.
+  // Read once per community each run, so a share made offline or a failed
+  // publish is sent the next time the app is open there.
+  const onRelay = new Map<string, string | "reading">();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const wanted = (dTag: string) => {
+    try {
+      return encodeShared(displaySettings.sharedProfiles(dTag));
+    } catch {
+      return undefined;
+    }
+  };
   const sync = () => {
     const community = communityOf(relay);
     if (!community) return;
-    const next = JSON.stringify(displaySettings.sharedProfiles(community.dTag));
-    if (!published.has(community.dTag)) published.set(community.dTag, next);
-    if (published.get(community.dTag) === next) return;
+    const known = onRelay.get(community.dTag);
+    if (known === "reading") return;
+    if (known === undefined) {
+      onRelay.set(community.dTag, "reading");
+      void readTeamDocs(community.session, community.dTag)
+        .then((events) => {
+          const own = events
+            .filter((event) => event.pubkey === community.viewer)
+            .sort((a, b) => b.created_at - a.created_at)[0];
+          onRelay.set(community.dTag, own?.content ?? encodeShared([]));
+        })
+        // Unknown: compare with nothing shared, so a share still goes out.
+        .catch(() => onRelay.set(community.dTag, encodeShared([])))
+        .finally(sync);
+      return;
+    }
+    const content = wanted(community.dTag);
+    if (content === undefined || content === known) return;
     clearTimeout(timer);
     // Renames and shares settle before one publication.
     timer = setTimeout(() => {
       const now = communityOf(relay);
       const publish = now?.session.teamAppData?.publish;
       if (!now || now.dTag !== community.dTag || !publish) return;
-      let content: string;
-      try {
-        content = encodeShared(displaySettings.sharedProfiles(now.dTag));
-      } catch {
-        return;
-      }
+      const latest = wanted(now.dTag);
+      if (latest === undefined) return;
       void publish({
         kind: 30078,
-        content,
+        content: latest,
         tags: [
           ["d", now.dTag],
           ["t", SHARED_TAG],
         ],
         created_at: Math.floor(Date.now() / 1000),
       })
-        .then(() => published.set(now.dTag, next))
+        .then(() => onRelay.set(now.dTag, latest))
         .catch(() => {});
     }, 800);
   };

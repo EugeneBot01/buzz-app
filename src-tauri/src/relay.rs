@@ -439,7 +439,13 @@ fn team_app_data(event: &EventTemplate) -> bool {
                 }
             }
             [name, value] if name == "t" => {
-                if !value.starts_with("team-") || value.len() > 45 {
+                // Mirrors app-data.ts: `team-` then 1–40 lowercase letters or hyphens.
+                let rest = value.strip_prefix("team-").unwrap_or("");
+                if !value.starts_with("team-")
+                    || rest.is_empty()
+                    || rest.len() > 40
+                    || !rest.bytes().all(|b| b.is_ascii_lowercase() || b == b'-')
+                {
                     return false;
                 }
                 t_count += 1;

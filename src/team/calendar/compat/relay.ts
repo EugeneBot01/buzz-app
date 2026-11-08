@@ -76,6 +76,8 @@ export async function signRelayEvent(template: EventTemplate) {
 
 type Watcher = {
   rest: Record<string, unknown>;
+  /** Ids already delivered at `since`, which the next read returns again. */
+  seenAtSince: Set<string>;
   onEvent: (event: RelayEvent) => void;
   since: number;
 };
@@ -116,9 +118,18 @@ async function poll() {
         const wanted = watcher.rest["#d"] as string[] | undefined;
         for (const event of events) {
           if (event.created_at < watcher.since) continue;
+          if (
+            event.created_at === watcher.since &&
+            watcher.seenAtSince.has(event.id)
+          )
+            continue;
           const d = event.tags.find((tag) => tag[0] === "d")?.[1];
           if (wanted && (!d || !wanted.includes(d))) continue;
-          watcher.since = Math.max(watcher.since, event.created_at);
+          if (event.created_at > watcher.since) {
+            watcher.since = event.created_at;
+            watcher.seenAtSince.clear();
+          }
+          watcher.seenAtSince.add(event.id);
           watcher.onEvent(event);
         }
       }
@@ -163,6 +174,7 @@ export const relayClient = {
       rest,
       onEvent,
       since: Math.floor(Date.now() / 1000) - 5,
+      seenAtSince: new Set(),
     };
     watchers.add(watcher);
     pollTimer ??= setInterval(() => void poll(), 15_000);

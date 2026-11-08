@@ -45,8 +45,12 @@ it("polls every open month with one read and hands each its own events", async (
   expect(filters[0]?.["#d"]).toEqual(["cal:2026-10", "cal:2026-11"]);
   expect(october).toHaveBeenCalledTimes(1);
   expect(november).toHaveBeenCalledTimes(1);
+  // The same events come back on the next read; nobody hears them twice.
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect(october).toHaveBeenCalledTimes(1);
+  expect(november).toHaveBeenCalledTimes(1);
   await stopA();
   await stopB();
   await vi.advanceTimersByTimeAsync(15_000);
-  expect(read).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledTimes(2);
 });
