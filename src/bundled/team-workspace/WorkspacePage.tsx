@@ -10,6 +10,7 @@ import { pagePresentation } from "../../app/shell/presentation";
 import { PageView } from "../../features/pages/PageView";
 import type { PagesReader, RegisteredPage } from "../../features/pages/service";
 import { useChannelList, useRelayConnection } from "../../features/relay/react";
+import { useChannelLabels } from "../channels/useChannelLabels";
 import type { RelayData } from "../../features/relay/service";
 import { readView, writeView } from "../../shared/view-state";
 import {
@@ -215,7 +216,13 @@ function MessagesPanel({
 }) {
   const connection = useRelayConnection(relay);
   const scope = connection.scope;
-  const { channels } = useChannelList(connection.session.channels);
+  const list = useChannelList(connection.session.channels);
+  // DMs are named after the people in them, as in the sidebar.
+  const { channels } = useChannelLabels(
+    list.channels,
+    connection.session.profiles,
+    connection.session.names,
+  );
   // The Messages page opens the chat saved as selected for this community.
   const [shown, setShown] = useState<string | undefined>(() =>
     scope ? readView(scope, "selected-channel", undefined) : undefined,

@@ -1,9 +1,9 @@
 /**
  * Team build: Korean typing on macOS. While a syllable is still being composed,
- * WebKit hands the mouse press to the input method to finish it, so the page
- * gets the release without its press and the click is lost: a button needs a
- * second click. When a release arrives without its press right after a
- * composition ended, click the control under it, so one click is enough.
+ * WebKit hands the whole mouse click to the input method to finish it, so the
+ * page sees only the composition ending and the button needs a second click.
+ * When a composition ends without a key that ended it and no click follows,
+ * click the control under the pointer, so one click is enough.
  */
 const CLICKABLE = [
   "button",
@@ -22,40 +22,52 @@ const CLICKABLE = [
   'input[type="checkbox"]',
   'input[type="radio"]',
 ].join(",");
-/** The press is swallowed in the same gesture that ends the composition. */
-const AFTER_COMPOSITION_MS = 1000;
+/** A key that ends a syllable (space, return, a letter) comes just before. */
+const KEY_ENDED_MS = 150;
+/** If the click does reach the page, it arrives within this time. */
+const CLICK_GRACE_MS = 250;
 
 export function repairClicksAfterComposition(doc: Document = document) {
-  let pressed = false;
-  let composedAt = Number.NEGATIVE_INFINITY;
-  const onPress = () => {
-    pressed = true;
+  let pointer: { x: number; y: number } | undefined;
+  let keyAt = Number.NEGATIVE_INFINITY;
+  let pending: ReturnType<typeof setTimeout> | undefined;
+  const cancel = () => {
+    if (pending !== undefined) clearTimeout(pending);
+    pending = undefined;
+  };
+  const onMove = (event: PointerEvent) => {
+    pointer = { x: event.clientX, y: event.clientY };
+  };
+  const onKey = () => {
+    keyAt = performance.now();
   };
   const onComposed = () => {
-    composedAt = performance.now();
+    cancel();
+    if (!pointer || performance.now() - keyAt < KEY_ENDED_MS) return;
+    const at = pointer;
+    pending = setTimeout(() => {
+      pending = undefined;
+      const hit = doc.elementFromPoint(at.x, at.y)?.closest(CLICKABLE);
+      if (
+        !(hit instanceof HTMLElement) ||
+        hit.matches(':disabled, [aria-disabled="true"]')
+      )
+        return;
+      hit.click();
+    }, CLICK_GRACE_MS);
   };
-  const onRelease = (event: PointerEvent) => {
-    const hadPress = pressed;
-    pressed = false;
-    if (hadPress || event.button !== 0) return;
-    if (event.pointerType && event.pointerType !== "mouse") return;
-    if (performance.now() - composedAt > AFTER_COMPOSITION_MS) return;
-    const target =
-      event.target instanceof Element ? event.target.closest(CLICKABLE) : null;
-    if (
-      !(target instanceof HTMLElement) ||
-      target.matches(':disabled, [aria-disabled="true"]')
-    )
-      return;
-    composedAt = Number.NEGATIVE_INFINITY;
-    target.click();
-  };
-  doc.addEventListener("pointerdown", onPress, true);
+  doc.addEventListener("pointermove", onMove, true);
+  doc.addEventListener("keydown", onKey, true);
   doc.addEventListener("compositionend", onComposed, true);
-  doc.addEventListener("pointerup", onRelease, true);
+  // The click reached the page after all: leave it alone.
+  doc.addEventListener("pointerdown", cancel, true);
+  doc.addEventListener("click", cancel, true);
   return () => {
-    doc.removeEventListener("pointerdown", onPress, true);
+    cancel();
+    doc.removeEventListener("pointermove", onMove, true);
+    doc.removeEventListener("keydown", onKey, true);
     doc.removeEventListener("compositionend", onComposed, true);
-    doc.removeEventListener("pointerup", onRelease, true);
+    doc.removeEventListener("pointerdown", cancel, true);
+    doc.removeEventListener("click", cancel, true);
   };
 }

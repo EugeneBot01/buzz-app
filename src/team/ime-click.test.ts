@@ -2,59 +2,53 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { repairClicksAfterComposition } from "./ime-click";
 
-const release = (target: Element) =>
-  target.dispatchEvent(
-    new MouseEvent("pointerup", { bubbles: true, button: 0 }),
-  );
-const press = (target: Element) =>
-  target.dispatchEvent(
-    new MouseEvent("pointerdown", { bubbles: true, button: 0 }),
-  );
-
 describe("clicks after Korean composition", () => {
   let stop: (() => void) | undefined;
   afterEach(() => {
     stop?.();
+    vi.useRealTimers();
     document.body.innerHTML = "";
   });
 
   const setup = () => {
+    vi.useFakeTimers();
     document.body.innerHTML =
       '<input id="field"><button id="go"><span id="label">보내기</span></button>';
     const clicked = vi.fn();
-    document.getElementById("go")?.addEventListener("click", clicked);
+    const button = document.getElementById("go") as HTMLElement;
+    button.addEventListener("click", clicked);
+    const label = document.getElementById("label") as HTMLElement;
+    document.elementFromPoint = () => label;
     stop = repairClicksAfterComposition();
     const field = document.getElementById("field") as HTMLElement;
-    const label = document.getElementById("label") as HTMLElement;
-    return { clicked, field, label };
+    document.dispatchEvent(
+      new MouseEvent("pointermove", { clientX: 5, clientY: 5 }),
+    );
+    const compose = () =>
+      field.dispatchEvent(new Event("compositionend", { bubbles: true }));
+    return { clicked, button, field, compose };
   };
 
-  it("clicks the button when the press went to the input method", () => {
-    const { clicked, field, label } = setup();
-    field.dispatchEvent(new Event("compositionend", { bubbles: true }));
-    release(label);
+  it("clicks the button when the input method took the click", () => {
+    const { clicked, compose } = setup();
+    compose();
+    vi.advanceTimersByTime(300);
     expect(clicked).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves ordinary clicks alone", () => {
-    const { clicked, field, label } = setup();
-    field.dispatchEvent(new Event("compositionend", { bubbles: true }));
-    press(label);
-    release(label);
-    expect(clicked).not.toHaveBeenCalled();
-  });
-
-  it("does nothing without a recent composition", () => {
-    const { clicked, label } = setup();
-    release(label);
-    expect(clicked).not.toHaveBeenCalled();
-  });
-
-  it("repairs only the first release after a composition", () => {
-    const { clicked, field, label } = setup();
-    field.dispatchEvent(new Event("compositionend", { bubbles: true }));
-    release(label);
-    release(label);
+  it("leaves clicks that reached the page alone", () => {
+    const { clicked, button, compose } = setup();
+    compose();
+    button.click();
+    vi.advanceTimersByTime(300);
     expect(clicked).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when a key ended the syllable", () => {
+    const { clicked, field, compose } = setup();
+    field.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true }));
+    compose();
+    vi.advanceTimersByTime(300);
+    expect(clicked).not.toHaveBeenCalled();
   });
 });
