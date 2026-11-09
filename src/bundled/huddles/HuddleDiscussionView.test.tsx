@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, expect, it, vi, assert } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { stubAvatarBrowserApis } from "../../features/agents/avatar-testing";
 stubAvatarBrowserApis();
 import { invoke } from "@tauri-apps/api/core";
@@ -165,7 +171,7 @@ it("keeps a surviving focus target across load retry success and failure", () =>
   expect(document.activeElement).toBe(log);
 });
 
-it("renders Markdown and downloads the resolved attachment, without falling back when media is unavailable", () => {
+it("renders Markdown and downloads the resolved attachment, without falling back when media is unavailable", async () => {
   const value = discussion("failed");
   const url = `https://relay.example/media/${"a".repeat(64)}`;
   const source = `http://buzz-media.localhost/${encodeURIComponent(url)}`;
@@ -199,6 +205,10 @@ it("renders Markdown and downloads the resolved attachment, without falling back
   const { rerender } = render(view());
   expect(screen.getByText("Notes").tagName).toBe("STRONG");
   fireEvent.click(screen.getByRole("button", { name: "Download notes.txt" }));
+  // Team build: the click first asks the host for a saved copy.
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("media_download", expect.anything()),
+  );
   expect(invoke).toHaveBeenCalledWith("media_download", {
     source,
     name: "notes.txt",
