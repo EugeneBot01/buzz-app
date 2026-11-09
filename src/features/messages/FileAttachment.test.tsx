@@ -13,6 +13,11 @@ import { downloadNativeMedia } from "./native-download";
 import { FileAttachment, formatFileSize } from "./FileAttachment";
 
 vi.mock("./native-download", () => ({ downloadNativeMedia: vi.fn() }));
+// Team build: no copy saved on this device, so every click downloads.
+vi.mock("../../team/files/saved", () => ({
+  savedSources: vi.fn(async () => []),
+  showSaved: vi.fn(),
+}));
 
 const proxySource = "/api/relay/media?url=https%3A%2F%2Ffixture.test%2Ffile";
 
@@ -181,6 +186,7 @@ it("downloads authenticated native documents through the host without navigating
   expect(screen.getByText("Download file")).toBeInTheDocument();
   fireEvent.click(link);
   expect(open).not.toHaveBeenCalled();
+  await waitFor(() => expect(downloadNativeMedia).toHaveBeenCalled());
   expect(downloadNativeMedia).toHaveBeenCalledWith(nativeSource, "report.pdf");
   await screen.findByText("Saved");
 });
@@ -282,6 +288,7 @@ it("preserves focus and blocks repeat saves while pending, then announces succes
     "Downloading report.pdf",
   );
   fireEvent.click(button);
+  await act(async () => {});
   expect(downloadNativeMedia).toHaveBeenCalledTimes(1);
   await act(async () => download.resolve());
   expect(button).toHaveTextContent("Saved");
@@ -362,3 +369,21 @@ it.each(["success", "failure"])(
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
   },
 );
+
+it("opens the copy saved earlier instead of downloading again", async () => {
+  const saved = await import("../../team/files/saved");
+  vi.mocked(saved.savedSources).mockResolvedValueOnce([nativeSource]);
+  vi.mocked(downloadNativeMedia).mockClear();
+  render(
+    <FileAttachment
+      attachment={file}
+      source={nativeSource}
+      onOpenLink={() => false}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Download report.pdf" }));
+  await waitFor(() =>
+    expect(saved.showSaved).toHaveBeenCalledWith(nativeSource, true),
+  );
+  expect(downloadNativeMedia).not.toHaveBeenCalled();
+});

@@ -117,9 +117,7 @@ it.each<Kind>(["video", "audio", "voice note"])(
     );
     await act(async () => retry.resolve());
     expect(
-      screen.getByText(
-        kind === "voice note" ? "Downloaded" : "Saved",
-      ),
+      screen.getByText(kind === "voice note" ? "Downloaded" : "Saved"),
     ).toBeVisible();
     expect(
       vi

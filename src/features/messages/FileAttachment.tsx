@@ -159,7 +159,7 @@ function NativeFileDownload({
   displayName: string;
   children(state: DownloadState): ReactNode;
 }) {
-  const { state, download } = useNativeDownload(source, name);
+  const { state, download } = useNativeDownload(source, name, undefined, true);
   const announcement =
     state === "pending"
       ? `Downloading ${displayName}`
