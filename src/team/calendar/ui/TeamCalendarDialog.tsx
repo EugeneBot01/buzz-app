@@ -267,7 +267,7 @@ export function TeamCalendarDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-1" role="tablist">
+        <div className="flex flex-wrap items-center gap-1" role="tablist">
           {(
             [
               ["calendar", "달력"],
@@ -306,7 +306,7 @@ export function TeamCalendarDialog({
         ) : (
           <div className="flex flex-col gap-4 @3xl:flex-row">
             <section aria-label="달력" className="min-w-0 flex-1">
-              <div className="mb-2 flex items-center gap-1">
+              <div className="mb-2 flex flex-wrap items-center gap-1">
                 <Button
                   aria-label="이전 달"
                   onClick={() => goToMonth(shiftMonth(month, -1))}
@@ -331,7 +331,7 @@ export function TeamCalendarDialog({
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                <label className="ml-auto mr-2 flex items-center gap-1.5 text-xs">
+                <label className="ml-auto mr-2 flex items-center gap-1.5 whitespace-nowrap text-xs">
                   <Checkbox
                     checked={mineOnly}
                     data-testid="team-calendar-mine-only"

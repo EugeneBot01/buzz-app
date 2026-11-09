@@ -16,9 +16,11 @@ import { useKeyboardFocusVisibility } from "./shared/design-system/useKeyboardFo
 import { useRejectUnclaimedDrops } from "./features/messages/use-file-drop";
 import { TooltipProvider } from "./shared/design-system/ui/Tooltip";
 import { startTeamTranslation } from "./team/i18n/start";
+import { repairClicksAfterComposition } from "./team/ime-click";
 
 // Team: Korean UI (display-layer translation).
 startTeamTranslation();
+repairClicksAfterComposition();
 
 const container = document.getElementById("root");
 

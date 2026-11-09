@@ -1,6 +1,7 @@
 import type { Communities } from "../../features/communities/service";
 import { bindMessageNotifications } from "../../features/notifications/messages";
 import type { NotificationsService } from "../../features/notifications/service";
+import { communityHost } from "../metrics/relay-metrics";
 import { communityAlerts } from "./community-alerts";
 
 /**
@@ -11,7 +12,9 @@ import { communityAlerts } from "./community-alerts";
  * binding stays quiet while its community is selected, so nothing alerts twice.
  * Background connections start a few seconds after launch and then one at a
  * time, so the selected community connects first and nothing arrives at once.
- * Communities whose alerts are turned off are not connected at all.
+ * Communities whose alerts are turned off are not connected at all, and
+ * turning one off disconnects it at once unless it is on screen or one of the
+ * viewer's agents works there; it reconnects when opened or turned on again.
  */
 const START_DELAY_MS = 5_000;
 const BETWEEN_MS = 3_000;
@@ -19,9 +22,13 @@ const BETWEEN_MS = 3_000;
 export function bindBackgroundCommunityAlerts(
   notifications: NotificationsService,
   communities: Communities,
+  /** Hosts of the communities the viewer's running agents work in. */
+  agentHosts: () => ReadonlySet<string> = () => new Set(),
 ) {
   communityAlerts.attach(communities);
   const bindings = new Map<string, () => void>();
+  // Communities disconnected here because their alerts were turned off.
+  const closed = new Set<string>();
   let viewer: string | undefined;
   let started = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -62,10 +69,27 @@ export function bindBackgroundCommunityAlerts(
     }
     if (!viewer) return;
     const joined = new Set(client.memberships.map((item) => item.id));
-    for (const [id, stop] of bindings)
+    for (const id of [...closed])
+      if (
+        !joined.has(id) ||
+        id === client.selected ||
+        communityAlerts.isOn(id)
+      ) {
+        closed.delete(id);
+        if (joined.has(id)) communities.open(id)?.retry();
+      }
+    for (const [id, stop] of [...bindings])
       if (!joined.has(id) || !communityAlerts.isOn(id)) {
         stop();
         bindings.delete(id);
+        if (
+          joined.has(id) &&
+          id !== client.selected &&
+          !agentHosts().has(communityHost(id))
+        ) {
+          closed.add(id);
+          communities.open(id)?.disconnect();
+        }
       }
     if (timer === undefined) connectNext();
   };

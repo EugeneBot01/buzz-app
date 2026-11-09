@@ -1,6 +1,7 @@
 import { ArtifactStorageService } from "../features/artifact-storage/service";
 import { createAdminAccess } from "../bundled/admin-access";
 import { bindBackgroundCommunityAlerts } from "../team/notifications/background-communities";
+import { communityHost } from "../team/metrics/relay-metrics";
 import { nativeRelayStaff } from "../features/relay-staff/native";
 import { createLocalAgentActivity } from "../features/agents/local-activity";
 // FOUNDATION: Compose the bundled distribution, plugin runtime, and services here.
@@ -134,7 +135,16 @@ export function createServices() {
   );
   ctx.effect(() => bindMessageNotifications(notifications, communities));
   // Team: also alert for joined communities that are not selected.
-  ctx.effect(() => bindBackgroundCommunityAlerts(notifications, communities));
+  ctx.effect(() =>
+    bindBackgroundCommunityAlerts(
+      notifications,
+      communities,
+      () =>
+        new Set(
+          agents.snapshot().running.map((agent) => communityHost(agent.relay)),
+        ),
+    ),
+  );
   const inviteIntent = createInviteIntent();
   const invites = {
     ...inviteIntent,

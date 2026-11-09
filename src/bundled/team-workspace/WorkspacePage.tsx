@@ -9,6 +9,9 @@ import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { pagePresentation } from "../../app/shell/presentation";
 import { PageView } from "../../features/pages/PageView";
 import type { PagesReader, RegisteredPage } from "../../features/pages/service";
+import { useChannelList, useRelayConnection } from "../../features/relay/react";
+import type { RelayData } from "../../features/relay/service";
+import { readView, writeView } from "../../shared/view-state";
 import {
   ArrowsInIcon,
   ArrowsOutIcon,
@@ -16,6 +19,8 @@ import {
   XIcon,
 } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
+import { Select } from "../../shared/design-system/ui/Select";
+import { ALWAYS_SHOWN_TAB } from "../../team/display/settings";
 import { displaySettings } from "../../team/display/store";
 import {
   layoutPages,
@@ -48,7 +53,13 @@ const identity = (value: unknown) => {
 };
 
 /** Loaded only when the Work area opens, with its layout library and styles. */
-export default function WorkspacePage({ pages }: { pages: PagesReader }) {
+export default function WorkspacePage({
+  pages,
+  relay,
+}: {
+  pages: PagesReader;
+  relay: RelayData;
+}) {
   const all = useSyncExternalStore(pages.subscribe, pages.snapshot);
   const available = useMemo(
     () =>
@@ -76,6 +87,7 @@ export default function WorkspacePage({ pages }: { pages: PagesReader }) {
       key={`${identity(external.current)}|${keys}`}
       saved={saved}
       available={available}
+      relay={relay}
       onSave={(json) => {
         own.current = json;
         displaySettings.setWorkspace(json);
@@ -87,10 +99,12 @@ export default function WorkspacePage({ pages }: { pages: PagesReader }) {
 function Arrangement({
   saved,
   available,
+  relay,
   onSave,
 }: {
   saved: unknown;
   available: readonly Available[];
+  relay: RelayData;
   onSave(json: unknown): void;
 }) {
   const [{ model, missing }] = useState(() => {
@@ -120,9 +134,13 @@ function Arrangement({
     const key = (node.getConfig() as { key?: string } | undefined)?.key;
     const page = available.find((item) => item.key === key)?.page;
     return page ? (
-      <div className="h-full min-h-0 overflow-auto">
-        <PageView page={page} />
-      </div>
+      key === ALWAYS_SHOWN_TAB ? (
+        <MessagesPanel page={page} relay={relay} />
+      ) : (
+        <div className="h-full min-h-0 overflow-auto">
+          <PageView page={page} />
+        </div>
+      )
     ) : (
       <p className="p-4 text-muted" data-no-translate="">
         이 패널의 화면이 이번 버전에 없어요. 탭을 닫아 주세요.
@@ -179,6 +197,60 @@ function Arrangement({
           realtimeResize
           onModelChange={save}
         />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Messages panel shows one chat of its own. The left sidebar opens the
+ * Messages tab; this picker switches the chat while staying in Work area.
+ */
+function MessagesPanel({
+  page,
+  relay,
+}: {
+  page: RegisteredPage;
+  relay: RelayData;
+}) {
+  const connection = useRelayConnection(relay);
+  const scope = connection.scope;
+  const { channels } = useChannelList(connection.session.channels);
+  // The Messages page opens the chat saved as selected for this community.
+  const [shown, setShown] = useState<string | undefined>(() =>
+    scope ? readView(scope, "selected-channel", undefined) : undefined,
+  );
+  const choices = channels.filter(
+    (channel) =>
+      !channel.archived && !channel.huddle && channel.channelType !== "system",
+  );
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {scope && choices.length > 0 && (
+        <div className="shrink-0 p-1" data-no-translate="">
+          <Select
+            variant="compact"
+            label="채널"
+            value={shown ?? ""}
+            groups={[
+              {
+                label: "채널",
+                options: choices.map((channel) => ({
+                  value: channel.id,
+                  label: channel.name || "대화",
+                })),
+              },
+            ]}
+            onValueChange={(id) => {
+              writeView(scope, "selected-channel", id);
+              setShown(id);
+            }}
+          />
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-auto">
+        {/* Reopened per chat, so it reads the newly saved selection. */}
+        <PageView key={shown ?? "saved"} page={page} />
       </div>
     </div>
   );

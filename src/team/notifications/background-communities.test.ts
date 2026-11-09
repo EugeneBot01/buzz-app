@@ -23,6 +23,7 @@ const memberships = ["a", "b", "c"].map((id) => ({ id, name: id }));
 const communities = {
   snapshot: () => ({ viewer: "me", memberships, selected: "a" }),
   subscribe: () => () => {},
+  open: () => ({ disconnect() {}, retry() {} }),
 } as never;
 
 beforeEach(() => {
@@ -48,4 +49,43 @@ it("connects joined communities one at a time, skipping ones turned off", () => 
   expect(unbound).toEqual(["c"]);
   stop();
   expect(unbound).toEqual(["c", "a"]);
+});
+
+it("disconnects a community turned off unless shown or used by agents, and reconnects it", () => {
+  communityAlerts.selectViewer("me");
+  // The on/off list is kept in memory between tests.
+  for (const id of ["a", "b", "c"]) communityAlerts.set(id, true);
+  const calls: string[] = [];
+  let selected = "a";
+  const listeners = new Set<() => void>();
+  const live = {
+    snapshot: () => ({ viewer: "me", memberships, selected }),
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    open: (id: string) => ({
+      disconnect: () => calls.push(`disconnect ${id}`),
+      retry: () => calls.push(`retry ${id}`),
+    }),
+  } as never;
+  const stop = bindBackgroundCommunityAlerts(
+    {} as never,
+    live,
+    () => new Set(["c"]),
+  );
+  vi.advanceTimersByTime(5_000 + 3_000 * 2);
+  expect(bound).toEqual(["a", "b", "c"]);
+  // Shown, or an agent works there: alerts stop, the connection stays.
+  communityAlerts.set("a", false);
+  communityAlerts.set("c", false);
+  expect(calls).toEqual([]);
+  communityAlerts.set("b", false);
+  expect(calls).toEqual(["disconnect b"]);
+  // Opening it reconnects it.
+  selected = "b";
+  for (const listener of listeners) listener();
+  expect(calls).toEqual(["disconnect b", "retry b"]);
+  stop();
+  for (const id of ["a", "b", "c"]) communityAlerts.set(id, true);
 });

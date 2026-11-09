@@ -23,7 +23,7 @@ function List({ communities }: { communities: Communities }) {
       <InlineHeader
         id="team-community-alerts-title"
         title="다른 커뮤니티 알림"
-        subtitle="끄면 바로 알림이 멈추고, 다음에 앱을 켤 때부터는 뒤에서 연결하지 않아 앱이 가벼워져요. 지금 보고 있는 커뮤니티는 항상 알려요."
+        subtitle="끄면 바로 알림이 멈추고 뒤에서 하던 연결도 끊어 앱이 가벼워져요. 내 에이전트가 있는 커뮤니티는 연결을 유지해요. 지금 보고 있는 커뮤니티는 항상 알려요."
       />
       <SettingsGroup>
         {client.memberships.map((membership) => (
