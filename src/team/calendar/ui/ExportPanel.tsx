@@ -185,10 +185,10 @@ export function ExportPanel({
             <button
               aria-pressed={view === value}
               className={cn(
-                "border-0 cursor-pointer rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted",
+                "border-0 cursor-pointer rounded-lg border px-3 py-2 text-left transition-colors hover:bg-soft",
                 view === value
-                  ? "border-primary bg-primary/5"
-                  : "border-border",
+                  ? "border-[var(--primary)] bg-[var(--surface-accent)]"
+                  : "border-line",
               )}
               data-testid={`export-view-${value}`}
               disabled={kind === "json"}
@@ -197,7 +197,7 @@ export function ExportPanel({
               type="button"
             >
               <span className="block text-sm font-semibold">{label}</span>
-              <span className="text-muted-foreground">{hint}</span>
+              <span className="text-muted">{hint}</span>
             </button>
           ))}
         </div>
@@ -206,7 +206,7 @@ export function ExportPanel({
       <fieldset className="flex flex-col gap-1.5">
         <legend className="mb-1 text-sm font-semibold">2. 범위</legend>
         {kind === "json" ? (
-          <p className="text-muted-foreground">
+          <p className="text-muted">
             백업은 보드 설정, 보드 기간의 모든 일정, 반복 일정, 팀원 일정을 한
             파일로 담습니다.
           </p>
@@ -273,7 +273,7 @@ export function ExportPanel({
           </div>
         )}
         {rangeError && kind !== "json" ? (
-          <p className="text-destructive" role="alert">
+          <p className="text-danger" role="alert">
             {rangeError}
           </p>
         ) : null}
@@ -286,10 +286,10 @@ export function ExportPanel({
             <button
               aria-pressed={kind === format.kind}
               className={cn(
-                "border-0 cursor-pointer rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted",
+                "border-0 cursor-pointer rounded-lg border px-3 py-2 text-left transition-colors hover:bg-soft",
                 kind === format.kind
-                  ? "border-primary bg-primary/5"
-                  : "border-border",
+                  ? "border-[var(--primary)] bg-[var(--surface-accent)]"
+                  : "border-line",
               )}
               data-testid={`export-kind-${format.kind}`}
               key={format.kind}
@@ -299,14 +299,14 @@ export function ExportPanel({
               <span className="block text-sm font-semibold">
                 {format.label}
               </span>
-              <span className="text-muted-foreground">{format.hint}</span>
+              <span className="text-muted">{format.hint}</span>
             </button>
           ))}
         </div>
       </fieldset>
 
-      <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
-        <p className="min-w-0 truncate text-muted-foreground">{filename()}</p>
+      <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
+        <p className="min-w-0 truncate text-muted">{filename()}</p>
         <div className="flex gap-2">
           <Button onClick={onClose} size="sm" type="button" variant="ghost">
             닫기

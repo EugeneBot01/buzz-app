@@ -19,10 +19,10 @@ import { Button } from "../compat/ui";
 import { colorDot } from "./EntryForm";
 
 const PHASE_CLASS = {
-  pre: "bg-blue-3",
-  prod: "bg-orange-4 font-semibold text-orange-11 ",
-  post: "bg-green-3",
-  other: "bg-muted",
+  pre: "bg-[#0ea5e91a]",
+  prod: "bg-[#f9731626] font-semibold text-[#c2410c] dark:text-[#fdba74]",
+  post: "bg-[#22c55e1a]",
+  other: "bg-soft",
 } as const;
 
 type SprintBoardProps = {
@@ -112,7 +112,7 @@ export function SprintBoard({
           <h3 className="text-base font-bold" data-testid="sprint-title">
             {plan.title}
           </h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted">
             {weeks[0]?.id} {shortDate(plan.start)} ~{" "}
             {weeks[weeks.length - 1]?.id}{" "}
             {shortDate(weeks[weeks.length - 1]?.end ?? plan.start)} · 칸을
@@ -123,29 +123,29 @@ export function SprintBoard({
         <div className="flex flex-wrap items-stretch gap-2">
           {plan.keyDates.map((keyDate, index) => (
             <div
-              className="min-w-24 rounded-md border border-border/70 px-2.5 py-1"
+              className="min-w-24 rounded-md border border-line px-2.5 py-1"
               data-testid="sprint-counter"
               key={`${keyDate.label}-${keyDate.date}`}
             >
               <p
                 className={cn(
                   "font-mono text-base font-semibold leading-tight tabular-nums",
-                  index === 0 && "text-orange-11 ",
+                  index === 0 && "text-[#ea580c] dark:text-[#fb923c]",
                 )}
               >
                 {dDayLabel(keyDate.date, today)}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted">
                 {keyDate.label} {shortDate(keyDate.date)}
               </p>
             </div>
           ))}
           {currentWeek >= 0 ? (
-            <div className="min-w-24 rounded-md border border-border/70 px-2.5 py-1">
+            <div className="min-w-24 rounded-md border border-line px-2.5 py-1">
               <p className="font-mono text-base font-semibold leading-tight">
                 {weeks[currentWeek]?.id}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted">
                 이번 주 {shortDate(weeks[currentWeek]?.start ?? today)}–
                 {shortDate(weeks[currentWeek]?.end ?? today)}
               </p>
@@ -166,7 +166,7 @@ export function SprintBoard({
       </header>
 
       {isDefaultPlan ? (
-        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+        <p className="rounded-md border border-dashed border-line px-3 py-2 text-xs text-muted">
           아직 저장된 보드 설정이 없어 기본값(이번 주부터 8주)으로 보여 줍니다.
           "보드 설정"에서 기간·단계·부서를 정하거나, "가져오기"로 마스터 플랜
           파일을 불러오세요.
@@ -174,26 +174,26 @@ export function SprintBoard({
       ) : null}
       {plan.note ? (
         <p
-          className="rounded-md border border-border/70 border-l-4 border-l-orange-500 px-3 py-1.5 text-xs"
+          className="rounded-md border border-line border-l-4 border-l-orange-500 px-3 py-1.5 text-xs"
           data-testid="sprint-note"
         >
           {plan.note}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+      <div className="flex flex-wrap gap-4 text-xs text-muted">
         <span>
-          <span className="font-bold text-orange-11">◆</span> 하루짜리
+          <span className="font-bold text-[#ea580c]">◆</span> 하루짜리
           마감·이벤트
         </span>
         <span>• 기간 작업</span>
         <span>
-          <span className="rounded-sm bg-amber-9 px-1 font-semibold text-amber-12">
+          <span className="rounded-sm bg-[#facc15] px-1 font-semibold text-[#422006]">
             노란 열
           </span>{" "}
           이번 주
         </span>
         <span>
-          <span className="rounded-sm px-1 ring-2 ring-primary ring-inset">
+          <span className="rounded-sm px-1 ring-2 ring-[var(--primary)] ring-inset">
             테두리
           </span>{" "}
           선택한 주 (달력과 같이 움직여요)
@@ -201,14 +201,14 @@ export function SprintBoard({
       </div>
 
       <div
-        className="max-h-[min(60vh,40rem)] overflow-auto rounded-lg border border-border/70"
+        className="max-h-[min(60vh,40rem)] overflow-auto rounded-lg border border-line"
         ref={scrollerRef}
       >
         <table className="w-max min-w-full border-separate border-spacing-0 text-left text-xs">
           <thead>
             <tr>
               <th
-                className="sticky left-0 top-0 z-30 h-7 w-28 min-w-28 border-b border-r border-border/70 bg-muted px-2 font-mono text-xs font-medium tracking-wider text-muted-foreground"
+                className="sticky left-0 top-0 z-30 h-7 w-28 min-w-28 border-b border-r border-line bg-soft px-2 font-mono text-xs font-medium tracking-wider text-muted"
                 data-sprint-label=""
                 scope="col"
               >
@@ -217,7 +217,7 @@ export function SprintBoard({
               {bands.map((band, index) => (
                 <th
                   className={cn(
-                    "sticky top-0 z-20 h-7 border-b border-r border-border/70 bg-background px-2 font-mono text-xs uppercase tracking-wider",
+                    "sticky top-0 z-20 h-7 border-b border-r border-line bg-surface px-2 font-mono text-xs uppercase tracking-wider",
                     band.tone !== "none" &&
                       PHASE_CLASS[band.tone as keyof typeof PHASE_CLASS],
                   )}
@@ -232,7 +232,7 @@ export function SprintBoard({
             </tr>
             <tr>
               <th
-                className="sticky left-0 top-7 z-30 border-b border-r border-border/70 bg-muted px-2 py-1.5 font-mono text-xs font-medium tracking-wider text-muted-foreground"
+                className="sticky left-0 top-7 z-30 border-b border-r border-line bg-soft px-2 py-1.5 font-mono text-xs font-medium tracking-wider text-muted"
                 scope="col"
               >
                 SPRINT
@@ -243,8 +243,8 @@ export function SprintBoard({
                 return (
                   <th
                     className={cn(
-                      "sticky top-7 z-20 w-44 min-w-44 border-b border-r border-border/70 bg-muted p-0 font-normal",
-                      isNow && "bg-amber-9 text-amber-12",
+                      "sticky top-7 z-20 w-44 min-w-44 border-b border-r border-line bg-soft p-0 font-normal",
+                      isNow && "bg-[#facc15] text-[#422006]",
                     )}
                     data-week-index={week.index}
                     key={week.id}
@@ -254,8 +254,8 @@ export function SprintBoard({
                       aria-label={`${week.id} ${shortDate(week.start)}부터 ${shortDate(week.end)}까지 선택`}
                       aria-pressed={isSelected}
                       className={cn(
-                        "border-0 rounded-none cursor-pointer flex w-full items-baseline gap-1.5 px-2 py-1.5 text-left hover:bg-foreground/5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                        isSelected && "ring-2 ring-inset ring-primary",
+                        "border-0 rounded-none cursor-pointer flex w-full items-baseline gap-1.5 px-2 py-1.5 text-left hover:bg-soft focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        isSelected && "ring-2 ring-inset ring-[var(--primary)]",
                       )}
                       data-testid={`sprint-week-${week.id}`}
                       onClick={() => onSelectWeek(week)}
@@ -267,7 +267,7 @@ export function SprintBoard({
                       <span
                         className={cn(
                           "font-mono text-xs tabular-nums",
-                          isNow ? "text-amber-12" : "text-muted-foreground",
+                          isNow ? "text-[#713f12]" : "text-muted",
                         )}
                       >
                         {shortDate(week.start)}–{shortDate(week.end)}
@@ -282,10 +282,10 @@ export function SprintBoard({
             {rows.map((row) => (
               <tr key={row.key || "unassigned"}>
                 <th
-                  className="sticky left-0 z-10 border-b border-r border-border/70 bg-muted px-2 py-1.5 align-top"
+                  className="sticky left-0 z-10 border-b border-r border-line bg-soft px-2 py-1.5 align-top"
                   scope="row"
                 >
-                  <span className="block font-mono text-xs font-medium tracking-wider text-muted-foreground">
+                  <span className="block font-mono text-xs font-medium tracking-wider text-muted">
                     {row.key === UNASSIGNED_ROW ? "ETC" : row.key}
                   </span>
                   <span className="flex items-center gap-1 text-xs font-semibold">
@@ -307,10 +307,10 @@ export function SprintBoard({
                   return (
                     <td
                       className={cn(
-                        "group/cell border-b border-r border-border/70 p-0 align-top",
-                        isNow && "bg-amber-3",
+                        "group/cell border-b border-r border-line p-0 align-top",
+                        isNow && "bg-[#facc151a]",
                         isProd && "border-x-2 border-x-orange-500/60",
-                        isSelected && "bg-primary/5",
+                        isSelected && "bg-[var(--surface-accent)]",
                       )}
                       data-testid={`sprint-cell-${row.key || "ETC"}-${week.id}`}
                       key={week.id}
@@ -323,9 +323,9 @@ export function SprintBoard({
                           return (
                             <button
                               className={cn(
-                                "border-0 cursor-pointer grid grid-cols-[0.75rem_1fr] gap-1 rounded px-1 py-0.5 text-left leading-snug hover:bg-foreground/5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                                "border-0 cursor-pointer grid grid-cols-[0.75rem_1fr] gap-1 rounded px-1 py-0.5 text-left leading-snug hover:bg-soft focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                                 editingId === item.entry.id &&
-                                  "bg-primary/10 ring-1 ring-primary",
+                                  "bg-[var(--surface-accent)] ring-1 ring-[var(--primary)]",
                               )}
                               data-testid="sprint-item"
                               key={`${item.entry.id}@${item.entry.date}`}
@@ -336,7 +336,7 @@ export function SprintBoard({
                               {item.milestone ? (
                                 <span
                                   aria-hidden="true"
-                                  className="text-center font-bold text-orange-11 "
+                                  className="text-center font-bold text-[#ea580c] dark:text-[#fb923c]"
                                 >
                                   ◆
                                 </span>
@@ -364,7 +364,7 @@ export function SprintBoard({
                         })}
                         <button
                           aria-label={`${row.label} ${week.id}에 일정 추가`}
-                          className="border-0 cursor-pointer flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted-foreground opacity-0 hover:bg-foreground/5 focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring group-hover/cell:opacity-100"
+                          className="border-0 cursor-pointer flex items-center gap-1 rounded px-1 py-0.5 text-xs text-muted opacity-0 hover:bg-soft focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring group-hover/cell:opacity-100"
                           data-testid="sprint-add"
                           onClick={() => onAdd(row.key, week)}
                           type="button"
@@ -381,7 +381,7 @@ export function SprintBoard({
           </tbody>
         </table>
       </div>
-      <p aria-live="polite" className="min-h-4 text-xs text-muted-foreground">
+      <p aria-live="polite" className="min-h-4 text-xs text-muted">
         {status === "loading" ? "일정을 불러오는 중…" : null}
         {status === "error"
           ? "일정을 불러오지 못했습니다. 연결을 확인해 주세요."

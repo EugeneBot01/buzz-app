@@ -94,7 +94,7 @@ export function SprintPlanForm({
           />
         </label>
         {plan.start && mondayOf(plan.start) !== plan.start ? (
-          <p className="text-muted-foreground sm:col-span-3">
+          <p className="text-muted sm:col-span-3">
             시작일이 월요일이 아니어서 주가 그 요일부터 시작합니다.{" "}
             <button
               className="border-0 rounded-none p-0 cursor-pointer underline"
@@ -120,7 +120,7 @@ export function SprintPlanForm({
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-semibold">
           단계{" "}
-          <span className="font-normal text-muted-foreground">
+          <span className="font-normal text-muted">
             ({phaseWeeks}/{plan.weeks}주)
           </span>
         </legend>
@@ -333,7 +333,7 @@ export function SprintPlanForm({
             부서 추가
           </Button>
         ) : null}
-        <p className="text-muted-foreground">
+        <p className="text-muted">
           부서를 지우거나 코드를 바꾸면, 그 부서 일정은 지워지지 않고 "부서
           미지정" 행에 보입니다.
         </p>
@@ -407,15 +407,11 @@ export function SprintPlanForm({
       </fieldset>
 
       {error ? (
-        <p
-          className="text-destructive"
-          data-testid="sprint-plan-error"
-          role="alert"
-        >
+        <p className="text-danger" data-testid="sprint-plan-error" role="alert">
           {error}
         </p>
       ) : null}
-      <div className="sticky bottom-0 flex justify-end gap-2 bg-background pt-2">
+      <div className="sticky bottom-0 flex justify-end gap-2 bg-surface pt-2">
         <Button
           disabled={saving}
           onClick={onCancel}

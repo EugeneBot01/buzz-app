@@ -21,11 +21,11 @@ import { SELECT_CLASS } from "./EntryForm";
 const WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
 const KIND_TONE: Record<RuleKind, string> = {
-  busy: "data-[on=true]:bg-red-4 data-[on=true]:text-red-11 dark:data-[on=true]:text-red-10",
+  busy: "data-[on=true]:bg-[#ef444426] data-[on=true]:text-[#b91c1c] dark:data-[on=true]:text-[#fca5a5]",
   available:
-    "data-[on=true]:bg-green-4 data-[on=true]:text-green-11 dark:data-[on=true]:text-green-10",
+    "data-[on=true]:bg-[#22c55e26] data-[on=true]:text-[#15803d] dark:data-[on=true]:text-[#86efac]",
   tentative:
-    "data-[on=true]:bg-amber-4 data-[on=true]:text-amber-11 dark:data-[on=true]:text-amber-10",
+    "data-[on=true]:bg-[#f59e0b26] data-[on=true]:text-[#b45309] dark:data-[on=true]:text-[#fcd34d]",
 };
 
 /** End-time choices: every half hour up to 24:00. */
@@ -134,7 +134,7 @@ export function AvailabilityRuleForm({
 
   return (
     <form
-      className="flex flex-col gap-2 rounded-lg border border-border/70 p-3 text-xs"
+      className="flex flex-col gap-2 rounded-lg border border-line p-3 text-xs"
       data-testid="availability-rule-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -152,7 +152,7 @@ export function AvailabilityRuleForm({
         />
       </label>
       <div
-        className="grid grid-cols-3 gap-1 rounded-md bg-muted p-1"
+        className="grid grid-cols-3 gap-1 rounded-md bg-soft p-1"
         role="radiogroup"
       >
         {RULE_KINDS.map((kind) => (
@@ -160,7 +160,7 @@ export function AvailabilityRuleForm({
           <button
             aria-checked={draft.kind === kind}
             className={cn(
-              "border-0 cursor-pointer rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-background/70",
+              "border-0 cursor-pointer rounded px-2 py-1.5 text-xs text-muted transition-colors hover:bg-soft",
               "data-[on=true]:font-semibold data-[on=true]:shadow-sm",
               KIND_TONE[kind],
             )}
@@ -326,7 +326,7 @@ export function AvailabilityRuleForm({
             <div className="flex flex-wrap gap-1">
               {draft.exclude.map((day) => (
                 <span
-                  className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5"
+                  className="flex items-center gap-1 rounded-full bg-soft px-2 py-0.5"
                   key={day}
                 >
                   {day}
@@ -349,7 +349,7 @@ export function AvailabilityRuleForm({
         </div>
       ) : null}
       {error && draft.title.trim() ? (
-        <p className="text-destructive" role="alert">
+        <p className="text-danger" role="alert">
           {error}
         </p>
       ) : null}

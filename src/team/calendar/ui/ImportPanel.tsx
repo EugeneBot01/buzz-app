@@ -134,12 +134,12 @@ export function ImportPanel({
 
   return (
     <div className="flex flex-col gap-4 text-xs" data-testid="import-panel">
-      <p className="text-muted-foreground">
+      <p className="text-muted">
         마스터 플랜·팀원 일정 파일(<code>buzz-team-calendar</code> 형식 JSON)
         또는 "배포 → 백업"으로 받은 파일을 불러옵니다. 가져온 내용은 이
         커뮤니티의 모든 멤버에게 보입니다.
       </p>
-      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-4 py-6 text-sm hover:bg-muted">
+      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-6 text-sm hover:bg-soft">
         <FileUp className="h-5 w-5" />
         {file ? file.name : "파일 고르기"}
         <input
@@ -151,7 +151,7 @@ export function ImportPanel({
         />
       </label>
       {error ? (
-        <p className="text-destructive" data-testid="import-error" role="alert">
+        <p className="text-danger" data-testid="import-error" role="alert">
           {error}
         </p>
       ) : null}
@@ -197,10 +197,10 @@ export function ImportPanel({
           </label>
         </fieldset>
       ) : null}
-      <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+      <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
         <p
           aria-live="polite"
-          className="text-muted-foreground"
+          className="text-muted"
           data-testid="import-progress"
         >
           {progress}

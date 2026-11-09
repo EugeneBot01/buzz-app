@@ -103,7 +103,7 @@ export function CalendarGrid({
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
-        <label className="ml-auto flex items-center gap-1.5 text-xs">
+        <label className="ml-auto flex items-center gap-1.5 whitespace-nowrap text-xs">
           <Checkbox
             checked={showPeople}
             data-testid="team-calendar-show-people"
@@ -111,7 +111,7 @@ export function CalendarGrid({
           />
           팀원 일정 표시
         </label>
-        <label className="mx-2 flex items-center gap-1.5 text-xs">
+        <label className="mx-2 flex items-center gap-1.5 whitespace-nowrap text-xs">
           <Checkbox
             checked={mineOnly}
             data-testid="team-calendar-mine-only"
@@ -129,13 +129,13 @@ export function CalendarGrid({
         </Button>
       </div>
 
-      <div className="grid grid-cols-7 text-center text-xs text-muted-foreground">
+      <div className="grid grid-cols-7 text-center text-xs text-muted">
         {WEEKDAYS.map((weekday, index) => (
           <div
             className={cn(
               "py-1",
-              index === 0 && "text-red-10",
-              index === 6 && "text-blue-10",
+              index === 0 && "text-[#ef4444cc]",
+              index === 6 && "text-[#3b82f6cc]",
             )}
             key={weekday}
           >
@@ -143,7 +143,7 @@ export function CalendarGrid({
           </div>
         ))}
       </div>
-      <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-border/60 bg-border/60">
+      <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-line bg-border/60">
         {weeks.map((week) => {
           const bars = weekSegments(
             entries,
@@ -173,9 +173,9 @@ export function CalendarGrid({
                       }`}
                       aria-pressed={isSelected}
                       className={cn(
-                        "border-0 rounded-none cursor-pointer flex h-20 min-w-0 flex-col items-stretch gap-0.5 bg-background p-1 text-left transition-colors hover:bg-muted/70 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-                        !cell.inMonth && "text-muted-foreground/50",
-                        isSelected && "bg-accent hover:bg-accent",
+                        "border-0 rounded-none cursor-pointer flex h-20 min-w-0 flex-col items-stretch gap-0.5 bg-surface p-1 text-left transition-colors hover:bg-soft focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+                        !cell.inMonth && "text-muted",
+                        isSelected && "bg-hover hover:bg-hover",
                       )}
                       data-testid={`team-calendar-day-${cell.date}`}
                       key={cell.date}
@@ -187,7 +187,7 @@ export function CalendarGrid({
                           className={cn(
                             "flex h-5 w-5 items-center justify-center rounded-full text-xs",
                             cell.date === today &&
-                              "bg-primary font-semibold text-primary-foreground",
+                              "bg-[var(--primary)] font-semibold text-on-primary",
                           )}
                         >
                           {cell.day}
@@ -195,7 +195,7 @@ export function CalendarGrid({
                         <span className="flex items-center gap-1">
                           {busy ? (
                             <span
-                              className="rounded bg-red-4 px-1 text-xs font-medium text-red-11 "
+                              className="rounded bg-[#ef444426] px-1 text-xs font-medium text-[#b91c1c] dark:text-[#fca5a5]"
                               data-testid="team-calendar-busy-badge"
                               title={`팀원 ${busy}명이 이 날 종일 불가예요`}
                             >
@@ -203,7 +203,7 @@ export function CalendarGrid({
                             </span>
                           ) : null}
                           {hidden[column] ? (
-                            <span className="px-0.5 text-xs text-muted-foreground">
+                            <span className="px-0.5 text-xs text-muted">
                               +{hidden[column]}
                             </span>
                           ) : null}
@@ -221,7 +221,7 @@ export function CalendarGrid({
                 {shown.map((bar) => (
                   <span
                     className={cn(
-                      "truncate text-xs leading-4 text-foreground",
+                      "truncate text-xs leading-4 ",
                       bar.continuesBefore
                         ? "rounded-l-none pl-1.5"
                         : "ml-0.5 rounded-l pl-1",
@@ -248,10 +248,7 @@ export function CalendarGrid({
           );
         })}
       </div>
-      <p
-        aria-live="polite"
-        className="mt-2 min-h-4 text-xs text-muted-foreground"
-      >
+      <p aria-live="polite" className="mt-2 min-h-4 text-xs text-muted">
         {status === "loading" ? "일정을 불러오는 중…" : null}
         {status === "error"
           ? "일정을 불러오지 못했습니다. 연결을 확인해 주세요."

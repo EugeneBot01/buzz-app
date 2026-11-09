@@ -27,14 +27,14 @@ import {
 import { SELECT_CLASS } from "./EntryForm";
 
 export const KIND_BADGE: Record<RuleKind, string> = {
-  busy: "bg-red-4 text-red-11 ",
-  available: "bg-green-4 text-green-11 ",
-  tentative: "bg-amber-4 text-amber-11 ",
+  busy: "bg-[#ef444426] text-[#b91c1c] dark:text-[#fca5a5]",
+  available: "bg-[#22c55e26] text-[#15803d] dark:text-[#86efac]",
+  tentative: "bg-[#f59e0b26] text-[#b45309] dark:text-[#fcd34d]",
 };
 const KIND_DOT: Record<RuleKind, string> = {
-  busy: "bg-red-9",
-  available: "bg-green-9",
-  tentative: "bg-amber-9",
+  busy: "bg-[#ef4444]",
+  available: "bg-[#22c55e]",
+  tentative: "bg-[#f59e0b]",
 };
 
 type Filter = "all" | "weekly" | "dated";
@@ -183,7 +183,7 @@ export function AvailabilityPanel({
       >
         <div className="flex items-center gap-2">
           <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted" />
             <Input
               aria-label="이름 또는 역할 검색"
               className="pl-8"
@@ -207,7 +207,7 @@ export function AvailabilityPanel({
           </Button>
         </div>
         {mine ? null : (
-          <p className="rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">
+          <p className="rounded-md bg-soft px-2 py-1.5 text-xs text-muted">
             내 이름을 고른 뒤 "이 사람이 나예요"를 누르면 다음부터 바로 내
             일정이 열립니다.
           </p>
@@ -218,8 +218,8 @@ export function AvailabilityPanel({
               <button
                 aria-pressed={person.id === selectedId}
                 className={cn(
-                  "border-0 cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                  person.id === selectedId && "bg-accent",
+                  "border-0 cursor-pointer flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-soft focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                  person.id === selectedId && "bg-hover",
                 )}
                 data-testid="availability-person"
                 onClick={() => {
@@ -230,17 +230,19 @@ export function AvailabilityPanel({
                 }}
                 type="button"
               >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-soft text-xs font-semibold">
                   {person.name.slice(-2)}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">
                     {person.name}
                     {person.pubkey === pubkey ? (
-                      <span className="ml-1 text-xs text-primary">나</span>
+                      <span className="ml-1 text-xs text-[var(--primary)]">
+                        나
+                      </span>
                     ) : null}
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
+                  <span className="block truncate text-xs text-muted">
                     {[person.role, `${counts(person)}개 일정`]
                       .filter(Boolean)
                       .join(" · ")}
@@ -250,7 +252,7 @@ export function AvailabilityPanel({
             </li>
           ))}
           {shown.length === 0 ? (
-            <li className="px-2 py-4 text-center text-xs text-muted-foreground">
+            <li className="px-2 py-4 text-center text-xs text-muted">
               {status === "loading"
                 ? "불러오는 중…"
                 : people.length === 0
@@ -267,7 +269,7 @@ export function AvailabilityPanel({
       >
         {personDraft ? (
           <form
-            className="flex flex-col gap-2 rounded-lg border border-border/70 p-3 text-xs"
+            className="flex flex-col gap-2 rounded-lg border border-line p-3 text-xs"
             data-testid="availability-person-form"
             onSubmit={(event) => {
               event.preventDefault();
@@ -353,12 +355,12 @@ export function AvailabilityPanel({
                 >
                   {selected.name}님의 일정{" "}
                   {selected.role ? (
-                    <span className="text-xs font-normal text-muted-foreground">
+                    <span className="text-xs font-normal text-muted">
                       {selected.role}
                     </span>
                   ) : null}
                 </h3>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted">
                   {selected.pubkey
                     ? `Buzz: ${nameOf(selected.pubkey)}`
                     : "Buzz 멤버와 연결 안 됨"}{" "}
@@ -424,7 +426,7 @@ export function AvailabilityPanel({
               </div>
             </div>
             {confirming === selected.id ? (
-              <div className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+              <div className="flex items-center justify-between gap-2 rounded-md border border-[#ef444466] bg-[#ef44441a] px-3 py-2 text-xs">
                 <span>
                   {selected.name}님과 일정 {selected.rules.length}개를 모두
                   지울까요?
@@ -501,7 +503,7 @@ export function AvailabilityPanel({
             <ul className="flex max-h-[24rem] flex-col gap-1.5 overflow-y-auto">
               {rules.map((rule) => (
                 <li
-                  className="flex items-start gap-2 rounded-lg border border-border/60 px-3 py-2"
+                  className="flex items-start gap-2 rounded-lg border border-line px-3 py-2"
                   data-testid="availability-rule"
                   key={rule.id}
                 >
@@ -526,9 +528,7 @@ export function AvailabilityPanel({
                         {RULE_KIND_SHORT[rule.kind]}
                       </span>
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {ruleWhenLabel(rule)}
-                    </p>
+                    <p className="text-xs text-muted">{ruleWhenLabel(rule)}</p>
                     {confirming === rule.id ? (
                       <div className="mt-1 flex justify-end">
                         <Button
@@ -568,7 +568,7 @@ export function AvailabilityPanel({
                 </li>
               ))}
               {rules.length === 0 ? (
-                <li className="px-2 py-6 text-center text-xs text-muted-foreground">
+                <li className="px-2 py-6 text-center text-xs text-muted">
                   등록된 일정이 없습니다. 안 되는 시간을 "일정 추가"로 알려
                   주세요.
                 </li>
@@ -576,7 +576,7 @@ export function AvailabilityPanel({
             </ul>
           </>
         ) : personDraft ? null : (
-          <p className="px-2 py-10 text-center text-sm text-muted-foreground">
+          <p className="px-2 py-10 text-center text-sm text-muted">
             왼쪽에서 팀원을 고르면 그 사람의 일정을 보고 고칠 수 있어요.
           </p>
         )}

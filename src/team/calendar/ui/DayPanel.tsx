@@ -77,9 +77,7 @@ export function DayPanel({
   return (
     <div className="flex flex-col gap-3">
       {entries.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          이 날에는 일정이 없습니다.
-        </p>
+        <p className="text-sm text-muted">이 날에는 일정이 없습니다.</p>
       ) : (
         <ul className="flex max-h-96 flex-col gap-2 overflow-y-auto">
           {entries.map((entry) => {
@@ -89,7 +87,7 @@ export function DayPanel({
             const dept = entry.dept ? deptLabel(entry.dept) : undefined;
             return (
               <li
-                className="rounded-lg border border-border/60 px-3 py-2"
+                className="rounded-lg border border-line px-3 py-2"
                 data-testid="team-calendar-entry"
                 key={key}
               >
@@ -103,12 +101,14 @@ export function DayPanel({
                       />
                       <span>
                         {entry.milestone ? (
-                          <span className="mr-1 text-orange-11 ">◆</span>
+                          <span className="mr-1 text-[#ea580c] dark:text-[#fb923c]">
+                            ◆
+                          </span>
                         ) : null}
                         {entry.title}
                       </span>
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted">
                       {rangeLabel(entry)}
                       {entry.repeat
                         ? ` · ${REPEAT_LABELS[entry.repeat.every]} 반복`
@@ -184,18 +184,18 @@ export function DayPanel({
                     </Button>
                   </div>
                 ) : null}
-                <p className="mt-1 break-words text-xs text-muted-foreground">
+                <p className="mt-1 break-words text-xs text-muted">
                   {entry.attendees
                     ? `참석: ${entry.attendees.map(nameOf).join(", ")}`
                     : "참석: 팀 전체"}
                 </p>
                 {entry.note ? (
-                  <p className="mt-1 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                  <p className="mt-1 whitespace-pre-wrap break-words text-xs text-muted">
                     {entry.note}
                   </p>
                 ) : null}
                 {mine ? (
-                  <div className="mt-1 text-xs text-muted-foreground">
+                  <div className="mt-1 text-xs text-muted">
                     <button
                       className="border-0 rounded-none p-0 cursor-pointer underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-hidden"
                       data-testid="team-calendar-reminders-toggle"
@@ -256,7 +256,7 @@ export function DayPanel({
         <section aria-label="이 날 팀원 일정" data-testid="day-availability">
           <h4 className="mb-1 text-xs font-semibold">
             팀원 일정{" "}
-            <span className="font-normal text-muted-foreground">
+            <span className="font-normal text-muted">
               불가{" "}
               {availability.filter((item) => item.status === "busy").length}명 ·
               조율{" "}
@@ -268,7 +268,7 @@ export function DayPanel({
             </span>
           </h4>
           {availability.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted">
               이 날 등록된 팀원 일정이 없습니다 (모두 가능).
             </p>
           ) : (
@@ -285,7 +285,7 @@ export function DayPanel({
                   </span>
                   <span className="min-w-0">
                     <span className="font-medium">{item.person.name}</span>{" "}
-                    <span className="text-muted-foreground">
+                    <span className="text-muted">
                       {item.rules
                         .map(
                           (rule) =>

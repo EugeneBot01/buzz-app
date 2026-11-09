@@ -302,7 +302,7 @@ export function TeamCalendarDialog({
   const selectedWeek = weekIndexOf(plan, selectedDate);
 
   const unsavedBanner = unsaved ? (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-[#ef444466] bg-[#ef44441a] px-3 py-2 text-xs">
       <span>저장되지 않은 변경이 있습니다.</span>
       <Button
         disabled={saving}
@@ -357,7 +357,7 @@ export function TeamCalendarDialog({
         <div className="flex flex-wrap items-center gap-2">
           <div
             aria-label="보기 방식"
-            className="flex rounded-lg bg-muted p-0.5"
+            className="flex rounded-lg bg-soft p-0.5"
             role="tablist"
           >
             {(
@@ -371,9 +371,8 @@ export function TeamCalendarDialog({
                 <button
                   aria-selected={active}
                   className={cn(
-                    "border-0 cursor-pointer flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                    active &&
-                      "bg-background font-semibold text-foreground shadow-sm",
+                    "border-0 cursor-pointer flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted transition-colors hover:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+                    active && "bg-surface font-semibold  shadow-sm",
                   )}
                   data-testid={`team-calendar-view-${value}`}
                   key={value}
@@ -446,7 +445,7 @@ export function TeamCalendarDialog({
         {panel ? (
           <section
             aria-label={panelTitle}
-            className="rounded-xl border border-border/70 p-4"
+            className="rounded-xl border border-line p-4"
           >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">{panelTitle}</h3>
@@ -568,7 +567,7 @@ export function TeamCalendarDialog({
                 {unsavedBanner}
                 {entryForm}
                 {draft?.id && editing?.id === draft.id ? (
-                  <div className="flex flex-wrap justify-end gap-1 border-t border-border/60 pt-2">
+                  <div className="flex flex-wrap justify-end gap-1 border-t border-line pt-2">
                     {confirmDelete ? (
                       <>
                         {editing.repeat ? (
@@ -638,7 +637,7 @@ export function TeamCalendarDialog({
                 <h3 className="text-sm font-semibold">
                   {dateLabel(selectedDate)}
                   {selectedWeek >= 0 ? (
-                    <span className="ml-1 font-mono text-xs font-normal text-muted-foreground">
+                    <span className="ml-1 font-mono text-xs font-normal text-muted">
                       {weekId(selectedWeek)}
                     </span>
                   ) : null}
