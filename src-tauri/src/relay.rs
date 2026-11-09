@@ -1500,7 +1500,8 @@ async fn upload_file_authorized(
 /// ignores it is spooled to disk up to `WHOLE_VIDEO_MAX` instead.
 const MAX_MEDIA: usize = 100 * 1024 * 1024;
 /// Largest file the app may save for itself: an agent snapshot PNG.
-const FILE_DOWNLOAD_MAX: usize = 10 * 1024 * 1024;
+// Team: 40 MB, the size a multi-page calendar PDF export may reach.
+const FILE_DOWNLOAD_MAX: usize = 40 * 1024 * 1024;
 /// Largest video an origin that ignores `Range` may send whole: 500 MiB, the
 /// development broker's video limit. A video of exactly this size plays; a
 /// larger `Content-Length` gets 413 before any download, and a response
@@ -2447,7 +2448,7 @@ pub(crate) async fn team_media_open<R: tauri::Runtime>(
     .map_err(|_| "Opening was interrupted".to_owned())?
 }
 
-/// Saves an agent snapshot the app built to Downloads as media is saved, and
+/// Saves an agent snapshot (or a team calendar export) the app built to Downloads as media is saved, and
 /// returns where. WKWebView cannot save a `blob:` link without a sandbox failure.
 #[tauri::command]
 pub(crate) async fn file_download<R: tauri::Runtime>(
@@ -2466,7 +2467,12 @@ pub(crate) async fn file_download<R: tauri::Runtime>(
         })
         .filter(|name| {
             safe_download_name(name)
-                && (name.ends_with(".agent.png") || name.ends_with(".agent.json"))
+                && (name.ends_with(".agent.png")
+                    || name.ends_with(".agent.json")
+                    // Team: the calendar's exports.
+                    || [".png", ".pdf", ".docx", ".csv", ".json"]
+                        .iter()
+                        .any(|ext| name.ends_with(&format!(".calendar{ext}"))))
         })
         .ok_or("Invalid file name")?
         .into_owned();

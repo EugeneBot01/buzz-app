@@ -2015,6 +2015,7 @@ fn file_downloads_need_a_safe_name_and_bounded_raw_bytes() {
         "Ada.agent.png%20",
         "%FF",
         "report.pdf",
+        "board.calendar.exe",
     ] {
         assert_eq!(
             save(name, InvokeBody::Raw(vec![1])),

@@ -24,7 +24,11 @@ export async function saveExportFile(
 ): Promise<boolean> {
   const file = new Blob([new Uint8Array(bytes)], { type: MIME[kind] });
   if (isTauri()) {
-    await downloadNativeFile(file, filename);
+    // The app saves only files it names itself; ".calendar" marks these.
+    await downloadNativeFile(
+      file,
+      filename.replace(/\.(\w+)$/, ".calendar.$1"),
+    );
     return true;
   }
   const url = URL.createObjectURL(file);
