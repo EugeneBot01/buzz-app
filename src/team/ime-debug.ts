@@ -1,7 +1,6 @@
 /**
  * Team build, temporary: shows which mouse and typing events the page gets,
  * to find out what WebKit does with a click while Korean is being composed.
- * Ctrl+Option+Shift+D shows or hides the list.
  */
 const EVENTS = [
   "pointerdown",
@@ -33,7 +32,8 @@ export function watchInputEvents(doc: Document = document) {
     if (lines.length > 40) lines.shift();
     if (box) box.textContent = lines.join("\n");
   };
-  for (const type of EVENTS) doc.addEventListener(type, record, true);
+  // On the window, so the app's own handlers cannot hide events from it.
+  for (const type of EVENTS) window.addEventListener(type, record, true);
   let moved = 0;
   doc.addEventListener(
     "pointermove",
@@ -43,37 +43,28 @@ export function watchInputEvents(doc: Document = document) {
     },
     true,
   );
-  doc.addEventListener(
-    "keydown",
-    (event) => {
-      if (!(event.ctrlKey && event.altKey && event.shiftKey)) return;
-      if (event.code !== "KeyD") return;
-      if (box) {
-        box.remove();
-        box = undefined;
-        return;
-      }
-      box = doc.createElement("pre");
-      box.setAttribute("data-no-translate", "");
-      Object.assign(box.style, {
-        position: "fixed",
-        right: "8px",
-        bottom: "8px",
-        zIndex: "2147483647",
-        maxHeight: "60vh",
-        width: "360px",
-        overflow: "auto",
-        margin: "0",
-        padding: "8px",
-        font: "11px/1.4 monospace",
-        color: "#fff",
-        background: "#000c",
-        pointerEvents: "none",
-        whiteSpace: "pre-wrap",
-      });
-      box.textContent = lines.join("\n");
-      doc.body.append(box);
-    },
-    true,
-  );
+  const show = () => {
+    box = doc.createElement("pre");
+    box.setAttribute("data-no-translate", "");
+    Object.assign(box.style, {
+      position: "fixed",
+      right: "8px",
+      bottom: "8px",
+      zIndex: "2147483647",
+      maxHeight: "60vh",
+      width: "360px",
+      overflow: "auto",
+      margin: "0",
+      padding: "8px",
+      font: "11px/1.4 monospace",
+      color: "#fff",
+      background: "#000c",
+      pointerEvents: "none",
+      whiteSpace: "pre-wrap",
+    });
+    box.textContent = lines.join("\n");
+    doc.body.append(box);
+  };
+  if (doc.body) show();
+  else doc.addEventListener("DOMContentLoaded", show);
 }
