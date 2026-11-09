@@ -148,6 +148,11 @@
     )
     0 calc(var(--space-half) * var(--team-message-density, 1));
 }
+/* Team: the message toolbar is a top-layer popover placed in viewport pixels;
+   undo the row's text zoom on it so it lands where it was measured. */
+.message [popover] {
+  zoom: calc(1 / var(--team-message-zoom, 1));
+}
 .message[data-layout="thread"],
 .message[data-layout="continuation"] {
   gap: var(--space-2);

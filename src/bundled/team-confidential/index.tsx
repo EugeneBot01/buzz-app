@@ -141,10 +141,13 @@ function SecretTool({
 
 function PasswordPrompt({
   open,
+  asking: askAtOnce = false,
 }: {
   open: (password: string) => Promise<boolean>;
+  /** Show the password field at once instead of after a first click. */
+  asking?: boolean;
 }) {
-  const [asking, setAsking] = useState(false);
+  const [asking, setAsking] = useState(askAtOnce);
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -212,26 +215,66 @@ function SecretMessage({ text: token }: { text: string }) {
   );
 }
 
+/** The opening message's hint and token, drawn together as one card. */
+const THREAD_CARD = new RegExp(
+  `(?:🔒 대외비 스레드 \\([^()\\n]{1,60}\\) )?${THREAD_ROOT_TOKEN.source}`,
+  "g",
+);
+
 function ThreadRoot({
-  text: token,
+  text,
   content: { message },
+  canOpen,
+  open,
 }: {
   text: string;
   content: InlineContent;
+  canOpen(target: string): boolean;
+  open(target: string): boolean;
 }) {
+  const token = text.match(new RegExp(THREAD_ROOT_TOKEN.source))?.[0] ?? text;
   useEffect(() => registerRoot(message.id, token), [message.id, token]);
   const unlocked = useUnlocked(message.id);
   const [opened, setOpened] = useState<string | null>(null);
   useEffect(() => {
     if (unlocked) void openRoot(message.id).then(setOpened);
   }, [unlocked, message.id]);
-  if (unlocked && opened !== null) return <Opened text={opened} />;
+  const thread = `buzz://message/?channel=${message.channelId}&id=${message.id}&thread=${message.id}`;
+  const shown = unlocked && opened !== null;
   return (
-    <PasswordPrompt
-      open={async (password) =>
-        (await unlockThread(message.id, password)) !== null
-      }
-    />
+    <span
+      className="my-1 flex max-w-md flex-col gap-2 rounded-lg border border-line p-3"
+      data-no-translate=""
+    >
+      <span className="flex items-center gap-2 font-medium">
+        <LockIcon size={16} aria-hidden="true" />
+        대외비 스레드
+        <span className="text-muted text-xs font-normal">
+          {shown ? "열림 · 이 기기에서만 보여요" : "잠김"}
+        </span>
+      </span>
+      {shown ? (
+        <>
+          <span className="whitespace-pre-wrap rounded-md bg-soft p-2">
+            {opened}
+          </span>
+          {canOpen(thread) && (
+            <span>
+              <Button type="button" size="sm" onClick={() => open(thread)}>
+                스레드 열기
+              </Button>
+            </span>
+          )}
+        </>
+      ) : (
+        <PasswordPrompt
+          asking
+          open={async (password) =>
+            (await unlockThread(message.id, password)) !== null
+          }
+        />
+      )}
+    </span>
   );
 }
 
@@ -279,7 +322,7 @@ export const apply: PluginModule["apply"] = (ctx) => {
   ctx.conversation.registerInline({
     id: "secret-thread",
     title: "Confidential thread",
-    matches: ranges(THREAD_ROOT_TOKEN),
+    matches: ranges(THREAD_CARD),
     component: ThreadRoot,
   });
   ctx.conversation.registerInline({
