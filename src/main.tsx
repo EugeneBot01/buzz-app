@@ -17,10 +17,12 @@ import { useRejectUnclaimedDrops } from "./features/messages/use-file-drop";
 import { TooltipProvider } from "./shared/design-system/ui/Tooltip";
 import { startTeamTranslation } from "./team/i18n/start";
 import { repairClicksAfterComposition } from "./team/ime-click";
+import { watchInputEvents } from "./team/ime-debug";
 
 // Team: Korean UI (display-layer translation).
 startTeamTranslation();
 repairClicksAfterComposition();
+watchInputEvents();
 
 const container = document.getElementById("root");
 
