@@ -93,6 +93,10 @@ export type Draft = {
   notifyBefore: number;
   /** Also post to the channel right when the entry is saved. */
   notifyNow: boolean;
+  /** Sprint board department key ("" = none). */
+  dept: string;
+  /** A one-day deadline/event (◆). */
+  milestone: boolean;
 };
 
 export const emptyDraft = (date: string): Draft => ({
@@ -110,6 +114,8 @@ export const emptyDraft = (date: string): Draft => ({
   notifyChannelId: "",
   notifyBefore: 0,
   notifyNow: false,
+  dept: "",
+  milestone: false,
 });
 
 /** The draft that edits `entry` (for a repeating entry: the whole series). */
@@ -134,6 +140,8 @@ export function draftOf(entry: CalendarOccurrence): Draft {
     notifyChannelId: entry.notify?.channelId ?? "",
     notifyBefore: entry.notify?.before ?? 0,
     notifyNow: false,
+    dept: entry.dept ?? "",
+    milestone: entry.milestone === true,
   };
 }
 
@@ -173,6 +181,8 @@ export function draftError(draft: Draft): string | null {
   if (range) return range;
   if (!draft.everyone && draft.attendees.length === 0)
     return "참석자를 한 명 이상 골라 주세요.";
+  if (draft.milestone && draft.endDate && draft.endDate !== draft.date)
+    return "◆ 마감·이벤트는 하루짜리입니다. 종료 날짜를 시작 날짜와 같게 해 주세요.";
   return null;
 }
 
@@ -196,6 +206,8 @@ export function inputOfDraft(draft: Draft): CalendarEntryInput {
           before: draft.notifyBefore || undefined,
         }
       : undefined,
+    dept: draft.dept || undefined,
+    milestone: draft.milestone || undefined,
   };
 }
 
@@ -213,6 +225,7 @@ export function EntryForm({
   draft,
   members,
   channels,
+  depts = [],
   saving,
   onChange,
   onCancel,
@@ -222,6 +235,8 @@ export function EntryForm({
   members: TeamMember[];
   /** Channels a notice can go to; the section is hidden when there are none. */
   channels: Array<{ id: string; name: string }>;
+  /** Sprint board departments; the field is hidden when there are none. */
+  depts?: Array<{ key: string; label: string }>;
   saving: boolean;
   onChange: (draft: Draft) => void;
   onCancel: () => void;
@@ -252,6 +267,52 @@ export function EntryForm({
           value={draft.title}
         />
       </label>
+      {depts.length > 0 ? (
+        <div className="flex items-end gap-2">
+          <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs">
+            부서 (스프린트 행)
+            <select
+              className={SELECT_CLASS}
+              data-testid="team-calendar-dept"
+              onChange={(event) =>
+                onChange({ ...draft, dept: event.target.value })
+              }
+              value={draft.dept}
+            >
+              <option value="">부서 미지정</option>
+              {depts.map((dept) => (
+                <option key={dept.key} value={dept.key}>
+                  {dept.label} ({dept.key})
+                </option>
+              ))}
+              {draft.dept && !depts.some((dept) => dept.key === draft.dept) ? (
+                <option value={draft.dept}>
+                  {draft.dept} (보드에 없는 부서)
+                </option>
+              ) : null}
+            </select>
+          </label>
+          <label
+            className="flex h-9 items-center gap-1.5 text-xs"
+            title="하루짜리 마감·이벤트는 ◆로 표시합니다."
+          >
+            <input
+              checked={draft.milestone}
+              data-testid="team-calendar-milestone"
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  milestone: event.target.checked,
+                  // A deadline is one day.
+                  endDate: event.target.checked ? draft.date : draft.endDate,
+                })
+              }
+              type="checkbox"
+            />
+            ◆ 마감·이벤트
+          </label>
+        </div>
+      ) : null}
       <div className="flex gap-2">
         <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs">
           시작 날짜

@@ -1,7 +1,16 @@
 /** lucide-react names used by the calendar, drawn with the app's icons. */
 import type { ComponentType } from "react";
 import {
+  ArrowDownIcon,
   ArrowLeftIcon,
+  ArrowUpIcon,
+  ColumnsIcon,
+  DownloadIcon,
+  GearIcon,
+  MagnifyingGlassIcon,
+  CloudUploadIcon,
+  UserIcon,
+  XIcon,
   CalendarIcon,
   CaretLeftIcon,
   CaretRightIcon,
@@ -32,3 +41,14 @@ export const Copy = wrap(CopyIcon);
 export const Pencil = wrap(PencilSimpleIcon);
 export const Plus = wrap(PlusIcon);
 export const Trash2 = wrap(TrashIcon);
+export const ArrowDown = wrap(ArrowDownIcon);
+export const ArrowUp = wrap(ArrowUpIcon);
+export const CalendarDays = wrap(CalendarIcon);
+export const Download = wrap(DownloadIcon);
+export const FileUp = wrap(CloudUploadIcon);
+export const KanbanSquare = wrap(ColumnsIcon);
+export const Search = wrap(MagnifyingGlassIcon);
+export const Settings2 = wrap(GearIcon);
+export const Upload = wrap(CloudUploadIcon);
+export const UserRound = wrap(UserIcon);
+export const X = wrap(XIcon);

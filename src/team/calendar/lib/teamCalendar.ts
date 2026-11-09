@@ -127,6 +127,14 @@ export type CalendarEntry = {
   sourceEventId?: string | undefined;
   /** A channel that is told about this entry (see `CalendarNotify`). */
   notify?: CalendarNotify | undefined;
+  /**
+   * Sprint board row (department key, see `teamSprint.ts`). Absent = the
+   * entry shows in the board's "부서 미지정" row. Added by the sprint patch;
+   * older team apps drop it when they re-save the entry.
+   */
+  dept?: string | undefined;
+  /** A one-day deadline or event (◆ on the sprint board). */
+  milestone?: true | undefined;
   /** Milliseconds since epoch of the last edit. */
   updatedAt: number;
   /** Pubkey of the member who made the last edit. */
@@ -138,6 +146,8 @@ export type CalendarEntry = {
 export type CalendarMonth = Record<string, CalendarEntry>;
 
 const DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+/** A sprint board department key: upper-case letters, digits, `_` or `-`. */
+export const DEPT_KEY_PATTERN = /^[A-Z0-9_-]{1,24}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -341,6 +351,9 @@ function readEntry(
     /^[0-9a-f]{64}$/.test(value.sourceEventId)
   )
     entry.sourceEventId = value.sourceEventId;
+  if (typeof value.dept === "string" && DEPT_KEY_PATTERN.test(value.dept))
+    entry.dept = value.dept;
+  if (value.milestone === true) entry.milestone = true;
   if (deleted) entry.deleted = true;
   return entry;
 }
@@ -381,7 +394,9 @@ const richness = (entry: CalendarEntry) =>
   (entry.color ? 1 : 0) +
   (entry.attendees ? 1 : 0) +
   (entry.sourceEventId ? 1 : 0) +
-  (entry.notify ? 1 : 0);
+  (entry.notify ? 1 : 0) +
+  (entry.dept ? 1 : 0) +
+  (entry.milestone ? 1 : 0);
 
 /**
  * True when `candidate` replaces `current` (later edit, then higher pubkey).

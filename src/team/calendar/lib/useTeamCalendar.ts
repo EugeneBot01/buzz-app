@@ -10,6 +10,7 @@ import {
   type CalendarMonth,
   type CalendarNotify,
   type CalendarRepeat,
+  DEPT_KEY_PATTERN,
   MAX_ATTENDEES,
   MAX_NOTE_LENGTH,
   MAX_SKIPPED_DAYS,
@@ -28,6 +29,7 @@ import {
   teamCalendarDTag,
   validateRange,
 } from "./teamCalendar";
+import { assignMonthSlots } from "./monthSlots";
 
 /** kind 30078 (application data), the same kind team sections use. */
 const KIND_TEAM_CALENDAR = KIND_CHANNEL_SECTIONS;
@@ -49,6 +51,9 @@ export type CalendarEntryInput = {
   skip?: string[] | undefined;
   sourceEventId?: string | undefined;
   notify?: CalendarNotify | undefined;
+  /** Sprint board department key; leave out for none. */
+  dept?: string | undefined;
+  milestone?: boolean | undefined;
 };
 
 /** The input that saves `entry` again unchanged (to change one field of it). */
@@ -66,9 +71,14 @@ export const inputOfEntry = (entry: CalendarEntry): CalendarEntryInput => ({
   skip: entry.skip,
   sourceEventId: entry.sourceEventId,
   notify: entry.notify,
+  dept: entry.dept,
+  milestone: entry.milestone,
 });
 
 export type TeamCalendarStatus = "loading" | "ready" | "error";
+
+/** One shared empty month, so an empty view keeps the same object. */
+const EMPTY_MONTH: CalendarMonth = Object.freeze({}) as CalendarMonth;
 
 const monthFilter = (dTag: string) => ({
   kinds: [KIND_TEAM_CALENDAR],
@@ -164,6 +174,8 @@ function buildEntry(
     entry.notify = { channelId: input.notify.channelId };
     if (input.notify.before) entry.notify.before = input.notify.before;
   }
+  if (input.dept && DEPT_KEY_PATTERN.test(input.dept)) entry.dept = input.dept;
+  if (input.milestone) entry.milestone = true;
   return entry;
 }
 
@@ -222,7 +234,11 @@ export function useTeamCalendarMonth(
   const current =
     state.scope === scope
       ? state
-      : { scope, entries: {} as CalendarMonth, status: "loading" as const };
+      : {
+          scope,
+          entries: EMPTY_MONTH,
+          status: month ? ("loading" as const) : ("ready" as const),
+        };
 
   // What this scope's effect instance knows; replaced on every scope change.
   const liveRef = React.useRef<{
@@ -232,9 +248,16 @@ export function useTeamCalendarMonth(
     own: CalendarMonth;
     ownCreatedAt: number;
     queue: Promise<void>;
+    load?: () => void;
   } | null>(null);
 
   React.useEffect(() => {
+    // An empty month is an unused slot of `useTeamCalendarMonths`.
+    if (!month) {
+      liveRef.current = null;
+      setState({ scope, entries: EMPTY_MONTH, status: "ready" });
+      return;
+    }
     const live = {
       scope,
       cancelled: false,
@@ -300,6 +323,7 @@ export function useTeamCalendarMonth(
       })
       .catch(() => {});
     const unsubReconnect = relayClient.subscribeToReconnects(load);
+    (live as { load?: () => void }).load = load;
     load();
 
     return () => {
@@ -308,6 +332,12 @@ export function useTeamCalendarMonth(
       if (unsubLive) void unsubLive();
     };
   }, [scope, pubkey, relayUrl, month]);
+
+  /** Reads the month again (after writes made outside this hook). */
+  const refresh = React.useCallback(() => {
+    const live = liveRef.current;
+    if (live && !live.cancelled) live.load?.();
+  }, []);
 
   /**
    * Applies `change` to this month locally, then publishes this member's
@@ -402,6 +432,7 @@ export function useTeamCalendarMonth(
     saveEntry,
     deleteEntry,
     retry,
+    refresh,
   };
 }
 
@@ -482,4 +513,190 @@ export function useTeamCalendarRange(
     deleteEntry,
     retry,
   };
+}
+
+/**
+ * Any set of months of the team calendar (plus the repeat document) as one
+ * entry list. Used by the dialog so the sprint board and the month view read
+ * and write the very same entries: an edit in one shows up in the other.
+ */
+export function useTeamCalendarMonths(
+  pubkey: string,
+  relayUrl: string,
+  wanted: readonly string[],
+) {
+  const slotsRef = React.useRef<string[]>([]);
+  const wantedKey = [...new Set(wanted)].sort().join(",");
+  const slots = React.useMemo(() => {
+    const next = assignMonthSlots(
+      slotsRef.current,
+      wantedKey ? wantedKey.split(",") : [],
+    );
+    slotsRef.current = next;
+    return next;
+  }, [wantedKey]);
+
+  // A fixed number of hook calls: React needs the same hooks every render.
+  const s0 = useTeamCalendarMonth(pubkey, relayUrl, slots[0] ?? "");
+  const s1 = useTeamCalendarMonth(pubkey, relayUrl, slots[1] ?? "");
+  const s2 = useTeamCalendarMonth(pubkey, relayUrl, slots[2] ?? "");
+  const s3 = useTeamCalendarMonth(pubkey, relayUrl, slots[3] ?? "");
+  const s4 = useTeamCalendarMonth(pubkey, relayUrl, slots[4] ?? "");
+  const s5 = useTeamCalendarMonth(pubkey, relayUrl, slots[5] ?? "");
+  const s6 = useTeamCalendarMonth(pubkey, relayUrl, slots[6] ?? "");
+  const s7 = useTeamCalendarMonth(pubkey, relayUrl, slots[7] ?? "");
+  const s8 = useTeamCalendarMonth(pubkey, relayUrl, slots[8] ?? "");
+  const s9 = useTeamCalendarMonth(pubkey, relayUrl, slots[9] ?? "");
+  const s10 = useTeamCalendarMonth(pubkey, relayUrl, slots[10] ?? "");
+  const s11 = useTeamCalendarMonth(pubkey, relayUrl, slots[11] ?? "");
+  const repeating = useTeamCalendarMonth(pubkey, relayUrl, REPEAT_DOC);
+  const monthHandles = [s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11];
+
+  const handles: Array<[string, MonthHandle]> = [
+    ...slots
+      .map((month, index) => [month, monthHandles[index]] as const)
+      .filter((pair): pair is [string, MonthHandle] =>
+        Boolean(pair[0] && pair[1]),
+      ),
+    [REPEAT_DOC, repeating],
+  ];
+
+  const all = [...monthHandles, repeating];
+  const e = all.map((handle) => handle.entries);
+  // Unused slots hold an empty month, so combining all of them is the same.
+  const entries = React.useMemo(
+    () => combineMonths(e),
+    [
+      e[0],
+      e[1],
+      e[2],
+      e[3],
+      e[4],
+      e[5],
+      e[6],
+      e[7],
+      e[8],
+      e[9],
+      e[10],
+      e[11],
+      e[12],
+    ],
+  );
+
+  const statuses = handles.map(([, handle]) => handle.status);
+  const status: TeamCalendarStatus = statuses.includes("error")
+    ? "error"
+    : statuses.includes("loading")
+      ? "loading"
+      : "ready";
+
+  const ownerOf = (id: string) =>
+    handles.find(([, handle]) => {
+      const entry = handle.entries[id];
+      return entry !== undefined && !entry.deleted;
+    })?.[1];
+  const handleForMonth = (target: string) =>
+    handles.find(([key]) => key === target)?.[1];
+
+  const saveEntry = async (input: CalendarEntryInput): Promise<void> => {
+    const owner = input.id ? ownerOf(input.id) : undefined;
+    const target = handleForMonth(docOfEntry(input));
+    if (owner && target && owner !== target) {
+      // Write the new place first, then leave a deletion in the old one, so a
+      // failure in between leaves a duplicate (the newer copy shows), not a loss.
+      await target.saveEntry(input);
+      if (input.id) await owner.deleteEntry(input.id);
+      return;
+    }
+    // The repeat document is always open; it publishes into a month that is
+    // not open when it has to.
+    await (owner ?? target ?? repeating).saveEntry(input);
+  };
+
+  const deleteEntry = async (id: string): Promise<void> => {
+    const owner = ownerOf(id);
+    if (owner) await owner.deleteEntry(id);
+  };
+
+  const retry = async (): Promise<void> => {
+    await Promise.all(handles.map(([, handle]) => handle.retry()));
+  };
+
+  /** Status of only the given months (e.g. the month the person looks at). */
+  const statusOf = (months: readonly string[]): TeamCalendarStatus => {
+    const list = months
+      .map((month) => handleForMonth(month)?.status ?? "loading")
+      .concat(repeating.status);
+    return list.includes("error")
+      ? "error"
+      : list.includes("loading")
+        ? "loading"
+        : "ready";
+  };
+
+  /** Reads every open month again (after an import). */
+  const refresh = () => {
+    for (const handle of all) handle.refresh();
+  };
+
+  return { entries, status, statusOf, saveEntry, deleteEntry, retry, refresh };
+}
+
+/**
+ * Saves many entries at once (an import): entries are grouped by the document
+ * they belong to, and each document is read, merged and published once.
+ * Saving the same ids again replaces those entries, so an import can be run
+ * twice without making duplicates.
+ */
+export async function saveEntriesToDocs(input: {
+  pubkey: string;
+  relayUrl: string;
+  entries: CalendarEntryInput[];
+  isCurrent?: () => boolean;
+  onProgress?: (done: number, total: number) => void;
+}): Promise<number> {
+  const byDoc = new Map<string, CalendarEntryInput[]>();
+  for (const entry of input.entries) {
+    const problem = validateRange(entry);
+    if (problem) throw new Error(`${entry.title}: ${problem}`);
+    const doc = docOfEntry(entry);
+    byDoc.set(doc, [...(byDoc.get(doc) ?? []), entry]);
+  }
+  let done = 0;
+  for (const [doc, list] of byDoc) {
+    if (input.isCurrent && !input.isCurrent()) break;
+    const there = await fetchMonth(input.relayUrl, doc, input.pubkey);
+    let merged = there.merged;
+    for (const entryInput of list) {
+      const previous = entryInput.id ? merged[entryInput.id] : undefined;
+      const entry = buildEntry(entryInput, previous, input.pubkey);
+      merged = mergeMonths(merged, { [entry.id]: entry });
+    }
+    await publishMonth({
+      relayUrl: input.relayUrl,
+      month: doc,
+      entries: merged,
+      ownCreatedAt: there.ownCreatedAt,
+      isCurrent: input.isCurrent ?? (() => true),
+    });
+    done += list.length;
+    input.onProgress?.(done, input.entries.length);
+  }
+  return done;
+}
+
+/**
+ * Every live entry of the given months plus the repeating ones, read fresh
+ * from the relay (for exports of months the dialog does not have open).
+ */
+export async function fetchEntriesForMonths(
+  pubkey: string,
+  relayUrl: string,
+  months: readonly string[],
+) {
+  const docs = [...new Set([...months, REPEAT_DOC])];
+  const results = await Promise.all(
+    docs.map((doc) => fetchMonth(relayUrl, doc, pubkey)),
+  );
+  return combineMonths(results.map((result) => result.merged));
 }
