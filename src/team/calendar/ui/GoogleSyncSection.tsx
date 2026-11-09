@@ -98,7 +98,7 @@ export function GoogleSyncSection({
           </Button>
         </div>
         {showScript ? (
-          <pre className="max-h-48 overflow-auto rounded-md bg-soft p-2 text-2xs">
+          <pre className="max-h-48 overflow-auto rounded-md bg-soft p-2 text-xs">
             {GOOGLE_APPS_SCRIPT}
           </pre>
         ) : null}

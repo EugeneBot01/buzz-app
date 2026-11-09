@@ -45,7 +45,8 @@ import {
   DialogTitle,
 } from "../compat/ui";
 import {
-  COLOR_STYLES,
+  colorBar,
+  colorDot,
   type Draft,
   EntryForm,
   REPEAT_LABELS,
@@ -303,7 +304,7 @@ export function TeamCalendarDialog({
             relayUrl={relayUrl}
           />
         ) : (
-          <div className="flex flex-col gap-4 md:flex-row">
+          <div className="flex flex-col gap-4 @3xl:flex-row">
             <section aria-label="달력" className="min-w-0 flex-1">
               <div className="mb-2 flex items-center gap-1">
                 <Button
@@ -386,7 +387,7 @@ export function TeamCalendarDialog({
                               aria-label={`${dateLabel(cell.date)}, 일정 ${count}개`}
                               aria-pressed={isSelected}
                               className={cn(
-                                "flex h-20 min-w-0 flex-col items-stretch gap-0.5 bg-surface p-1 text-left transition-colors hover:bg-soft focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+                                "flex h-20 min-w-0 cursor-pointer flex-col items-stretch gap-0.5 rounded-none border-0 bg-surface p-1 text-left transition-colors hover:bg-soft focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
                                 !cell.inMonth && "text-muted/50",
                                 isSelected && "bg-hover hover:bg-hover",
                               )}
@@ -406,7 +407,7 @@ export function TeamCalendarDialog({
                                   {cell.day}
                                 </span>
                                 {hidden[column] ? (
-                                  <span className="px-1 text-2xs text-muted">
+                                  <span className="px-1 text-xs text-muted">
                                     +{hidden[column]}
                                   </span>
                                 ) : null}
@@ -423,8 +424,7 @@ export function TeamCalendarDialog({
                         {shown.map((bar) => (
                           <span
                             className={cn(
-                              "truncate text-2xs leading-4 text-ink",
-                              COLOR_STYLES[bar.entry.color ?? ""].bar,
+                              "truncate text-xs leading-4 text-ink",
                               bar.continuesBefore
                                 ? "rounded-l-none pl-1.5"
                                 : "ml-0.5 rounded-l pl-1",
@@ -435,6 +435,7 @@ export function TeamCalendarDialog({
                             data-testid="team-calendar-bar"
                             key={`${occurrenceKey(bar.entry)}-${week[0]?.date}`}
                             style={{
+                              ...colorBar(bar.entry.color ?? ""),
                               gridColumn: `${bar.startColumn + 1} / span ${bar.span}`,
                               gridRow: bar.lane + 1,
                             }}
@@ -457,7 +458,7 @@ export function TeamCalendarDialog({
 
             <section
               aria-label={`${dateLabel(selectedDate)} 일정`}
-              className="flex w-full shrink-0 flex-col gap-3 md:w-72"
+              className="flex w-full shrink-0 flex-col gap-3 @3xl:w-72"
             >
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">
@@ -534,10 +535,8 @@ export function TeamCalendarDialog({
                             <p className="flex items-start gap-1.5 break-words text-sm font-medium">
                               <span
                                 aria-hidden="true"
-                                className={cn(
-                                  "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-                                  COLOR_STYLES[entry.color ?? ""].dot,
-                                )}
+                                className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                                style={colorDot(entry.color ?? "")}
                               />
                               {entry.title}
                             </p>
@@ -625,7 +624,7 @@ export function TeamCalendarDialog({
                         {mine ? (
                           <div className="mt-1 text-xs text-muted">
                             <button
-                              className="underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-hidden"
+                              className="rounded-none border-0 bg-transparent p-0 underline-offset-2 hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-hidden"
                               data-testid="team-calendar-reminders-toggle"
                               onClick={() =>
                                 setRemindersFor(

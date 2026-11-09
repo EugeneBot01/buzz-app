@@ -169,6 +169,12 @@ function Arrangement({
         <Layout
           model={model}
           factory={factory}
+          // A panel is named like its top tab today, not as it was saved.
+          onRenderTab={(node, values) => {
+            const key = (node.getConfig() as { key?: string } | undefined)?.key;
+            const title = available.find((item) => item.key === key)?.title;
+            if (title) values.content = title;
+          }}
           icons={icons}
           realtimeResize
           onModelChange={save}

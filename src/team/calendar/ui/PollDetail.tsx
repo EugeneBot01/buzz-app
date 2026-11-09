@@ -183,7 +183,7 @@ export function PollDetail({
                 }}
               >
                 {dates.map((date) => (
-                  <span className="text-center text-2xs text-muted" key={date}>
+                  <span className="text-center text-xs text-muted" key={date}>
                     {dayLabel(date)}
                   </span>
                 ))}

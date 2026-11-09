@@ -21,12 +21,13 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: "default" | "sm" | "xs" | "icon" | "icon-xs";
 };
 
+// The host draws plain buttons as bordered pills; only outline keeps a border.
 const VARIANTS: Record<NonNullable<ButtonProps["variant"]>, string> = {
-  default: "bg-[var(--primary)] text-on-primary hover:opacity-90",
-  secondary: "bg-soft text-ink hover:bg-hover",
-  ghost: "bg-transparent text-ink hover:bg-hover",
+  default: "border-0 bg-[var(--primary)] text-on-primary hover:opacity-90",
+  secondary: "border-0 bg-soft text-ink hover:bg-hover",
+  ghost: "border-0 bg-transparent text-ink hover:bg-hover",
   outline: "border border-line bg-transparent text-ink hover:bg-hover",
-  destructive: "bg-danger text-white hover:opacity-90",
+  destructive: "border-0 bg-danger text-white hover:opacity-90",
 };
 const SIZES: Record<NonNullable<ButtonProps["size"]>, string> = {
   default: "h-9 px-4 text-sm",
@@ -151,8 +152,8 @@ export function DialogContent({
       aria-modal={inline ? undefined : true}
       className={cn(
         inline
-          ? "flex w-full flex-col gap-4"
-          : "relative flex max-h-[90vh] w-full flex-col gap-4 overflow-y-auto rounded-xl border border-line bg-elevated p-5 text-ink shadow-xl",
+          ? "@container flex w-full flex-col gap-4"
+          : "@container relative flex max-h-[90vh] w-full flex-col gap-4 overflow-y-auto rounded-xl border border-line bg-elevated p-5 text-ink shadow-xl",
         !inline && className,
       )}
       {...props}
@@ -162,7 +163,7 @@ export function DialogContent({
         <button
           type="button"
           aria-label="Close"
-          className="absolute top-3 right-3 h-7 w-7 cursor-pointer rounded-md text-muted hover:bg-hover"
+          className="absolute top-3 right-3 h-7 w-7 cursor-pointer rounded-md border-0 p-0 text-muted hover:bg-hover"
           onClick={close}
         >
           ×

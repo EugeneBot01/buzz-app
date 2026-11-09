@@ -22,6 +22,7 @@ import { PreferenceRow } from "../../shared/design-system/ui/PreferenceRow";
 import { Select } from "../../shared/design-system/ui/Select";
 import { SettingsGroup } from "../../shared/design-system/ui/SettingsGroup";
 import { Switch } from "../../shared/design-system/ui/Switch";
+import { useToastNotification } from "../../shared/design-system/ui/Toast";
 import { scopeOf } from "../reminders/react";
 import { readTeamDocs, teamRelayUrl } from "../../team/relay/community";
 import {
@@ -76,11 +77,13 @@ function useCommunity(relay: RelayData) {
 type Community = NonNullable<ReturnType<typeof useCommunity>>;
 
 /** Runs an action and reports its message, or the error it threw. */
-const report = (say: (message: string) => void, action: () => string) => {
+type Say = (message: string, tone?: "success" | "error") => void;
+
+const report = (say: Say, action: () => string) => {
   try {
     say(action());
   } catch (reason) {
-    say(reason instanceof Error ? reason.message : String(reason));
+    say(reason instanceof Error ? reason.message : String(reason), "error");
   }
 };
 
@@ -311,7 +314,7 @@ function MyProfiles({
 }: {
   tabsHere: readonly string[];
   community: string | undefined;
-  say(message: string): void;
+  say: Say;
 }) {
   const profiles = useSyncExternalStore(
     displaySettings.subscribe,
@@ -375,6 +378,10 @@ function MyProfiles({
               >
                 <Input
                   aria-label="새 이름"
+                  // Opened from the row's menu: typing starts at once, so the
+                  // page never has to move under a click into the field.
+                  autoFocus
+                  onFocus={(event) => event.currentTarget.select()}
                   value={renaming.to}
                   maxLength={40}
                   onChange={(event) =>
@@ -501,7 +508,7 @@ function TeamProfiles({
 }: {
   community: Community | undefined;
   tabsHere: readonly string[];
-  say(message: string): void;
+  say: Say;
 }) {
   const [shared, setShared] = useState<readonly SharedProfiles[]>();
   const [revision, setRevision] = useState(0);
@@ -614,15 +621,13 @@ function UiEditCard({
   const all = useSyncExternalStore(pages.subscribe, pages.snapshot);
   const tabsHere = all.map((page) => page.key);
   const community = useCommunity(relay);
-  const [status, setStatus] = useState("");
+  // Results show as a toast where the eye already is, not at the top of a
+  // long page, and never shift the rows being clicked.
+  const notify = useToastNotification();
+  const say: Say = (message, tone = "success") => void notify(message, tone);
   return (
     <div className="flex flex-col gap-6 text-sm">
       <Preview />
-      {status && (
-        <p role="status" className="text-muted">
-          {status}
-        </p>
-      )}
       <section aria-label="모양">
         <InlineHeader
           title="모양"
@@ -649,11 +654,7 @@ function UiEditCard({
           title="내 UI 프로필"
           subtitle="업데이트로 화면이 바뀌면 다시 적용으로 되돌려요"
         />
-        <MyProfiles
-          tabsHere={tabsHere}
-          community={community?.dTag}
-          say={setStatus}
-        />
+        <MyProfiles tabsHere={tabsHere} community={community?.dTag} say={say} />
       </section>
       <section aria-label="팀 UI 프로필">
         <InlineHeader
@@ -664,7 +665,7 @@ function UiEditCard({
           key={community?.dTag ?? "none"}
           community={community}
           tabsHere={tabsHere}
-          say={setStatus}
+          say={say}
         />
       </section>
       <div>
@@ -672,7 +673,7 @@ function UiEditCard({
           variant="subtle"
           onClick={() => {
             displaySettings.change(DEFAULT_DISPLAY);
-            setStatus("모두 원래대로 돌렸어요.");
+            say("모두 원래대로 돌렸어요.");
           }}
         >
           모두 원래대로

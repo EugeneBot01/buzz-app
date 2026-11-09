@@ -26,31 +26,45 @@ import { MemberPicker } from "./MemberPicker";
 /** An empty color is the default look. */
 export type ColorChoice = CalendarColor | "";
 
-// Tailwind only keeps class names it can read in full, so they are spelled out.
+/**
+ * Label colors. The app's theme has no full color palette, so each label
+ * carries its own color; the default label follows the theme's accent.
+ */
 export const COLOR_STYLES: Record<
   ColorChoice,
-  { label: string; bar: string; dot: string }
+  { label: string; hex?: string }
 > = {
-  "": {
-    label: "기본",
-    bar: "bg-[color-mix(in_srgb,var(--primary)_18%,transparent)]",
-    dot: "bg-[var(--primary)]",
-  },
-  red: { label: "빨강", bar: "bg-red-500/25", dot: "bg-red-500" },
-  orange: { label: "주황", bar: "bg-orange-500/25", dot: "bg-orange-500" },
-  green: { label: "초록", bar: "bg-green-500/25", dot: "bg-green-500" },
-  blue: { label: "파랑", bar: "bg-blue-500/25", dot: "bg-blue-500" },
-  purple: { label: "보라", bar: "bg-purple-500/25", dot: "bg-purple-500" },
-  pink: { label: "분홍", bar: "bg-pink-500/25", dot: "bg-pink-500" },
-  gray: { label: "회색", bar: "bg-gray-500/25", dot: "bg-gray-500" },
-  yellow: { label: "노랑", bar: "bg-yellow-500/30", dot: "bg-yellow-400" },
-  lime: { label: "연두", bar: "bg-lime-500/25", dot: "bg-lime-500" },
-  teal: { label: "청록", bar: "bg-teal-500/25", dot: "bg-teal-500" },
-  cyan: { label: "하늘", bar: "bg-cyan-500/25", dot: "bg-cyan-500" },
-  indigo: { label: "남색", bar: "bg-indigo-500/25", dot: "bg-indigo-500" },
-  brown: { label: "갈색", bar: "bg-amber-800/30", dot: "bg-amber-800" },
+  "": { label: "기본" },
+  red: { label: "빨강", hex: "#ef4444" },
+  orange: { label: "주황", hex: "#f97316" },
+  green: { label: "초록", hex: "#22c55e" },
+  blue: { label: "파랑", hex: "#3b82f6" },
+  purple: { label: "보라", hex: "#a855f7" },
+  pink: { label: "분홍", hex: "#ec4899" },
+  gray: { label: "회색", hex: "#6b7280" },
+  yellow: { label: "노랑", hex: "#eab308" },
+  lime: { label: "연두", hex: "#84cc16" },
+  teal: { label: "청록", hex: "#14b8a6" },
+  cyan: { label: "하늘", hex: "#06b6d4" },
+  indigo: { label: "남색", hex: "#6366f1" },
+  brown: { label: "갈색", hex: "#92400e" },
 };
 const COLOR_CHOICES: ColorChoice[] = ["", ...CALENDAR_COLORS];
+
+const ACCENT = "var(--primary)";
+/** A solid swatch, for the color picker and the day list. */
+export const colorDot = (choice: ColorChoice) => ({
+  background: COLOR_STYLES[choice].hex ?? ACCENT,
+});
+/** A tinted bar with a solid edge, for the month grid. Hex alpha, not
+ * color-mix, so older macOS WebKit draws it too. */
+export const colorBar = (choice: ColorChoice) => {
+  const hex = COLOR_STYLES[choice].hex;
+  return {
+    background: hex ? `${hex}40` : "var(--surface-accent)",
+    boxShadow: `inset 3px 0 0 ${hex ?? ACCENT}`,
+  };
+};
 
 export const REPEAT_LABELS: Record<RepeatEvery, string> = {
   daily: "매일",
@@ -345,17 +359,17 @@ export function EntryForm({
         <legend className="mb-1">색상</legend>
         <div className="flex flex-wrap gap-1.5">
           {COLOR_CHOICES.map((choice) => {
-            const { label, dot } = COLOR_STYLES[choice];
+            const { label } = COLOR_STYLES[choice];
             const checked = draft.color === choice;
             return (
               <button
                 aria-label={label}
                 aria-pressed={checked}
                 className={cn(
-                  "h-5 w-5 rounded-full border-2 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
-                  dot,
+                  "h-6 w-6 cursor-pointer rounded-full border-2 p-0 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
                   checked ? "border-ink" : "border-transparent",
                 )}
+                style={colorDot(choice)}
                 data-testid={`team-calendar-color-${choice || "default"}`}
                 key={choice || "default"}
                 onClick={() => onChange({ ...draft, color: choice })}
