@@ -5,7 +5,7 @@ import { LockIcon } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
 import {
   isUnlocked,
-  lockedFileThread,
+  lockedFileRoot,
   openFile,
   subscribeThreads,
 } from "../../team/secret/thread";
@@ -13,7 +13,12 @@ import {
 /** A file encrypted for a confidential thread: decrypted only on this device,
  * then opened from a private temporary copy or saved where the member picks. */
 export function LockedFile({ attachment, source }: AttachmentRendererProps) {
-  const rootId = lockedFileThread(attachment.name) ?? "";
+  // A file sent with a 🔒 opening message names its thread by salt, known
+  // once that message is shown, so look it up as threads change.
+  const rootId = useSyncExternalStore(
+    subscribeThreads,
+    () => lockedFileRoot(attachment.name) ?? "",
+  );
   const unlocked = useSyncExternalStore(subscribeThreads, () =>
     isUnlocked(rootId),
   );

@@ -8,7 +8,6 @@ import { LockIcon } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { Input } from "../../shared/design-system/ui/Input";
-import { Textarea } from "../../shared/design-system/ui/Textarea";
 import {
   PopoverPopup,
   PopoverRoot,
@@ -20,12 +19,15 @@ import {
   SECRET_TOKEN,
 } from "../../team/secret/secret";
 import {
+  armDraft,
+  disarmDraft,
+  isArmed,
+  isLockedFileName,
   isUnlocked,
-  lockedFileThread,
+  lockDraftKey,
   openReply,
   openRoot,
   registerRoot,
-  startThread,
   subscribeThreads,
   THREAD_REPLY_TOKEN,
   THREAD_ROOT_TOKEN,
@@ -39,45 +41,43 @@ export const inject = ["conversation"];
 const useUnlocked = (rootId: string | undefined) =>
   useSyncExternalStore(subscribeThreads, () => !!rootId && isUnlocked(rootId));
 
-/** Starts a confidential thread; its opening message is sent from here, so
- * nothing typed in the ordinary composer goes out with it. */
+/** 🔒 locks the channel's own draft: the member writes and attaches as usual,
+ * and on send the text and files leave encrypted as a new confidential
+ * thread. The password is asked when locking. */
 function SecretTool({
   disabled,
-  session,
+  scope,
   channelId,
   threadRootId,
 }: ComposerToolProps) {
+  const draft = lockDraftKey(scope, channelId);
+  const locked = useSyncExternalStore(subscribeThreads, () => isArmed(draft));
   const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   // Focus moves into the popup, so the composer taking focus back on the
   // first click does not close it straight away.
-  const field = useRef<HTMLTextAreaElement>(null);
+  const field = useRef<HTMLInputElement>(null);
   // Replies in a confidential thread are encrypted by the composer itself.
   if (threadRootId) return null;
   const reset = () => {
-    setText("");
     setPassword("");
     setStatus("");
   };
-  const start = async () => {
+  const lock = async () => {
     setBusy(true);
     try {
-      const token = await startThread(text, password);
-      await session.messages.send(
-        channelId,
-        `🔒 대외비 스레드 (SHIBALPOINT 앱에서 비밀번호로 열람) ${token}`,
-      );
+      await armDraft(draft, password);
       reset();
       setOpen(false);
     } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "보내지 못했어요.");
+      setStatus(reason instanceof Error ? reason.message : "잠그지 못했어요.");
     } finally {
       setBusy(false);
     }
   };
+  const label = locked ? "대외비 잠금 켜짐" : "대외비로 잠가서 보내기";
   return (
     <PopoverRoot
       open={open && !disabled}
@@ -92,47 +92,82 @@ function SecretTool({
             disabled={disabled}
             size="toolbar"
             type="button"
-            aria-label="대외비 스레드 시작"
-            title="대외비 스레드 시작"
+            aria-label={label}
+            aria-pressed={locked}
+            title={label}
+            style={
+              locked
+                ? {
+                    color: "var(--primary)",
+                    background: "var(--surface-accent)",
+                  }
+                : undefined
+            }
             icon={<LockIcon size={20} aria-hidden="true" />}
           />
         }
       />
       <PopoverPopup
         side="top"
-        aria-label="대외비 스레드 시작"
+        aria-label={label}
         size="wide"
-        initialFocus={field}
+        initialFocus={locked ? undefined : field}
       >
         <div className="flex flex-col gap-2" data-no-translate="">
-          <Textarea
-            ref={field}
-            aria-label="첫 메시지"
-            placeholder="첫 메시지 (비밀번호를 아는 사람만 볼 수 있어요)"
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-          />
-          <Input
-            type="password"
-            autoComplete="new-password"
-            aria-label="비밀번호"
-            placeholder={`비밀번호 (${MIN_PASSWORD}자 이상)`}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-          <p className="text-xs text-muted">
-            이 스레드의 답글은 모두 자동으로 잠겨요. 비밀번호는 Buzz 밖에서
-            전달하세요. 잃어버리면 아무도 열 수 없어요. 파일은 아직 올릴 수
-            없어요.
-          </p>
-          {status && <p role="alert">{status}</p>}
-          <Button
-            type="button"
-            disabled={busy || !text.trim() || password.length < MIN_PASSWORD}
-            onClick={() => void start()}
-          >
-            {busy ? "잠그는 중…" : "잠가서 보내기"}
-          </Button>
+          {locked ? (
+            <>
+              <p className="text-sm">
+                🔒 잠금이 켜져 있어요. 지금 쓰는 글과 파일은 보낼 때 잠겨서
+                대외비 스레드로 올라가요.
+              </p>
+              <Button
+                type="button"
+                variant="subtle"
+                onClick={() => {
+                  disarmDraft(draft);
+                  setOpen(false);
+                }}
+              >
+                잠금 끄기 (일반 메시지로)
+              </Button>
+            </>
+          ) : (
+            <>
+              <Input
+                ref={field}
+                type="password"
+                autoComplete="new-password"
+                aria-label="비밀번호"
+                placeholder={`비밀번호 (${MIN_PASSWORD}자 이상)`}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.nativeEvent.isComposing &&
+                    password.length >= MIN_PASSWORD
+                  ) {
+                    event.preventDefault();
+                    void lock();
+                  }
+                }}
+              />
+              <p className="text-xs text-muted">
+                평소처럼 글을 쓰고 파일을 첨부한 뒤 보내면, 글과 파일이 이
+                비밀번호로 잠겨서 대외비 스레드가 돼요. 답글도 모두 자동으로
+                잠겨요. 비밀번호는 Buzz 밖에서 전달하세요. 잃어버리면 아무도 열
+                수 없어요.
+              </p>
+              {status && <p role="alert">{status}</p>}
+              <Button
+                type="button"
+                disabled={busy || password.length < MIN_PASSWORD}
+                onClick={() => void lock()}
+              >
+                {busy ? "잠그는 중…" : "🔒 잠금 켜기"}
+              </Button>
+            </>
+          )}
         </div>
       </PopoverPopup>
     </PopoverRoot>
@@ -334,7 +369,7 @@ export const apply: PluginModule["apply"] = (ctx) => {
   ctx.conversation.registerAttachment({
     id: "locked-file",
     title: "Confidential file",
-    matches: (attachment) => !!lockedFileThread(attachment.name),
+    matches: (attachment) => isLockedFileName(attachment.name),
     component: LockedFile,
   });
   ctx.conversation.registerMessageAction({

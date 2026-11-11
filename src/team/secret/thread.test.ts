@@ -1,15 +1,24 @@
-import { expect, it } from "vitest";
+import { expect, it, describe } from "vitest";
 import {
+  armDraft,
+  disarmDraft,
+  isArmed,
+  isLockedFileName,
   isSealedThread,
+  isUnlocked,
+  lockDraftKey,
+  lockedFileRoot,
   lockedFileThread,
-  openFile,
-  sealFile,
-  sealedFor,
   noteThreadRoot,
+  openFile,
   openReply,
   openRoot,
   registerRoot,
+  sealDraftFile,
+  sealDraftText,
+  sealedFor,
   sealedThreadRefusal,
+  sealFile,
   sealOutgoing,
   startThread,
   THREAD_REPLY_TOKEN,
@@ -85,3 +94,28 @@ it("keeps @everyone / @all outside the ciphertext so they still notify", async (
   expect(reply).not.toContain("회의");
   expect(await sealOutgoing("c".repeat(64), "그냥 답글")).not.toContain("@");
 }, 60_000);
+
+describe("🔒 armed draft", () => {
+  it("sends text and files that open with the thread's password", async () => {
+    const draft = lockDraftKey("scope", "channel");
+    await armDraft(draft, "secret-pass");
+    expect(isArmed(draft)).toBe(true);
+    const file = await sealDraftFile(
+      draft,
+      new File(["hello"], "plan.txt", { type: "text/plain" }),
+    );
+    expect(isLockedFileName(file.name)).toBe(true);
+    const sent = await sealDraftText(draft, "opening");
+    const token = sent.match(THREAD_ROOT_TOKEN)?.[0] ?? "";
+    const rootId = "f".repeat(64);
+    registerRoot(rootId, token);
+    expect(isUnlocked(rootId)).toBe(true);
+    expect(lockedFileRoot(file.name)).toBe(rootId);
+    expect(await openRoot(rootId)).toBe("opening");
+    const opened = await openFile(rootId, await file.arrayBuffer());
+    expect(opened?.name).toBe("plan.txt");
+    expect(new TextDecoder().decode(opened?.bytes)).toBe("hello");
+    disarmDraft(draft);
+    expect(isArmed(draft)).toBe(false);
+  });
+});

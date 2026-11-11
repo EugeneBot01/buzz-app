@@ -155,11 +155,8 @@ const sealedFiles = new WeakMap<File, string>();
 export const sealedFor = (file: File) => sealedFiles.get(file);
 export const SEALED_FILE_MAX = 256 * 1024 * 1024;
 
-/** The file as it is uploaded: its name, type and bytes encrypted together. */
-export async function sealFile(rootId: string, file: File) {
-  if (file.size > SEALED_FILE_MAX) throw new Error("파일이 너무 커요.");
-  const key = keys.get(rootId);
-  if (!key) throw new Error(sealedThreadRefusal(rootId, false));
+/** A file's name, type and bytes encrypted together, with the IV in front. */
+async function sealBytes(key: CryptoKey, file: File) {
   const header = new TextEncoder().encode(
     JSON.stringify({ name: file.name, type: file.type }),
   );
@@ -169,9 +166,24 @@ export async function sealFile(rootId: string, file: File) {
   plain.set(new Uint8Array(await file.arrayBuffer()), 4 + header.length);
   const iv = crypto.getRandomValues(new Uint8Array(IV));
   const body = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
-  const sealed = new File([iv, body], `locked.${rootId}.buzzlock`, {
-    type: "application/octet-stream",
-  });
+  const bytes = new Uint8Array(IV + body.byteLength);
+  bytes.set(iv);
+  bytes.set(new Uint8Array(body), IV);
+  return bytes;
+}
+
+/** The file as it is uploaded: its name, type and bytes encrypted together. */
+export async function sealFile(rootId: string, file: File) {
+  if (file.size > SEALED_FILE_MAX) throw new Error("파일이 너무 커요.");
+  const key = keys.get(rootId);
+  if (!key) throw new Error(sealedThreadRefusal(rootId, false));
+  const sealed = new File(
+    [await sealBytes(key, file)],
+    `locked.${rootId}.buzzlock`,
+    {
+      type: "application/octet-stream",
+    },
+  );
   sealedFiles.set(sealed, rootId);
   return sealed;
 }
@@ -210,4 +222,71 @@ export async function sealOutgoing(rootId: string | undefined, text: string) {
   // reach people; they say nothing about the content.
   const groups = [...groupMentions(text)].map((group) => ` @${group}`).join("");
   return `🔒 대외비 (SHIBALPOINT 앱에서 열람) ${REPLY}${await seal(key, text)}${END}${groups}`;
+}
+
+/**
+ * Team build: a draft armed by 🔒. The member writes and attaches as usual;
+ * the opening text and files go out encrypted with a key from the password
+ * given when arming. Files carry the salt in their name, since the thread's
+ * id does not exist until the opening message is sent.
+ */
+type Armed = Readonly<{ salt: Uint8Array<ArrayBuffer>; key: CryptoKey }>;
+const armed = new Map<string, Armed>();
+const DRAFT_FILE = /^locked\.([0-9a-f]{32})\.buzzlock$/;
+
+/** The draft 🔒 locks: a channel's own composer, never a thread's. */
+export const lockDraftKey = (scope: string, channelId: string) =>
+  `${scope}\u0000${channelId}`;
+
+export async function armDraft(draft: string, password: string) {
+  if (password.length < MIN_PASSWORD)
+    throw new Error(`비밀번호는 ${MIN_PASSWORD}자 이상이어야 해요`);
+  const salt = crypto.getRandomValues(new Uint8Array(SALT));
+  armed.set(draft, { salt, key: await keyFrom(password, salt) });
+  changed();
+}
+
+export const isArmed = (draft: string) => armed.has(draft);
+
+export function disarmDraft(draft: string) {
+  if (armed.delete(draft)) changed();
+}
+
+/** A file for an armed draft, encrypted before anything uploads it. */
+export async function sealDraftFile(draft: string, file: File) {
+  const lock = armed.get(draft);
+  if (!lock) throw new Error("잠금이 풀렸어요. 🔒를 다시 눌러 주세요.");
+  if (file.size > SEALED_FILE_MAX) throw new Error("파일이 너무 커요.");
+  const sealed = new File(
+    [await sealBytes(lock.key, file)],
+    `locked.${hex(lock.salt)}.buzzlock`,
+    { type: "application/octet-stream" },
+  );
+  sealedFiles.set(sealed, draft);
+  return sealed;
+}
+
+/** The armed draft's opening message: the card token for `text`. This device
+ * stays unlocked for the thread once its message arrives. */
+export async function sealDraftText(draft: string, text: string) {
+  const lock = armed.get(draft);
+  if (!lock) throw new Error("잠금이 풀렸어요. 🔒를 다시 눌러 주세요.");
+  const token = `${ROOT}${hex(lock.salt)}${await seal(lock.key, text)}${END}`;
+  started.set(token, lock.key);
+  return `🔒 대외비 스레드 (SHIBALPOINT 앱에서 비밀번호로 열람) ${token}`;
+}
+
+/** Whether `name` is a confidential file, of a thread or an armed draft. */
+export const isLockedFileName = (name: string | undefined) =>
+  !!lockedFileThread(name) || !!name?.match(DRAFT_FILE);
+
+/** The thread whose key opens a confidential file, once its root is known. */
+export function lockedFileRoot(name: string | undefined) {
+  const thread = lockedFileThread(name);
+  if (thread) return thread;
+  const salt = name?.match(DRAFT_FILE)?.[1];
+  if (!salt) return undefined;
+  for (const [rootId, root] of roots)
+    if (hex(root.salt) === salt) return rootId;
+  return undefined;
 }

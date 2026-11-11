@@ -153,7 +153,12 @@ import { followUpBehaviorPreference } from "./follow-up-preference";
 import { followUpQueue } from "./follow-up-queue";
 import { QueuedFollowUps } from "./QueuedFollowUps";
 import {
+  disarmDraft,
+  isArmed,
   isSealedThread,
+  lockDraftKey,
+  sealDraftFile,
+  sealDraftText,
   sealedFor,
   sealFile,
   sealedThreadRefusal,
@@ -1100,6 +1105,51 @@ function Composer({
   const sealedThread = useSyncExternalStore(subscribeThreads, () =>
     isSealedThread(threadRootId),
   );
+  // Buzz Team: 🔒 arms a channel's own draft; its text and files then leave
+  // encrypted as a new confidential thread.
+  const lockKey =
+    !threadRootId && !submission ? lockDraftKey(scope, channelId) : undefined;
+  const armedDraft = useSyncExternalStore(
+    subscribeThreads,
+    () => !!lockKey && isArmed(lockKey),
+  );
+  const sentArmed = useRef(false);
+  const draftItems = useSyncExternalStore(
+    attachments.store.subscribe,
+    attachments.store.snapshot,
+  );
+  // Once the locked message has left (the draft emptied), 🔒 is off again.
+  useEffect(() => {
+    if (!lockKey || !sentArmed.current) return;
+    if (value.text.trim() || draftItems.length) return;
+    sentArmed.current = false;
+    disarmDraft(lockKey);
+  }, [lockKey, value.text, draftItems.length]);
+  // Files attached before 🔒 are swapped for encrypted copies. Their plain
+  // upload may already have reached the server, unattached to any message.
+  useEffect(() => {
+    if (!armedDraft || !lockKey) return;
+    const plain = attachments.store
+      .snapshot()
+      .filter((item) => sealedFor(item.file) !== lockKey && !item.voice);
+    if (!plain.length) return;
+    const draft = lockKey;
+    for (const item of plain) attachments.store.remove(item.id);
+    void Promise.all(plain.map((item) => sealDraftFile(draft, item.file)))
+      .then((sealed) => {
+        if (!live.current) return;
+        attachments.store.add(sealed);
+        setAttachmentError(
+          "먼저 첨부한 파일을 잠근 파일로 바꿨어요. 원본은 잠그기 전에 서버에 한 번 올라갔을 수 있어요. 민감한 파일은 🔒를 먼저 누르고 첨부해 주세요.",
+        );
+      })
+      .catch((reason: unknown) => {
+        if (live.current)
+          setAttachmentError(
+            reason instanceof Error ? reason.message : "Could not lock files.",
+          );
+      });
+  }, [armedDraft, lockKey, attachments.store]);
   const canAttach = submission
     ? !!submission.attachments && !!session.attachments?.uploadForNewChat
     : !!session.attachments;
@@ -1171,6 +1221,25 @@ function Composer({
           ? "Create this conversation before attaching files."
           : "Uploads are unavailable on this connection.",
       );
+      return;
+    }
+    if (armedDraft && lockKey) {
+      // Encrypted here, before the store starts uploading anything.
+      const draft = lockKey;
+      void Promise.all(files.map((file) => sealDraftFile(draft, file)))
+        .then((sealed) => {
+          if (!live.current) return;
+          attachments.store.add(sealed);
+          setAttachmentError(undefined);
+        })
+        .catch((reason: unknown) => {
+          if (live.current)
+            setAttachmentError(
+              reason instanceof Error
+                ? reason.message
+                : "Could not attach files.",
+            );
+        });
       return;
     }
     if (sealedThread && threadRootId) {
@@ -2285,6 +2354,19 @@ function Composer({
       setError(sealedRefusal);
       return;
     }
+    if (
+      armedDraft &&
+      lockKey &&
+      (attachments.store
+        .snapshot()
+        .some((item) => sealedFor(item.file) !== lockKey) ||
+        !!gifs?.length)
+    ) {
+      setError(
+        "잠근 메시지에는 잠근 파일만 보낼 수 있어요. 파일을 다시 첨부해 주세요.",
+      );
+      return;
+    }
     if (valueRef.current.pending?.length) {
       // Enter straight after Space is the case a pending mention exists for.
       // Wait for its recipient rather than send prose; the composer shows
@@ -2549,6 +2631,11 @@ function Composer({
       if (isSealedThread(threadRootId)) {
         content = await sealOutgoing(threadRootId, content);
         attempt.signal.throwIfAborted();
+      } else if (lockKey && isArmed(lockKey)) {
+        // Buzz Team: the 🔒 draft goes out as a confidential thread's opener.
+        content = await sealDraftText(lockKey, content);
+        attempt.signal.throwIfAborted();
+        sentArmed.current = true;
       }
       // Alone with agents, the toolbar keeps the agents; the next draft starts empty.
       const next = routing
