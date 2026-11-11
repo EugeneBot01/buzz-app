@@ -83,6 +83,7 @@
     "allow-relay-upload-cancel",
     "allow-media-download",
     "allow-team-media-open",
+    "allow-team-open-figma",
     "allow-team-download-folder",
     "allow-team-media-save",
     "allow-team-media-saved",

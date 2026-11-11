@@ -10,9 +10,11 @@ import { LinkIcon } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { scopeOf } from "../reminders/react";
+import { FigmaButton } from "./FigmaButton";
 import { readTeamDocs, teamRelayUrl } from "../../team/relay/community";
 import {
   MAX_SHORTCUTS,
+  isFigma,
   isMeet,
   SHORTCUTS_TAG,
   encodeShortcuts,
@@ -112,7 +114,10 @@ function makeLauncher(relay: RelayData) {
     const { entry } = useShortcuts(relay, context.channelId);
     // The channel's saved Meet room, else a way to start a new one.
     const meet = entry.links.find((link) => isMeet(link.url));
-    const others = entry.links.filter((link) => link !== meet);
+    const figma = entry.links.find((link) => isFigma(link.url));
+    const others = entry.links.filter(
+      (link) => link !== meet && link !== figma,
+    );
     return (
       <span className="flex items-center gap-1" data-no-translate="">
         <a
@@ -128,6 +133,7 @@ function makeLauncher(relay: RelayData) {
         >
           📹 {meet ? "구글 미트" : "새 미트"}
         </a>
+        <FigmaButton link={figma?.url} />
         {others.slice(0, 4).map((link) => (
           <a
             key={link.url}

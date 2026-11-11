@@ -2347,6 +2347,29 @@ const TEAM_OPENABLE_EXTENSIONS: &[&str] = &[
     "odp", "pdf", "txt", "md", "png", "jpg", "jpeg", "gif", "webp", "hwp", "hwpx",
 ];
 
+/// Team build: opens a Figma link in the Figma app (the channel header's Figma
+/// button). Only https figma.com links, and only when Figma is installed.
+#[tauri::command]
+pub(crate) async fn team_open_figma(url: String) -> Result<()> {
+    let parsed = Url::parse(&url).map_err(|_| "Invalid Figma link")?;
+    let host = parsed.host_str().unwrap_or_default();
+    if parsed.scheme() != "https" || !(host == "figma.com" || host.ends_with(".figma.com")) {
+        return Err("Only figma.com links open in Figma".into());
+    }
+    let app = team_installed_app("Figma").ok_or("Figma is not installed")?;
+    let status = std::process::Command::new("/usr/bin/open")
+        .arg("-a")
+        .arg(app)
+        .arg(parsed.as_str())
+        .status()
+        .map_err(|_| "Could not open Figma")?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("Could not open Figma".into())
+    }
+}
+
 fn team_installed_app(name: &str) -> Option<std::path::PathBuf> {
     let mut candidates = vec![std::path::PathBuf::from(format!("/Applications/{name}.app"))];
     if let Some(home) = std::env::var_os("HOME") {

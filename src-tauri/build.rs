@@ -139,6 +139,7 @@ fn main() {
             "team_media_saved",
             "team_bytes_save",
             "team_media_show",
+            "team_open_figma",
             "file_download",
             "media_copy_image",
             "clipboard_write_text",

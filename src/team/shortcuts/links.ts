@@ -105,3 +105,16 @@ export function isMeet(url: string) {
     return false;
   }
 }
+
+/** Team build: a figma.com link (the channel header's Figma button opens it). */
+export function isFigma(url: string) {
+  try {
+    const { hostname, protocol } = new URL(url);
+    return (
+      protocol === "https:" &&
+      (hostname === "figma.com" || hostname.endsWith(".figma.com"))
+    );
+  } catch {
+    return false;
+  }
+}
