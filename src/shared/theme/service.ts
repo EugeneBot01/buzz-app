@@ -229,7 +229,7 @@ export function createAppearance(
   restoreContrast();
   host?.addEventListener("storage", onStorage);
   systemScheme?.addEventListener("change", onSystemSchemeChange);
-  return {
+  const appearance = {
     snapshot: () => state,
     subscribe(listener: () => void) {
       if (disposed) return () => {};
@@ -306,8 +306,16 @@ export function createAppearance(
       host?.removeEventListener("storage", onStorage);
       systemScheme?.removeEventListener("change", onSystemSchemeChange);
       listeners.clear();
+      if (current === appearance) current = undefined;
     },
   };
+  current = appearance;
+  return appearance;
 }
 
 export type Appearance = ReturnType<typeof createAppearance>;
+
+let current: Appearance | undefined;
+/** Buzz Team: the app's live appearance, so UI EDIT can show and change the
+ * same Interface size as Appearance and Command-plus/minus. */
+export const currentAppearance = () => current;

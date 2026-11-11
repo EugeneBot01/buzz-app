@@ -76,7 +76,15 @@ export type DisplaySettings = Readonly<{
   hiddenTabs: readonly string[];
   /** Top tabs in the member's order, after Messages; others follow as the app orders them. */
   tabOrder: readonly string[];
+  /** Message actions: a right-click menu (KakaoTalk style) or the hover toolbar. */
+  messageMenu: "context" | "toolbar";
+  /** Own messages on the right, others on the left, in bubbles. */
+  bubbles: boolean;
+  /** Chat background picture as a data URL, or none. */
+  background: string | null;
 }>;
+/** Largest background picture kept, as a data URL (device storage is small). */
+export const MAX_BACKGROUND = 1_500_000;
 export const DEFAULT_DISPLAY: DisplaySettings = {
   text: SLIDERS.text.base,
   density: SLIDERS.density.base,
@@ -86,6 +94,9 @@ export const DEFAULT_DISPLAY: DisplaySettings = {
   font: "default",
   hiddenTabs: [],
   tabOrder: [],
+  messageMenu: "context",
+  bubbles: false,
+  background: null,
 };
 
 const pick = <T extends readonly { id: string }[]>(
@@ -142,6 +153,16 @@ export function parseDisplay(value: Record<string, unknown>): DisplaySettings {
     font: pick(FONTS, value.font, DEFAULT_DISPLAY.font),
     hiddenTabs: tabList(value.hiddenTabs),
     tabOrder: tabList(value.tabOrder),
+    messageMenu: value.messageMenu === "toolbar" ? "toolbar" : "context",
+    bubbles: value.bubbles === true,
+    background:
+      typeof value.background === "string" &&
+      value.background.length <= MAX_BACKGROUND &&
+      /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(
+        value.background,
+      )
+        ? value.background
+        : null,
   };
 }
 
@@ -176,6 +197,9 @@ export function displayStyle(settings: DisplaySettings) {
     ...darkSurfaces(settings.dark),
     // Empty leaves the app's own font.
     "--font-sans": font,
+    "--team-chat-background": settings.background
+      ? `url("${settings.background}")`
+      : "none",
   };
 }
 

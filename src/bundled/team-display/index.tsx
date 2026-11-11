@@ -30,6 +30,7 @@ import {
   DEFAULT_DISPLAY,
   type DisplaySettings,
   FONTS,
+  MAX_BACKGROUND,
   orderTabs,
   SLIDERS,
   type SliderName,
@@ -43,6 +44,11 @@ import {
   sharedDTag,
 } from "../../team/display/sharing";
 import { displaySettings } from "../../team/display/store";
+import {
+  currentAppearance,
+  MAX_FONT_SCALE,
+  MIN_FONT_SCALE,
+} from "../../shared/theme/service";
 import "./dark.css";
 
 export const inject = ["settingsCards", "pages", "relay"];
@@ -134,6 +140,127 @@ function SliderRow({ name }: { name: SliderName }) {
           <output htmlFor={id} className="w-11 text-right tabular-nums">
             {value}%
           </output>
+        </span>
+      }
+    />
+  );
+}
+
+/** The app's own Interface size (Appearance, ⌘+ / ⌘−), shown here too. */
+function InterfaceSizeRow() {
+  const appearance = currentAppearance();
+  const scale = useSyncExternalStore(
+    appearance?.subscribe ?? (() => () => {}),
+    () => appearance?.snapshot().fontScale ?? 1,
+  );
+  if (!appearance) return null;
+  const set = (value: number) =>
+    appearance.setFontScale(Math.round(value * 10) / 10);
+  return (
+    <PreferenceRow
+      title="화면 전체 크기"
+      subtitle="⌘+ / ⌘−와 같아요"
+      trailing={
+        <span className="flex items-center gap-2">
+          <Button
+            size="sm"
+            aria-label="화면 전체 작게"
+            disabled={scale <= MIN_FONT_SCALE}
+            onClick={() => set(scale - 0.1)}
+          >
+            −
+          </Button>
+          <output className="w-12 text-center tabular-nums">
+            {Math.round(scale * 100)}%
+          </output>
+          <Button
+            size="sm"
+            aria-label="화면 전체 크게"
+            disabled={scale >= MAX_FONT_SCALE}
+            onClick={() => set(scale + 0.1)}
+          >
+            +
+          </Button>
+        </span>
+      }
+    />
+  );
+}
+
+/** Shrinks a picked image to a JPEG small enough to keep on this device. */
+async function backgroundFrom(file: File) {
+  const bitmap = await createImageBitmap(file);
+  for (const edge of [1600, 1200, 900]) {
+    const ratio = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * ratio);
+    canvas.height = Math.round(bitmap.height * ratio);
+    canvas
+      .getContext("2d")
+      ?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const url = canvas.toDataURL("image/jpeg", 0.8);
+    if (url.length <= MAX_BACKGROUND) return url;
+  }
+  throw new Error("사진이 너무 커요. 더 작은 사진을 골라 주세요.");
+}
+
+function BackgroundRow({ say }: { say: Say }) {
+  const settings = useSettings();
+  const [busy, setBusy] = useState(false);
+  return (
+    <PreferenceRow
+      title="채팅 배경 사진"
+      subtitle="이 기기에서만 보여요"
+      trailing={
+        <span className="flex items-center gap-2">
+          <label>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="sr-only"
+              disabled={busy}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file) return;
+                setBusy(true);
+                void backgroundFrom(file)
+                  .then((background) => {
+                    displaySettings.change({
+                      ...displaySettings.snapshot(),
+                      background,
+                    });
+                    say("배경 사진을 바꿨어요.");
+                  })
+                  .catch((reason: unknown) =>
+                    say(
+                      reason instanceof Error
+                        ? reason.message
+                        : "사진을 열지 못했어요.",
+                      "error",
+                    ),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            />
+            <span className="inline-flex cursor-pointer items-center rounded-md border border-line px-3 py-1">
+              {busy ? "여는 중…" : "사진 고르기"}
+            </span>
+          </label>
+          {settings.background && (
+            <Button
+              size="sm"
+              variant="subtle"
+              onClick={() =>
+                displaySettings.change({
+                  ...displaySettings.snapshot(),
+                  background: null,
+                })
+              }
+            >
+              지우기
+            </Button>
+          )}
         </span>
       }
     />
@@ -625,21 +752,63 @@ function UiEditCard({
   // long page, and never shift the rows being clicked.
   const notify = useToastNotification();
   const say: Say = (message, tone = "success") => void notify(message, tone);
+  const settings = useSettings();
   return (
     <div className="flex flex-col gap-6 text-sm">
       <Preview />
       <section aria-label="모양">
         <InlineHeader
           title="모양"
-          subtitle="화면 전체 크기는 Appearance의 Interface size나 ⌘+ / ⌘−로 바꿔요"
+          subtitle="화면 전체 크기는 ⌘+ / ⌘−로도 바꿀 수 있어요"
         />
         <SettingsGroup>
+          <InterfaceSizeRow />
           <SliderRow name="text" />
           <SliderRow name="density" />
           <SliderRow name="avatar" />
           <SliderRow name="dark" />
           <ChoiceRow name="width" label="대화 폭" options={WIDTHS} />
           <ChoiceRow name="font" label="글꼴" options={FONTS} />
+        </SettingsGroup>
+      </section>
+      <section aria-label="대화 모양">
+        <InlineHeader
+          title="대화 모양"
+          subtitle="카톡처럼 쓰고 싶으면 둘 다 켜요"
+        />
+        <SettingsGroup>
+          <PreferenceRow
+            title="말풍선 (내 메시지 오른쪽)"
+            trailing={
+              <Switch
+                aria-label="말풍선 (내 메시지 오른쪽)"
+                checked={settings.bubbles}
+                onCheckedChange={(bubbles) =>
+                  displaySettings.change({
+                    ...displaySettings.snapshot(),
+                    bubbles,
+                  })
+                }
+              />
+            }
+          />
+          <PreferenceRow
+            title="메시지 메뉴는 우클릭으로"
+            subtitle="끄면 마우스를 올렸을 때 메뉴가 떠요"
+            trailing={
+              <Switch
+                aria-label="메시지 메뉴는 우클릭으로"
+                checked={settings.messageMenu === "context"}
+                onCheckedChange={(context) =>
+                  displaySettings.change({
+                    ...displaySettings.snapshot(),
+                    messageMenu: context ? "context" : "toolbar",
+                  })
+                }
+              />
+            }
+          />
+          <BackgroundRow say={say} />
         </SettingsGroup>
       </section>
       <section aria-label="상단 탭">

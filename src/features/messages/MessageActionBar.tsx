@@ -166,6 +166,22 @@ function MessageActionBarControls({
           afterClose.current = action;
         }}
       >
+        {children && quickControls && (
+          // Buzz Team: the right-click menu leads with the reaction row; a
+          // quick reaction closes it, the emoji picker keeps it open.
+          // biome-ignore lint/a11y/useKeyWithClickEvents: closing follows the buttons' own activation.
+          // biome-ignore lint/a11y/noStaticElementInteractions: the buttons inside are the controls.
+          <div
+            className="flex flex-wrap items-center gap-1 px-1 pb-1"
+            data-message-context-reactions=""
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest("button[aria-pressed]"))
+                setOpen(false);
+            }}
+          >
+            {quickControls}
+          </div>
+        )}
         {leadingItems}
         <MenuItem
           disabled={copying}

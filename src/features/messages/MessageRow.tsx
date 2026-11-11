@@ -1,6 +1,7 @@
 import { Collapsible } from "@base-ui/react/collapsible";
 import { formatItemTimestamp } from "../../shared/datetime";
 import { ProfilePeek } from "../profiles/ProfilePeek";
+import { displaySettings } from "../../team/display/store";
 import { AgentAvatar } from "../agents/AgentAvatar";
 import {
   TypingPresentation,
@@ -342,9 +343,14 @@ function MessageRowContent({
     !row.agentEnvelope &&
     row.attachments.length > 0 &&
     row.attachments.every((attachment) => !!safeMessageUrl(attachment.url));
-  // Team build: messages are flat and left-aligned (Discord-style), so no
-  // message gets the own-bubble colours.
-  const ownBubble = false;
+  // Team build: messages are flat and left-aligned (Discord-style) unless
+  // UI EDIT turns on KakaoTalk-style bubbles: own messages on the right.
+  const bubbles = useSyncExternalStore(
+    displaySettings.subscribe,
+    displaySettings.bubbles,
+    () => false,
+  );
+  const ownBubble = bubbles && row.authorId === viewer;
   const emojiOnly = usesLargeEmojiPresentation(displayRow.content, row.emoji);
   const canReact = !!(
     extensions &&
@@ -604,6 +610,11 @@ function MessageRowContent({
         statusBadge={presence === "unknown" ? undefined : presence}
       />
     </span>
+  );
+  const contextMenu = useSyncExternalStore(
+    displaySettings.subscribe,
+    displaySettings.contextMenu,
+    () => false,
   );
   const messageActions = (target?: ReactElement) => (
     <MessageActionBar
@@ -892,7 +903,9 @@ function MessageRowContent({
         data-stack-previous={stackPrevious || undefined}
         data-stack-next={stackNext || undefined}
         data-viewer-message={
-          alignViewer && !row.workflowOwnerId && row.authorId === viewer
+          (alignViewer || bubbles) &&
+          !row.workflowOwnerId &&
+          row.authorId === viewer
             ? ""
             : undefined
         }
@@ -917,7 +930,10 @@ function MessageRowContent({
               <div className={styles.messageAvatar}>{avatar}</div>
             )}
             <div className={styles.messageHeader}>
-              {!row.membership &&
+              {/* Buzz Team: UI EDIT may move actions to a right-click
+                  menu (KakaoTalk style) instead of this hover toolbar. */}
+              {!contextMenu &&
+                !row.membership &&
                 !row.huddle &&
                 !renderMessage &&
                 messageActions()}
@@ -1321,6 +1337,8 @@ function MessageRowContent({
       {messageActions(renderMessage(message, menuTrigger))}
       {overlays}
     </>
+  ) : contextMenu && !row.membership && !row.huddle ? (
+    messageActions(message)
   ) : (
     message
   );

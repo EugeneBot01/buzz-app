@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseDisplay,
   DEFAULT_DISPLAY,
   decodeDisplay,
   darkSurfaces,
@@ -57,9 +58,26 @@ describe("chat display settings", () => {
       "--team-dark-6": "#555555",
       "--font-sans":
         '"Apple SD Gothic Neo", system-ui, -apple-system, sans-serif',
+      "--team-chat-background": "none",
     });
     // The default font leaves the app's own.
     expect(displayStyle(DEFAULT_DISPLAY)["--font-sans"]).toBe("");
+  });
+
+  it("keeps only a picture as the chat background", () => {
+    const png = "data:image/png;base64,iVBORw0KGgo=";
+    expect(parseDisplay({ background: png }).background).toBe(png);
+    expect(
+      displayStyle({ ...DEFAULT_DISPLAY, background: png })[
+        "--team-chat-background"
+      ],
+    ).toBe(`url("${png}")`);
+    expect(parseDisplay({ background: 'x");}' }).background).toBeNull();
+    expect(
+      parseDisplay({ background: "javascript:alert(1)" }).background,
+    ).toBeNull();
+    expect(parseDisplay({}).messageMenu).toBe("context");
+    expect(parseDisplay({ bubbles: true }).bubbles).toBe(true);
   });
 
   it("orders top tabs: Messages first, then the member's order, then the rest", () => {

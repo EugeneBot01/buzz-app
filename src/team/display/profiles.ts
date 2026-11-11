@@ -71,7 +71,9 @@ export function saveProfile(
   return [
     {
       name: trimmed,
-      settings: { ...settings },
+      // The background picture is this device's own and too big to keep per
+      // profile or share; applying a profile leaves it as it is.
+      settings: { ...settings, background: null },
       ...(workspace === undefined ? {} : { workspace }),
       savedAt: now,
       ...(before?.sharedIn?.length ? { sharedIn: before.sharedIn } : {}),

@@ -49,6 +49,7 @@ function apply(settings: DisplaySettings) {
     root.style.setProperty(name, value);
   // 0% keeps the app's own dark colors untouched.
   root.dataset.teamDark = settings.dark > 0 ? "on" : "off";
+  root.dataset.teamBackground = settings.background ? "on" : "off";
 }
 
 const notify = () => {
@@ -59,6 +60,14 @@ export const displaySettings = {
   snapshot(): DisplaySettings {
     current ??= read();
     return current;
+  },
+  /** Own messages on the right in bubbles; off while the plugin is off. */
+  bubbles(): boolean {
+    return active && displaySettings.snapshot().bubbles;
+  },
+  /** Message actions open on right-click; off while the plugin is off. */
+  contextMenu(): boolean {
+    return active && displaySettings.snapshot().messageMenu === "context";
   },
   /** Top tabs to leave out; none while the plugin is off. */
   hiddenTabs(): readonly string[] {
@@ -85,6 +94,7 @@ export const displaySettings = {
       for (const name of Object.keys(displayStyle(displaySettings.snapshot())))
         root.style.removeProperty(name);
       delete root.dataset.teamDark;
+      delete root.dataset.teamBackground;
       notify();
     };
   },
@@ -153,13 +163,19 @@ export const displaySettings = {
     if (profile.workspace !== undefined)
       // A fresh copy, so re-applying the same profile still rebuilds the panels.
       displaySettings.setWorkspace(structuredClone(profile.workspace));
-    displaySettings.change(settings);
+    displaySettings.change({
+      ...settings,
+      background: displaySettings.snapshot().background,
+    });
     return skipped;
   },
   /** Applies a teammate's shared look; their work area is never shared. */
   applyShared(profile: UiProfile, tabsHere: readonly string[]) {
     const { settings, skipped } = readProfile(profile, tabsHere);
-    displaySettings.change(settings);
+    displaySettings.change({
+      ...settings,
+      background: displaySettings.snapshot().background,
+    });
     return skipped;
   },
   /** Replaces the saved look of `name` with the current one. */
