@@ -1,6 +1,6 @@
 import { validDirectMessageParticipants } from "./direct-message-policy";
 import { foldProfiles } from "./profiles";
-import type { ChannelQueries } from "./contracts";
+import type { ChannelQueries, ChannelSummary } from "./contracts";
 import type { ReadTransport } from "./transport";
 import type { RelayReader } from "./reader";
 import type { Outbox } from "./outbox";
@@ -84,6 +84,17 @@ export function createDirectMessages(
         throw new Error("Choose between one and eight other people.");
       const active = AbortSignal.any([lifetime, signal]);
       active.throwIfAborted();
+      // Team build: the same people reopen the conversation they already
+      // have, whichever button started it, rather than a new one.
+      const existing = existingDirectMessage(
+        channels.list().channels,
+        transport.viewer,
+        pubkeys,
+      );
+      if (existing) {
+        for (const listener of [...opened]) listener(existing);
+        return existing;
+      }
       const id = await transport.openDirectMessage(pubkeys, active);
       active.throwIfAborted();
       // Only signed discovery can admit the returned channel. Never trust a receipt as membership.
@@ -197,4 +208,33 @@ export function createDirectMessages(
       });
     },
   });
+}
+
+/**
+ * Team build: a visible DM whose signed roster is exactly the viewer and
+ * `pubkeys`, the most recently active when there are several. A hidden one is
+ * left to the relay, whose open also unhides it.
+ */
+export function existingDirectMessage(
+  channels: readonly ChannelSummary[],
+  viewer: string,
+  pubkeys: readonly string[],
+) {
+  const expected = new Set([viewer, ...pubkeys]);
+  let match: ChannelSummary | undefined;
+  for (const channel of channels) {
+    if (
+      channel.channelType !== "dm" ||
+      channel.archived ||
+      channel.hidden ||
+      channel.pending ||
+      channel.huddle ||
+      channel.members?.length !== expected.size ||
+      !channel.members.every((key) => expected.has(key))
+    )
+      continue;
+    if (!match || (channel.lastActivityAt ?? 0) > (match.lastActivityAt ?? 0))
+      match = channel;
+  }
+  return match?.id;
 }

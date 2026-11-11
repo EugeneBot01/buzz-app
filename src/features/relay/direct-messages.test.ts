@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { createRelaySession } from "./session";
 import { keypair, profile, roster, signed } from "./testing";
 import { PublishRejected } from "./outbox";
+import { existingDirectMessage } from "./direct-messages";
 import type { ReadFilter, RelayEvent } from "./events";
 import type { RelayWriter } from "./transport";
 
@@ -307,5 +308,37 @@ describe("directory browsing beyond the shared profile budget", () => {
     } finally {
       t.owner.dispose();
     }
+  });
+});
+
+describe("team build: reopening a DM with the same people", () => {
+  const viewer = "a".repeat(64);
+  const bob = "b".repeat(64);
+  const cat = "c".repeat(64);
+  const dm = (id: string, members: string[], extra = {}) =>
+    ({ id, name: "", channelType: "dm", members, ...extra }) as never;
+
+  it("finds the visible DM with exactly those people, newest first", () => {
+    const channels = [
+      dm("old", [viewer, bob], { lastActivityAt: 1 }),
+      dm("new", [viewer, bob], { lastActivityAt: 5 }),
+      dm("group", [viewer, bob, cat]),
+    ];
+    expect(existingDirectMessage(channels, viewer, [bob])).toBe("new");
+    expect(existingDirectMessage(channels, viewer, [bob, cat])).toBe("group");
+  });
+
+  it("leaves hidden, archived or unknown rosters to the relay", () => {
+    expect(
+      existingDirectMessage(
+        [
+          dm("hidden", [viewer, bob], { hidden: true }),
+          dm("archived", [viewer, bob], { archived: true }),
+          { id: "unknown", name: "", channelType: "dm" } as never,
+        ],
+        viewer,
+        [bob],
+      ),
+    ).toBeUndefined();
   });
 });
