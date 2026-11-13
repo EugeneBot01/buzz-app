@@ -44,7 +44,7 @@ export type SearchServices = Pick<
   Partial<
     Pick<
       AppServices,
-      "appearance" | "notifications" | "plugins" | "adminAccess"
+      "appearance" | "notifications" | "plugins" | "adminAccess" | "panels"
     >
   >;
 const SEARCH_ID = "global-search";
@@ -405,6 +405,18 @@ function CommunitySearch({
           ...(messageId ? { messageId } : {}),
         });
       }}
+      openFiles={
+        services.panels?.resolve(`buzz-team-files:${scopedChannelId}`)
+          ? (channelId) => {
+              if (!isOpen()) return;
+              close(channelId);
+              services.panels?.requestOpen({
+                target: `buzz-team-files:${channelId}`,
+                channelId,
+              });
+            }
+          : undefined
+      }
       openAgentSession={(pubkey) => {
         const current = services.communities.snapshot();
         const relay = services.communities.relay.snapshot();

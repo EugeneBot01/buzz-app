@@ -25,6 +25,7 @@ import {
   ArrowsDownUpIcon,
   CalendarIcon,
   ChatCircleIcon,
+  PaperclipIcon,
 } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
@@ -111,6 +112,7 @@ export function SearchResults({
   onScopeChange,
   openConversation,
   openAgentSession,
+  openFiles,
   usageScope,
   sidebarScope,
 }: {
@@ -123,6 +125,9 @@ export function SearchResults({
   /** Open a new Solo chat with one of the viewer's agents. Without it,
    * choosing one of their agents opens a direct message, as for anyone else. */
   openAgentSession?: ((pubkey: string) => void) | undefined;
+  /** Open the channel's 모아보기 page (files, photos, links). Absent where the
+   * build has no such page. */
+  openFiles?: ((channelId: string) => void) | undefined;
   /** View-state partition whose visits and search choices rank results. */
   usageScope?: string | undefined;
   /** The sidebar's view scope, whose hidden DMs search leaves out too. */
@@ -1063,6 +1068,22 @@ export function SearchResults({
         ? [{ label: "Dates", destinations: dateChoices }]
         : scopedChannelId
           ? [
+              ...(openFiles && !query.trim()
+                ? [
+                    {
+                      label: "This conversation",
+                      destinations: [
+                        {
+                          key: `files:${scopedChannelId}`,
+                          label: "모아보기",
+                          detail: "사진·영상·파일·링크 모아보기",
+                          icon: PaperclipIcon,
+                          run: () => openFiles(scopedChannelId),
+                        },
+                      ],
+                    },
+                  ]
+                : []),
               {
                 label: messageOrder,
                 rank: Infinity,

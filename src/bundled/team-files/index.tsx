@@ -28,22 +28,29 @@ import {
 } from "../../team/files/saved";
 import {
   collectFiles,
+  collectLinks,
   fileName,
   filterFiles,
+  filterLinks,
   formatSize,
+  messageLink,
   type ChannelFile,
-  type FileKind,
+  type ChannelLink,
+  type Tab,
 } from "../../team/files/collect";
+import { buzzLinkTarget } from "../../features/navigation/buzz-links";
+import type { OpenTarget } from "../../features/navigation/targets";
 
-export const inject = ["panels", "relay"];
+export const inject = ["panels", "relay", "navigation"];
 
 const PAGE = 200;
-const KINDS: readonly { kind: FileKind; label: string }[] = [
+const KINDS: readonly { kind: Tab; label: string }[] = [
   { kind: "all", label: "전체" },
-  { kind: "image", label: "이미지" },
+  { kind: "image", label: "사진" },
   { kind: "video", label: "영상" },
   { kind: "audio", label: "음성" },
-  { kind: "file", label: "문서·파일" },
+  { kind: "file", label: "파일" },
+  { kind: "link", label: "링크" },
 ];
 const noop = () => () => {};
 const emptyProfiles = new Map();
@@ -71,10 +78,13 @@ function useSession(relay: RelayData) {
 function FilesPanel({
   relay,
   channelId,
+  openMessage,
   close,
 }: {
   relay: RelayData;
   channelId: string | undefined;
+  /** Jumps to a message in the conversation; false if it cannot. */
+  openMessage(channelId: string, eventId: string): boolean;
   close(): void;
 }) {
   const session = useSession(relay);
@@ -82,7 +92,7 @@ function FilesPanel({
   const [state, setState] = useState<"loading" | "more" | "end" | "error">(
     "loading",
   );
-  const [kind, setKind] = useState<FileKind>("all");
+  const [kind, setKind] = useState<Tab>("all");
   const [query, setQuery] = useState("");
   const [progress, setProgress] = useState("");
   const [folder, setFolder] = useState<string | null>(null);
@@ -122,15 +132,23 @@ function FilesPanel({
   }, [load]);
 
   const files = useMemo(() => collectFiles(events), [events]);
+  const links = useMemo(() => collectLinks(events), [events]);
   const shown = useMemo(
-    () => filterFiles(files, kind, query),
+    () => (kind === "link" ? [] : filterFiles(files, kind, query)),
     [files, kind, query],
   );
+  const shownLinks = useMemo(
+    () => (kind === "link" ? filterLinks(links, query) : []),
+    [links, kind, query],
+  );
+  const count = kind === "link" ? shownLinks.length : shown.length;
   useEffect(() => {
     if (!session) return;
-    const authors = [...new Set(files.map(({ author }) => author))];
+    const authors = [
+      ...new Set([...files, ...links].map(({ author }) => author)),
+    ];
     if (authors.length) void session.profiles.ensure(authors).catch(() => {});
-  }, [session, files]);
+  }, [session, files, links]);
 
   useEffect(() => {
     void downloadFolder().then(setFolder, () => {});
@@ -183,11 +201,11 @@ function FilesPanel({
   return (
     <section
       className="flex h-full min-h-0 flex-col gap-3 p-4 text-ink"
-      aria-label="채널 파일"
+      aria-label="모아보기"
       data-no-translate=""
     >
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">채널 파일</h2>
+        <h2 className="text-base font-semibold">모아보기</h2>
         <Button variant="ghost" onClick={close}>
           닫기
         </Button>
@@ -196,7 +214,7 @@ function FilesPanel({
         type="search"
         value={query}
         onChange={(event) => setQuery(event.currentTarget.value)}
-        placeholder="파일 이름으로 찾기"
+        placeholder={kind === "link" ? "링크로 찾기" : "파일 이름으로 찾기"}
         className="h-8 rounded-md border border-input-line bg-surface px-2 text-sm"
       />
       <fieldset className="flex flex-wrap gap-1 border-0 p-0" aria-label="종류">
@@ -213,11 +231,13 @@ function FilesPanel({
       </fieldset>
       <div className="flex items-center justify-between gap-2 text-xs text-muted">
         <span>
-          {shown.length}개{state === "more" && " (더 오래된 파일이 있어요)"}
+          {count}개{state === "more" && " (더 오래된 항목이 있어요)"}
         </span>
         <Button
           variant="subtle"
-          disabled={!shown.length || progress.startsWith("받는 중")}
+          disabled={
+            kind === "link" || !shown.length || progress.startsWith("받는 중")
+          }
           onClick={() => void downloadAll()}
         >
           모두 다운로드
@@ -247,6 +267,7 @@ function FilesPanel({
             author={profiles.get(file.author)?.name}
             source={session.media(file.attachment.url)}
             isSaved={saved.has(session.media(file.attachment.url) ?? "")}
+            onJump={() => openMessage(channelId, file.eventId)}
             onSave={() =>
               save(session, file, true).then(() => {
                 refreshSaved();
@@ -255,11 +276,21 @@ function FilesPanel({
             }
           />
         ))}
-        {state !== "loading" && !shown.length && (
+        {shownLinks.map((link) => (
+          <LinkRow
+            key={link.url}
+            link={link}
+            author={profiles.get(link.author)?.name}
+            onJump={() => openMessage(channelId, link.eventId)}
+          />
+        ))}
+        {state !== "loading" && !count && (
           <li className="py-6 text-center text-sm text-muted">
-            {files.length
-              ? "찾는 파일이 없어요."
-              : "아직 올라온 파일이 없어요."}
+            {(kind === "link" ? links : files).length
+              ? "찾는 항목이 없어요."
+              : kind === "link"
+                ? "아직 올라온 링크가 없어요."
+                : "아직 올라온 파일이 없어요."}
           </li>
         )}
       </ul>
@@ -290,12 +321,14 @@ function FileRow({
   author,
   source,
   isSaved,
+  onJump,
   onSave,
 }: {
   file: ChannelFile;
   author: string | undefined;
   source: string | undefined;
   isSaved: boolean;
+  onJump(): boolean;
   onSave(): Promise<void>;
 }) {
   const [status, setStatus] = useState("");
@@ -355,11 +388,69 @@ function FileRow({
           <OpenFileButton source={source} name={file.attachment.name} />
         </>
       )}
+      <JumpButton onJump={onJump} />
+    </li>
+  );
+}
+
+function JumpButton({ onJump }: { onJump(): boolean }) {
+  return (
+    <Button variant="ghost" onClick={onJump}>
+      메시지로 이동
+    </Button>
+  );
+}
+
+function LinkRow({
+  link,
+  author,
+  onJump,
+}: {
+  link: ChannelLink;
+  author: string | undefined;
+  onJump(): boolean;
+}) {
+  const date = new Date(link.at * 1000).toLocaleDateString("ko-KR", {
+    month: "short",
+    day: "numeric",
+  });
+  return (
+    <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-hover">
+      <div className="min-w-0 flex-1">
+        <a
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block truncate text-sm text-ink hover:underline"
+          title={link.url}
+        >
+          {link.title}
+        </a>
+        <p className="truncate text-xs text-muted" title={link.url}>
+          {link.url}
+        </p>
+        <p className="truncate text-xs text-muted">
+          {[author, date].filter(Boolean).join(" · ")}
+        </p>
+      </div>
+      <JumpButton onJump={onJump} />
     </li>
   );
 }
 
 export const apply: PluginModule["apply"] = (ctx) => {
+  /** Same path as a `buzz://message` link in a conversation. */
+  const openMessage = (channelId: string, eventId: string) => {
+    const connection = ctx.relay.snapshot();
+    if (!connection.viewer || !connection.origin) return false;
+    const target = buzzLinkTarget(messageLink(channelId, eventId), {
+      viewer: connection.viewer,
+      communityOrigin: connection.origin,
+    });
+    if (!target) return false;
+    void ctx.navigation.open(target as OpenTarget);
+    return true;
+  };
   function Launcher({ context, toggle, pressed }: ChannelLauncherProps) {
     const target = `buzz-team-files:${context.channelId}`;
     return (
@@ -390,6 +481,7 @@ export const apply: PluginModule["apply"] = (ctx) => {
           props.context?.channelId ??
           props.target.slice("buzz-team-files:".length)
         }
+        openMessage={openMessage}
         close={props.close}
       />
     ),

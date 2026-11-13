@@ -1,5 +1,13 @@
 import { expect, it } from "vitest";
-import { collectFiles, fileName, filterFiles, formatSize } from "./collect";
+import {
+  collectFiles,
+  collectLinks,
+  fileName,
+  filterFiles,
+  filterLinks,
+  formatSize,
+  messageLink,
+} from "./collect";
 
 const hash = (n: number) => String(n).repeat(64).slice(0, 64);
 const message = (
@@ -60,6 +68,79 @@ it("filters by kind and name", () => {
   expect(filterFiles(files, "all", "기획").map(fileName)).toEqual([
     "기획서.pdf",
   ]);
+});
+
+it("keeps voice as its own kind", () => {
+  const files = collectFiles(events.slice(0, 3));
+  expect(filterFiles(files, "audio", "").map(fileName)).toEqual(["memo.m4a"]);
+  expect(filterFiles(files, "file", "").map(fileName)).toEqual(["기획서.pdf"]);
+  expect(filterFiles(files, "video", "")).toEqual([]);
+});
+
+const text = (
+  id: string,
+  at: number,
+  content: string,
+  pubkey = "a".repeat(64),
+) => ({
+  id,
+  pubkey,
+  kind: 9,
+  created_at: at,
+  content,
+  sig: "",
+  tags: [],
+});
+
+const talk = [
+  text("t1", 10, "참고: https://example.com/a?x=1 이거 보세요"),
+  text(
+    "t2",
+    20,
+    "[기사](https://news.test/story) 와 https://example.com/a?x=1",
+  ),
+  text("t3", 30, "보지 마 ftp://old.test/file 그리고 buzz://channel/abc"),
+  text("t4", 40, "지운 글 https://gone.test/x"),
+  { ...text("d1", 50, ""), kind: 5, tags: [["e", "t4"]] },
+];
+
+it("collects web links from message text, newest first, once each", () => {
+  const links = collectLinks(talk);
+  expect(links.map((link) => link.url)).toEqual([
+    "https://news.test/story",
+    "https://example.com/a?x=1",
+  ]);
+  // The repeated URL points at the newest message that wrote it.
+  expect(links[1]?.eventId).toBe("t2");
+  expect(links[0]).toMatchObject({
+    title: "기사",
+    author: "a".repeat(64),
+    at: 20,
+  });
+  expect(links[1]?.title).toBe("example.com");
+});
+
+it("does not list an attachment's own URL as a link", () => {
+  const withFile = {
+    ...message("m9", 60, [{ n: 9, name: "x.png", mime: "image/png" }]),
+    content: `https://relay.test/media/${hash(9)}`,
+  };
+  expect(collectLinks([withFile])).toEqual([]);
+});
+
+it("searches links by title and address", () => {
+  const links = collectLinks(talk);
+  expect(filterLinks(links, "기사").map((link) => link.url)).toEqual([
+    "https://news.test/story",
+  ]);
+  expect(filterLinks(links, "EXAMPLE").length).toBe(1);
+  expect(filterLinks(links, "").length).toBe(2);
+});
+
+it("builds the message link the app's navigation understands", () => {
+  expect(messageLink("chan1", "evt1")).toBe(
+    "buzz://message?channel=chan1&id=evt1",
+  );
 });
 
 it("formats sizes", () => {
