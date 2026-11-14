@@ -146,11 +146,13 @@ function SliderRow({ name }: { name: SliderName }) {
   );
 }
 
+const noSubscribe = () => () => {};
+
 /** The app's own Interface size (Appearance, ⌘+ / ⌘−), shown here too. */
 function InterfaceSizeRow() {
   const appearance = currentAppearance();
   const scale = useSyncExternalStore(
-    appearance?.subscribe ?? (() => () => {}),
+    appearance?.subscribe ?? noSubscribe,
     () => appearance?.snapshot().fontScale ?? 1,
   );
   if (!appearance) return null;

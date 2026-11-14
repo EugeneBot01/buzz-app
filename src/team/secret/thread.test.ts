@@ -115,6 +115,8 @@ describe("🔒 armed draft", () => {
     const opened = await openFile(rootId, await file.arrayBuffer());
     expect(opened?.name).toBe("plan.txt");
     expect(new TextDecoder().decode(opened?.bytes)).toBe("hello");
+    // @everyone still notifies: the group word stays outside the ciphertext.
+    expect(await sealDraftText(draft, "@everyone 회의")).toMatch(/ @everyone$/);
     disarmDraft(draft);
     expect(isArmed(draft)).toBe(false);
   });

@@ -3,10 +3,13 @@ import type { EventData } from "../../features/relay/events";
 import type { Attachment } from "../../features/relay/contracts";
 import { parseAttachments } from "../../features/relay/fold";
 import { messageLinkParts } from "../../features/messages/message-link-parts";
+import { threadReference } from "../../features/relay/thread-reference";
 
 export type ChannelFile = Readonly<{
   /** The message that carries it; files are listed once per URL. */
   eventId: string;
+  /** The thread it was posted in, when it is a reply. */
+  threadRootId?: string | undefined;
   author: string;
   /** Unix seconds. */
   at: number;
@@ -17,6 +20,8 @@ export type FileKind = Attachment["kind"] | "all";
 export type ChannelLink = Readonly<{
   /** The message that carries it. */
   eventId: string;
+  /** The thread it was posted in, when it is a reply. */
+  threadRootId?: string | undefined;
   author: string;
   /** Unix seconds. */
   at: number;
@@ -51,6 +56,7 @@ export function collectFiles(events: readonly EventData[]): ChannelFile[] {
       seen.add(attachment.url);
       files.push({
         eventId: event.id,
+        threadRootId: threadReference(event)?.rootId,
         author: event.pubkey,
         at: event.created_at,
         attachment,
@@ -86,6 +92,7 @@ export function collectLinks(events: readonly EventData[]): ChannelLink[] {
       seen.add(url);
       links.push({
         eventId: event.id,
+        threadRootId: threadReference(event)?.rootId,
         author: event.pubkey,
         at: event.created_at,
         url,
@@ -109,9 +116,18 @@ export function filterLinks(
   );
 }
 
-/** The link in `buzz://message` form, which the app's own navigation opens. */
-export const messageLink = (channelId: string, eventId: string) =>
-  `buzz://message?${new URLSearchParams({ channel: channelId, id: eventId })}`;
+/** The link in `buzz://message` form, which the app's own navigation opens.
+ * A reply names its thread, or the jump cannot find it in the channel. */
+export const messageLink = (
+  channelId: string,
+  eventId: string,
+  threadRootId?: string,
+) =>
+  `buzz://message?${new URLSearchParams({
+    channel: channelId,
+    id: eventId,
+    ...(threadRootId ? { thread: threadRootId } : {}),
+  })}`;
 
 export const fileName = (file: ChannelFile) =>
   file.attachment.name ??

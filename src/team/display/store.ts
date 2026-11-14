@@ -50,6 +50,26 @@ function apply(settings: DisplaySettings) {
   // 0% keeps the app's own dark colors untouched.
   root.dataset.teamDark = settings.dark > 0 ? "on" : "off";
   root.dataset.teamBackground = settings.background ? "on" : "off";
+  showBackground(settings.background);
+}
+
+/** The chat background picture, as one rule on the conversation scroller. A
+ * picture can be over a megabyte, so it is never a custom property on the
+ * root, which every element would inherit and restyle with. */
+function showBackground(background: string | null) {
+  const id = "buzz-team-chat-background";
+  let style = document.getElementById(id);
+  if (!background) {
+    style?.remove();
+    return;
+  }
+  if (!style) {
+    style = document.createElement("style");
+    style.id = id;
+    document.head.append(style);
+  }
+  const rule = `:root[data-team-background="on"] [data-message-scroller]{background-image:linear-gradient(var(--team-background-veil),var(--team-background-veil)),url("${background}")}`;
+  if (style.textContent !== rule) style.textContent = rule;
 }
 
 const notify = () => {
@@ -95,6 +115,7 @@ export const displaySettings = {
         root.style.removeProperty(name);
       delete root.dataset.teamDark;
       delete root.dataset.teamBackground;
+      showBackground(null);
       notify();
     };
   },

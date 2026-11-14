@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   collectFiles,
   collectLinks,
@@ -147,4 +147,12 @@ it("formats sizes", () => {
   expect(formatSize(undefined)).toBe("");
   expect(formatSize(2048)).toBe("2 KB");
   expect(formatSize(5 * 1024 ** 2)).toBe("5.0 MB");
+});
+
+describe("jumping to a reply", () => {
+  it("names the thread so the jump can reach a reply", () => {
+    const root = "a".repeat(64);
+    expect(messageLink("c1", "b".repeat(64), root)).toContain(`thread=${root}`);
+    expect(messageLink("c1", "b".repeat(64))).not.toContain("thread=");
+  });
 });

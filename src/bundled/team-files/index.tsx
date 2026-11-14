@@ -84,7 +84,11 @@ function FilesPanel({
   relay: RelayData;
   channelId: string | undefined;
   /** Jumps to a message in the conversation; false if it cannot. */
-  openMessage(channelId: string, eventId: string): boolean;
+  openMessage(
+    channelId: string,
+    eventId: string,
+    threadRootId?: string,
+  ): boolean;
   close(): void;
 }) {
   const session = useSession(relay);
@@ -267,7 +271,9 @@ function FilesPanel({
             author={profiles.get(file.author)?.name}
             source={session.media(file.attachment.url)}
             isSaved={saved.has(session.media(file.attachment.url) ?? "")}
-            onJump={() => openMessage(channelId, file.eventId)}
+            onJump={() =>
+              openMessage(channelId, file.eventId, file.threadRootId)
+            }
             onSave={() =>
               save(session, file, true).then(() => {
                 refreshSaved();
@@ -281,7 +287,9 @@ function FilesPanel({
             key={link.url}
             link={link}
             author={profiles.get(link.author)?.name}
-            onJump={() => openMessage(channelId, link.eventId)}
+            onJump={() =>
+              openMessage(channelId, link.eventId, link.threadRootId)
+            }
           />
         ))}
         {state !== "loading" && !count && (
@@ -440,13 +448,20 @@ function LinkRow({
 
 export const apply: PluginModule["apply"] = (ctx) => {
   /** Same path as a `buzz://message` link in a conversation. */
-  const openMessage = (channelId: string, eventId: string) => {
+  const openMessage = (
+    channelId: string,
+    eventId: string,
+    threadRootId?: string,
+  ) => {
     const connection = ctx.relay.snapshot();
     if (!connection.viewer || !connection.origin) return false;
-    const target = buzzLinkTarget(messageLink(channelId, eventId), {
-      viewer: connection.viewer,
-      communityOrigin: connection.origin,
-    });
+    const target = buzzLinkTarget(
+      messageLink(channelId, eventId, threadRootId),
+      {
+        viewer: connection.viewer,
+        communityOrigin: connection.origin,
+      },
+    );
     if (!target) return false;
     void ctx.navigation.open(target as OpenTarget);
     return true;

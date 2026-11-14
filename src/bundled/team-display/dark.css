@@ -17,8 +17,9 @@
   --border-floating-control: var(--neutral-10);
 }
 
-/* Team: chat background picture (UI EDIT). A veil over the picture keeps
-   messages readable in both themes. */
+/* Team: chat background picture (UI EDIT). The picture itself comes from a
+   rule the store writes; a veil over it keeps messages readable in both
+   themes. */
 :root {
   --team-background-veil: #ffffffb8;
 }
@@ -26,9 +27,6 @@
   --team-background-veil: #000000a8;
 }
 :root[data-team-background="on"] [data-message-scroller] {
-  background-image:
-    linear-gradient(var(--team-background-veil), var(--team-background-veil)),
-    var(--team-chat-background);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

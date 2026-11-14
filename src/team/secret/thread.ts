@@ -273,7 +273,10 @@ export async function sealDraftText(draft: string, text: string) {
   if (!lock) throw new Error("잠금이 풀렸어요. 🔒를 다시 눌러 주세요.");
   const token = `${ROOT}${hex(lock.salt)}${await seal(lock.key, text)}${END}`;
   started.set(token, lock.key);
-  return `🔒 대외비 스레드 (SHIBALPOINT 앱에서 비밀번호로 열람) ${token}`;
+  // As in replies, @everyone / @all stay outside the ciphertext so they
+  // still notify; they say nothing about the content.
+  const groups = [...groupMentions(text)].map((group) => ` @${group}`).join("");
+  return `🔒 대외비 스레드 (SHIBALPOINT 앱에서 비밀번호로 열람) ${token}${groups}`;
 }
 
 /** Whether `name` is a confidential file, of a thread or an armed draft. */

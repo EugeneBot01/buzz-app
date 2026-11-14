@@ -197,9 +197,6 @@ export function displayStyle(settings: DisplaySettings) {
     ...darkSurfaces(settings.dark),
     // Empty leaves the app's own font.
     "--font-sans": font,
-    "--team-chat-background": settings.background
-      ? `url("${settings.background}")`
-      : "none",
   };
 }
 
