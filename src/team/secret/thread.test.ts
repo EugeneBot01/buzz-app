@@ -98,14 +98,21 @@ it("keeps @everyone / @all outside the ciphertext so they still notify", async (
 describe("🔒 armed draft", () => {
   it("sends text and files that open with the thread's password", async () => {
     const draft = lockDraftKey("scope", "channel");
-    await armDraft(draft, "secret-pass");
+    await armDraft(draft);
     expect(isArmed(draft)).toBe(true);
     const file = await sealDraftFile(
       draft,
       new File(["hello"], "plan.txt", { type: "text/plain" }),
     );
     expect(isLockedFileName(file.name)).toBe(true);
-    const sent = await sealDraftText(draft, "opening");
+    const sent = await sealDraftText(
+      draft,
+      "opening",
+      "3분기 계약",
+      "secret-pass",
+    );
+    expect(sent.startsWith("🔒 대외비 스레드 (3분기 계약) ")).toBe(true);
+    expect(sent).not.toContain("opening");
     const token = sent.match(THREAD_ROOT_TOKEN)?.[0] ?? "";
     const rootId = "f".repeat(64);
     registerRoot(rootId, token);
@@ -116,7 +123,15 @@ describe("🔒 armed draft", () => {
     expect(opened?.name).toBe("plan.txt");
     expect(new TextDecoder().decode(opened?.bytes)).toBe("hello");
     // @everyone still notifies: the group word stays outside the ciphertext.
-    expect(await sealDraftText(draft, "@everyone 회의")).toMatch(/ @everyone$/);
+    // Another device opens it with the password alone.
+    const other = "e".repeat(64);
+    registerRoot(other, token);
+    expect(await unlockThread(other, "wrong-pass")).toBeNull();
+    expect(await unlockThread(other, "secret-pass")).toBe("opening");
+    expect(lockedFileRoot(file.name)).toBeDefined();
+    expect(
+      await sealDraftText(draft, "@everyone 회의", "", "secret-pass"),
+    ).toMatch(/ @everyone$/);
     disarmDraft(draft);
     expect(isArmed(draft)).toBe(false);
   });

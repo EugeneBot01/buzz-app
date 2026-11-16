@@ -159,6 +159,7 @@ import {
   lockDraftKey,
   sealDraftFile,
   sealDraftText,
+  askSealDetails,
   sealedFor,
   sealFile,
   sealedThreadRefusal,
@@ -306,8 +307,7 @@ export type MessageComposerProps = {
   /** Threads supply their own retained rows; channels use the shared window. */
   editMessages?: readonly ChannelMessage[] | undefined;
   onOpenLink?:
-    | ((target: string, origin?: MessageLinkOrigin) => boolean)
-    | undefined;
+    ((target: string, origin?: MessageLinkOrigin) => boolean) | undefined;
   canOpenLink?: ((target: string) => boolean) | undefined;
   threadRootId?: string;
   /** The viewer's latest message in this thread, once the thread has loaded.
@@ -1732,8 +1732,7 @@ function Composer({
     const names = new Map(continued.map((c) => [normalizeName(c.name), c]));
     const longest = Math.max(...[...names.keys()].map((n) => n.length));
     let found:
-      | { remainder: string; resolve: CompletionPending["resolve"] }
-      | undefined;
+      { remainder: string; resolve: CompletionPending["resolve"] } | undefined;
     for (let end = chip.end + 1; end <= text.length; end++) {
       const remainder = text.slice(chip.end, end);
       const name = normalizeName(chip.name + remainder);
@@ -2381,8 +2380,7 @@ function Composer({
       setSending(true);
       setError(undefined);
       let outcomes:
-        | PromiseSettledResult<PendingRefusal | undefined>[]
-        | undefined;
+        PromiseSettledResult<PendingRefusal | undefined>[] | undefined;
       try {
         outcomes =
           (await Promise.race([
@@ -2632,8 +2630,17 @@ function Composer({
         content = await sealOutgoing(threadRootId, content);
         attempt.signal.throwIfAborted();
       } else if (lockKey && isArmed(lockKey)) {
-        // Buzz Team: the 🔒 draft goes out as a confidential thread's opener.
-        content = await sealDraftText(lockKey, content);
+        // Buzz Team: the 🔒 draft goes out as a confidential thread's opener,
+        // under the title and password asked for now.
+        const details = await askSealDetails(lockKey);
+        attempt.signal.throwIfAborted();
+        if (!details) return;
+        content = await sealDraftText(
+          lockKey,
+          content,
+          details.title,
+          details.password,
+        );
         attempt.signal.throwIfAborted();
         sentArmed.current = true;
       }
@@ -3056,6 +3063,7 @@ function Composer({
         ref={form}
         className={styles.composer}
         data-composer-surface=""
+        data-team-confidential={armedDraft || undefined}
         data-chat-presentation={chatPresentation || undefined}
         data-file-drag={dragging || undefined}
         data-editing={!!editing.target || undefined}

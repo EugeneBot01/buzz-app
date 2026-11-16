@@ -1,0 +1,15 @@
+/* Team build: the composer in confidential (🔒) mode. */
+[data-team-confidential] {
+  box-shadow: 0 0 0 2px var(--primary);
+  position: relative;
+}
+[data-team-confidential]::before {
+  content: "🔒 대외비 모드 · 글과 파일이 잠겨서 보내져요";
+  position: absolute;
+  top: -22px;
+  left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  pointer-events: none;
+}

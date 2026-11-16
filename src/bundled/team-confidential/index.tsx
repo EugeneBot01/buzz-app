@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import type React from "react";
 import type { PluginModule } from "../../plugins/api";
 import type {
   ComposerToolProps,
@@ -8,17 +9,16 @@ import { LockIcon } from "../../shared/design-system/icons/index";
 import { Button } from "../../shared/design-system/ui/Button";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { Input } from "../../shared/design-system/ui/Input";
-import {
-  PopoverPopup,
-  PopoverRoot,
-  PopoverTrigger,
-} from "../../shared/design-system/ui/Popover";
+import { Dialog } from "../../shared/design-system/ui/Dialog";
+import "./confidential.css";
 import {
   decryptSecret,
   MIN_PASSWORD,
   SECRET_TOKEN,
 } from "../../team/secret/secret";
 import {
+  answerSealAsk,
+  sealAskFor,
   armDraft,
   disarmDraft,
   isArmed,
@@ -41,9 +41,9 @@ export const inject = ["conversation"];
 const useUnlocked = (rootId: string | undefined) =>
   useSyncExternalStore(subscribeThreads, () => !!rootId && isUnlocked(rootId));
 
-/** 🔒 locks the channel's own draft: the member writes and attaches as usual,
- * and on send the text and files leave encrypted as a new confidential
- * thread. The password is asked when locking. */
+/** 🔒 turns the channel's own composer into confidential mode: the member
+ * writes and attaches as usual, every file is sealed as it is attached, and on
+ * send a title (shown to everyone) and a password are asked. */
 function SecretTool({
   disabled,
   scope,
@@ -52,125 +52,106 @@ function SecretTool({
 }: ComposerToolProps) {
   const draft = lockDraftKey(scope, channelId);
   const locked = useSyncExternalStore(subscribeThreads, () => isArmed(draft));
-  const [open, setOpen] = useState(false);
-  const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
-  // Focus moves into the popup, so the composer taking focus back on the
-  // first click does not close it straight away.
-  const field = useRef<HTMLInputElement>(null);
+  const asking = useSyncExternalStore(subscribeThreads, () =>
+    sealAskFor(draft),
+  );
   // Replies in a confidential thread are encrypted by the composer itself.
   if (threadRootId) return null;
-  const reset = () => {
-    setPassword("");
-    setStatus("");
+  const label = locked ? "대외비 모드 끄기" : "대외비 모드 켜기";
+  return (
+    <>
+      <IconButton
+        disabled={disabled}
+        size="toolbar"
+        type="button"
+        aria-label={label}
+        aria-pressed={locked}
+        title={label}
+        style={
+          locked
+            ? { color: "var(--primary)", background: "var(--surface-accent)" }
+            : undefined
+        }
+        icon={<LockIcon size={20} aria-hidden="true" />}
+        onClick={() => {
+          if (locked) disarmDraft(draft);
+          else void armDraft(draft);
+        }}
+      />
+      {asking && <SealDialog />}
+    </>
+  );
+}
+
+function SealDialog() {
+  const [title, setTitle] = useState("");
+  const [password, setPassword] = useState("");
+  const [again, setAgain] = useState("");
+  const ready = password.length >= MIN_PASSWORD && password === again;
+  const send = () => {
+    if (ready) answerSealAsk({ title, password });
   };
-  const lock = async () => {
-    setBusy(true);
-    try {
-      await armDraft(draft, password);
-      reset();
-      setOpen(false);
-    } catch (reason) {
-      setStatus(reason instanceof Error ? reason.message : "잠그지 못했어요.");
-    } finally {
-      setBusy(false);
+  const enter = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      send();
     }
   };
-  const label = locked ? "대외비 잠금 켜짐" : "대외비로 잠가서 보내기";
   return (
-    <PopoverRoot
-      open={open && !disabled}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) reset();
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) answerSealAsk(null);
       }}
+      size="compact"
+      title="🔒 대외비로 보내기"
+      description="다른 사람에게는 제목만 보이고, 글과 사진·영상·파일은 비밀번호를 넣어야 열려요."
+      actions={
+        <>
+          <Button variant="subtle" onClick={() => answerSealAsk(null)}>
+            취소
+          </Button>
+          <Button disabled={!ready} onClick={send}>
+            잠가서 보내기
+          </Button>
+        </>
+      }
     >
-      <PopoverTrigger
-        render={
-          <IconButton
-            disabled={disabled}
-            size="toolbar"
-            type="button"
-            aria-label={label}
-            aria-pressed={locked}
-            title={label}
-            style={
-              locked
-                ? {
-                    color: "var(--primary)",
-                    background: "var(--surface-accent)",
-                  }
-                : undefined
-            }
-            icon={<LockIcon size={20} aria-hidden="true" />}
-          />
-        }
-      />
-      <PopoverPopup
-        side="top"
-        aria-label={label}
-        size="wide"
-        initialFocus={locked ? undefined : field}
-      >
-        <div className="flex flex-col gap-2" data-no-translate="">
-          {locked ? (
-            <>
-              <p className="text-sm">
-                🔒 잠금이 켜져 있어요. 지금 쓰는 글과 파일은 보낼 때 잠겨서
-                대외비 스레드로 올라가요.
-              </p>
-              <Button
-                type="button"
-                variant="subtle"
-                onClick={() => {
-                  disarmDraft(draft);
-                  setOpen(false);
-                }}
-              >
-                잠금 끄기 (일반 메시지로)
-              </Button>
-            </>
-          ) : (
-            <>
-              <Input
-                ref={field}
-                type="password"
-                autoComplete="new-password"
-                aria-label="비밀번호"
-                placeholder={`비밀번호 (${MIN_PASSWORD}자 이상)`}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.nativeEvent.isComposing &&
-                    password.length >= MIN_PASSWORD
-                  ) {
-                    event.preventDefault();
-                    void lock();
-                  }
-                }}
-              />
-              <p className="text-xs text-muted">
-                평소처럼 글을 쓰고 파일을 첨부한 뒤 보내면, 글과 파일이 이
-                비밀번호로 잠겨서 대외비 스레드가 돼요. 답글도 모두 자동으로
-                잠겨요. 비밀번호는 Buzz 밖에서 전달하세요. 잃어버리면 아무도 열
-                수 없어요.
-              </p>
-              {status && <p role="alert">{status}</p>}
-              <Button
-                type="button"
-                disabled={busy || password.length < MIN_PASSWORD}
-                onClick={() => void lock()}
-              >
-                {busy ? "잠그는 중…" : "🔒 잠금 켜기"}
-              </Button>
-            </>
-          )}
-        </div>
-      </PopoverPopup>
-    </PopoverRoot>
+      <div className="flex flex-col gap-2" data-no-translate="">
+        <Input
+          autoFocus
+          aria-label="보여질 제목"
+          placeholder="보여질 제목 (예: 3분기 계약 건)"
+          maxLength={60}
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          onKeyDown={enter}
+        />
+        <Input
+          type="password"
+          autoComplete="new-password"
+          aria-label="비밀번호"
+          placeholder={`비밀번호 (${MIN_PASSWORD}자 이상)`}
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          onKeyDown={enter}
+        />
+        <Input
+          type="password"
+          autoComplete="new-password"
+          aria-label="비밀번호 확인"
+          placeholder="비밀번호 한 번 더"
+          value={again}
+          onChange={(event) => setAgain(event.target.value)}
+          onKeyDown={enter}
+        />
+        <p className="text-xs text-muted">
+          {again && password !== again
+            ? "비밀번호가 서로 달라요."
+            : "비밀번호는 Buzz 밖에서 전달하세요. 잃어버리면 아무도 열 수 없어요. 답글도 모두 자동으로 잠겨요."}
+        </p>
+      </div>
+    </Dialog>
   );
 }
 
@@ -268,6 +249,9 @@ function ThreadRoot({
   open(target: string): boolean;
 }) {
   const token = text.match(new RegExp(THREAD_ROOT_TOKEN.source))?.[0] ?? text;
+  const named = text.match(/^🔒 대외비 스레드 \(([^()\n]{1,60})\) /)?.[1];
+  const title =
+    named && !named.startsWith("SHIBALPOINT 앱에서") ? named : undefined;
   useEffect(() => registerRoot(message.id, token), [message.id, token]);
   const unlocked = useUnlocked(message.id);
   const [opened, setOpened] = useState<string | null>(null);
@@ -283,7 +267,7 @@ function ThreadRoot({
     >
       <span className="flex items-center gap-2 font-medium">
         <LockIcon size={16} aria-hidden="true" />
-        대외비 스레드
+        {title ?? "대외비 스레드"}
         <span className="text-muted text-xs font-normal">
           {shown ? "열림 · 이 기기에서만 보여요" : "잠김"}
         </span>

@@ -8,18 +8,29 @@ import { groupMentions } from "../mentions/group-mentions";
 import { hex, keyFrom, MIN_PASSWORD, unhex } from "./secret";
 
 const ROOT = "BUZZTHREAD1";
+/** Team build: a draft's own random key, wrapped by the password at send. */
+const ROOT2 = "BUZZTHREAD2";
+
 const REPLY = "BUZZSEAL1";
 const END = "Z";
 const SALT = 16;
 const IV = 12;
+/** A wrapped 32-byte draft key: IV, ciphertext and GCM tag. */
+const WRAPPED = IV + 32 + 16;
 
 // Hex only, so Markdown can never split a token.
-export const THREAD_ROOT_TOKEN = new RegExp(`${ROOT}[0-9a-f]+${END}`, "g");
+export const THREAD_ROOT_TOKEN = new RegExp(
+  `BUZZTHREAD[12][0-9a-f]+${END}`,
+  "g",
+);
 export const THREAD_REPLY_TOKEN = new RegExp(`${REPLY}[0-9a-f]+${END}`, "g");
 
 type Root = Readonly<{
   salt: Uint8Array<ArrayBuffer>;
   sealed: Uint8Array<ArrayBuffer>;
+  /** Version 2: the draft key's id (in file names) and its wrapped bytes. */
+  id?: Uint8Array<ArrayBuffer>;
+  wrapped?: Uint8Array<ArrayBuffer>;
 }>;
 
 const roots = new Map<string, Root>();
@@ -83,12 +94,23 @@ export async function startThread(text: string, password: string) {
 /** Called for each rendered opening message, so its thread counts as sealed. */
 export function registerRoot(rootId: string, token: string) {
   if (roots.has(rootId)) return;
-  const bytes = parse(token, ROOT);
-  if (!bytes || bytes.length <= SALT + IV) return;
-  roots.set(rootId, {
-    salt: bytes.slice(0, SALT),
-    sealed: bytes.slice(SALT),
-  });
+  const v2 = parse(token, ROOT2);
+  if (v2) {
+    if (v2.length <= SALT * 2 + WRAPPED + IV) return;
+    roots.set(rootId, {
+      id: v2.slice(0, SALT),
+      salt: v2.slice(SALT, SALT * 2),
+      wrapped: v2.slice(SALT * 2, SALT * 2 + WRAPPED),
+      sealed: v2.slice(SALT * 2 + WRAPPED),
+    });
+  } else {
+    const bytes = parse(token, ROOT);
+    if (!bytes || bytes.length <= SALT + IV) return;
+    roots.set(rootId, {
+      salt: bytes.slice(0, SALT),
+      sealed: bytes.slice(SALT),
+    });
+  }
   const key = started.get(token);
   if (key) {
     started.delete(token);
@@ -111,13 +133,40 @@ export const isUnlocked = (rootId: string) => keys.has(rootId);
 export async function unlockThread(rootId: string, password: string) {
   const root = roots.get(rootId);
   if (!root) return null;
-  const key = await keyFrom(password, root.salt);
+  const key = await rootKey(root, password);
+  if (!key) return null;
   const text = await open(key, root.sealed);
   if (text === null) return null;
   keys.set(rootId, key);
   changed();
   return text;
 }
+
+/** Version 1 keys come from the password; version 2 unwraps the draft key. */
+async function rootKey(root: Root, password: string) {
+  const kek = await keyFrom(password, root.salt);
+  if (!root.wrapped) return kek;
+  const raw = await openBytes(kek, root.wrapped);
+  if (!raw || raw.length !== 32) return null;
+  return importDraftKey(raw);
+}
+
+async function openBytes(key: CryptoKey, bytes: Uint8Array<ArrayBuffer>) {
+  try {
+    return new Uint8Array(
+      await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: bytes.slice(0, IV) },
+        key,
+        bytes.slice(IV),
+      ),
+    );
+  } catch {
+    return null;
+  }
+}
+
+const importDraftKey = (raw: Uint8Array<ArrayBuffer>) =>
+  crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 
 export async function openRoot(rootId: string) {
   const root = roots.get(rootId);
@@ -230,7 +279,11 @@ export async function sealOutgoing(rootId: string | undefined, text: string) {
  * given when arming. Files carry the salt in their name, since the thread's
  * id does not exist until the opening message is sent.
  */
-type Armed = Readonly<{ salt: Uint8Array<ArrayBuffer>; key: CryptoKey }>;
+type Armed = Readonly<{
+  id: Uint8Array<ArrayBuffer>;
+  raw: Uint8Array<ArrayBuffer>;
+  key: CryptoKey;
+}>;
 const armed = new Map<string, Armed>();
 const DRAFT_FILE = /^locked\.([0-9a-f]{32})\.buzzlock$/;
 
@@ -238,11 +291,16 @@ const DRAFT_FILE = /^locked\.([0-9a-f]{32})\.buzzlock$/;
 export const lockDraftKey = (scope: string, channelId: string) =>
   `${scope}\u0000${channelId}`;
 
-export async function armDraft(draft: string, password: string) {
-  if (password.length < MIN_PASSWORD)
-    throw new Error(`비밀번호는 ${MIN_PASSWORD}자 이상이어야 해요`);
-  const salt = crypto.getRandomValues(new Uint8Array(SALT));
-  armed.set(draft, { salt, key: await keyFrom(password, salt) });
+/** Confidential mode on: a fresh random key seals what is attached. The
+ * password is asked only when sending, and wraps this key. */
+export async function armDraft(draft: string) {
+  if (armed.has(draft)) return;
+  const raw = crypto.getRandomValues(new Uint8Array(32));
+  armed.set(draft, {
+    id: crypto.getRandomValues(new Uint8Array(SALT)),
+    raw,
+    key: await importDraftKey(raw),
+  });
   changed();
 }
 
@@ -255,28 +313,80 @@ export function disarmDraft(draft: string) {
 /** A file for an armed draft, encrypted before anything uploads it. */
 export async function sealDraftFile(draft: string, file: File) {
   const lock = armed.get(draft);
-  if (!lock) throw new Error("잠금이 풀렸어요. 🔒를 다시 눌러 주세요.");
+  if (!lock) throw new Error("대외비 모드가 꺼졌어요. 🔒를 다시 눌러 주세요.");
   if (file.size > SEALED_FILE_MAX) throw new Error("파일이 너무 커요.");
   const sealed = new File(
     [await sealBytes(lock.key, file)],
-    `locked.${hex(lock.salt)}.buzzlock`,
+    `locked.${hex(lock.id)}.buzzlock`,
     { type: "application/octet-stream" },
   );
   sealedFiles.set(sealed, draft);
   return sealed;
 }
 
-/** The armed draft's opening message: the card token for `text`. This device
- * stays unlocked for the thread once its message arrives. */
-export async function sealDraftText(draft: string, text: string) {
+/** One line, so the card can find it again; never part of the ciphertext. */
+export const cleanTitle = (title: string) =>
+  title
+    .replace(/[\s()]+/g, " ")
+    .trim()
+    .slice(0, 60);
+
+/** The armed draft's opening message. Others see only `title`; the text and
+ * the draft key open with `password`. This device stays unlocked. */
+export async function sealDraftText(
+  draft: string,
+  text: string,
+  title: string,
+  password: string,
+) {
   const lock = armed.get(draft);
-  if (!lock) throw new Error("잠금이 풀렸어요. 🔒를 다시 눌러 주세요.");
-  const token = `${ROOT}${hex(lock.salt)}${await seal(lock.key, text)}${END}`;
+  if (!lock) throw new Error("대외비 모드가 꺼졌어요. 🔒를 다시 눌러 주세요.");
+  if (password.length < MIN_PASSWORD)
+    throw new Error(`비밀번호는 ${MIN_PASSWORD}자 이상이어야 해요`);
+  const salt = crypto.getRandomValues(new Uint8Array(SALT));
+  const kek = await keyFrom(password, salt);
+  const wrapped = await sealRaw(kek, lock.raw);
+  const token = `${ROOT2}${hex(lock.id)}${hex(salt)}${hex(wrapped)}${await seal(lock.key, text)}${END}`;
   started.set(token, lock.key);
   // As in replies, @everyone / @all stay outside the ciphertext so they
   // still notify; they say nothing about the content.
   const groups = [...groupMentions(text)].map((group) => ` @${group}`).join("");
-  return `🔒 대외비 스레드 (SHIBALPOINT 앱에서 비밀번호로 열람) ${token}${groups}`;
+  const shown = cleanTitle(title) || "SHIBALPOINT 앱에서 비밀번호로 열람";
+  return `🔒 대외비 스레드 (${shown}) ${token}${groups}`;
+}
+
+async function sealRaw(key: CryptoKey, bytes: Uint8Array<ArrayBuffer>) {
+  const iv = crypto.getRandomValues(new Uint8Array(IV));
+  const body = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, bytes);
+  const out = new Uint8Array(IV + body.byteLength);
+  out.set(iv);
+  out.set(new Uint8Array(body), IV);
+  return out;
+}
+
+/** At send, the composer asks the 🔒 tool for the title and password. */
+export type SealDetails = Readonly<{ title: string; password: string }>;
+type SealAsk = Readonly<{
+  draft: string;
+  resolve: (details: SealDetails | null) => void;
+}>;
+let asking: SealAsk | null = null;
+
+export function askSealDetails(draft: string) {
+  asking?.resolve(null);
+  return new Promise<SealDetails | null>((resolve) => {
+    asking = { draft, resolve };
+    changed();
+  });
+}
+
+export const sealAskFor = (draft: string) => asking?.draft === draft;
+
+export function answerSealAsk(details: SealDetails | null) {
+  const current = asking;
+  asking = null;
+  current?.resolve(details);
+  changed();
 }
 
 /** Whether `name` is a confidential file, of a thread or an armed draft. */
@@ -290,6 +400,6 @@ export function lockedFileRoot(name: string | undefined) {
   const salt = name?.match(DRAFT_FILE)?.[1];
   if (!salt) return undefined;
   for (const [rootId, root] of roots)
-    if (hex(root.salt) === salt) return rootId;
+    if (hex(root.id ?? root.salt) === salt) return rootId;
   return undefined;
 }
