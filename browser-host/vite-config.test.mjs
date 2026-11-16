@@ -346,13 +346,13 @@ it("loads the broker's Vite config without native-compatibility warnings", () =>
         VITE_CONFIG_NATIVE_IGNORE_WARNING: "",
       },
       encoding: "utf8",
-      timeout: 30_000,
+      timeout: 120_000, // Team: shared CI runners are slower.
     },
   );
   expect(result.error).toBeUndefined();
   expect(result.status, result.stderr).toBe(0);
   expect(result.stderr).not.toContain("configLoader: 'native'");
-}, 35_000);
+}, 125_000);
 
 it("refuses exposed Vite servers before reading identity and serves the broker on loopback", async () => {
   const directory = mkdtempSync(join(tmpdir(), "buzz-broker-listener-"));
