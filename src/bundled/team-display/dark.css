@@ -54,8 +54,12 @@ html[data-team-bubbles="on"]
   margin-inline-start: auto;
   border-top-left-radius: 14px;
   border-top-right-radius: 4px;
-  background: var(--primary);
-  color: var(--on-primary);
+  /* The sidebar's selected colour is the theme accent the member chose. */
+  background: var(--surface-sidebar-selected);
+  color: var(--text-sidebar-selected);
+  --mention-fill: color-mix(in srgb, currentColor 18%, transparent);
+  --mention-text: currentColor;
+  --message-link: currentColor;
 }
 html[data-team-bubbles="on"] [data-message-action-anchor][data-own] a,
 html[data-team-bubbles="on"] [data-message-action-anchor][data-own] code {
