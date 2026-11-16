@@ -1,15 +1,22 @@
-/* Team build: the composer in confidential (🔒) mode. */
+/* Team build: the composer in confidential (🔒) mode. The label sits inside
+   the composer's own top edge, so nothing above it is covered. */
 [data-team-confidential] {
   box-shadow: 0 0 0 2px var(--primary);
   position: relative;
+  padding-top: 22px;
 }
 [data-team-confidential]::before {
   content: "🔒 대외비 모드 · 글과 파일이 잠겨서 보내져요";
   position: absolute;
-  top: -22px;
-  left: 8px;
-  font-size: 12px;
+  top: 6px;
+  left: 14px;
+  font-size: 11px;
+  line-height: 14px;
   font-weight: 600;
   color: var(--primary);
   pointer-events: none;
+}
+[data-team-confidential] button[aria-pressed="true"][aria-label="대외비 모드 끄기"] {
+  color: var(--primary);
+  background: var(--surface-accent);
 }

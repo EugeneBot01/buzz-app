@@ -1406,9 +1406,11 @@ function Composer({
       .then((sealed) => {
         if (!live.current) return;
         attachments.store.add(sealed);
-        refuseAttachment(
-          "먼저 첨부한 파일을 잠근 파일로 바꿨어요. 원본은 잠그기 전에 서버에 한 번 올라갔을 수 있어요. 민감한 파일은 🔒를 먼저 누르고 첨부해 주세요.",
-        );
+        setAttachmentError({
+          title: "🔒 파일을 잠갔어요",
+          description:
+            "먼저 첨부한 파일을 잠근 파일로 바꿨어요. 원본은 잠그기 전에 서버에 한 번 올라갔을 수 있어요. 민감한 파일은 🔒를 먼저 누르고 첨부해 주세요.",
+        });
       })
       .catch((reason: unknown) => {
         if (live.current)
