@@ -740,38 +740,6 @@ function TeamProfiles({
   );
 }
 
-/** Temporary: what the bubble look sees on this machine. */
-function BubbleDiagnosis() {
-  const [text, setText] = useState("");
-  useEffect(() => {
-    const root = document.documentElement;
-    const own = document.querySelector<HTMLElement>(
-      "[data-message-action-anchor][data-own]",
-    );
-    const any = document.querySelector<HTMLElement>(
-      "[data-message-action-anchor]",
-    );
-    const look = (el: HTMLElement | null) => {
-      if (!el) return "없음";
-      const style = getComputedStyle(el);
-      return `${el.tagName}.${el.className.slice(0, 30)} own=${el.dataset.own ?? "-"} bg=${style.backgroundColor} r=${style.borderTopRightRadius}`;
-    };
-    const sheets = [...document.styleSheets].some((sheet) => {
-      try {
-        return [...sheet.cssRules].some((rule) =>
-          rule.cssText.includes("team-bubbles"),
-        );
-      } catch {
-        return false;
-      }
-    });
-    setText(
-      `진단 · html=${root.dataset.teamBubbles ?? "없음"} dark=${root.dataset.teamDark ?? "없음"} css=${sheets} bubbles=${displaySettings.bubbles()} · 내것: ${look(own)} · 아무거나: ${look(any)}`,
-    );
-  }, []);
-  return <p className="text-xs break-all opacity-70">{text}</p>;
-}
-
 function UiEditCard({
   pages,
   relay,
@@ -789,7 +757,6 @@ function UiEditCard({
   const settings = useSettings();
   return (
     <div className="flex flex-col gap-6 text-sm">
-      <BubbleDiagnosis />
       <Preview />
       <section aria-label="모양">
         <InlineHeader

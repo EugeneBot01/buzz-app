@@ -46,7 +46,11 @@ html[data-team-bubbles="on"]
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
-html[data-team-bubbles="on"] [data-message-action-anchor][data-own] {
+/* Same :not() weight as the base bubble rule, so mine always wins. */
+html[data-team-bubbles="on"]
+  [data-message-action-anchor][data-own]:not([data-emoji-only]):not(
+    [data-diff-only]
+  ) {
   margin-inline-start: auto;
   border-top-left-radius: 14px;
   border-top-right-radius: 4px;
