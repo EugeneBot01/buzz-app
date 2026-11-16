@@ -445,6 +445,11 @@ function MessageRowContent({
     displaySettings.bubbles,
     () => false,
   );
+  // Team build: in bubbles, a long message folds behind "전체보기".
+  const [expanded, setExpanded] = useState(false);
+  const longText =
+    bubbles &&
+    (row.content.length > 280 || row.content.split("\n").length > 6);
   // Own-message surface colours apply to a bubble, never to a shown thread root.
   const ownBubble =
     bubbles &&
@@ -1350,6 +1355,7 @@ function MessageRowContent({
                   data-emoji-only={emojiOnly || undefined}
                   data-diff-only={!!row.diff || undefined}
                   data-own={ownBubble || undefined}
+                  data-team-collapsed={(longText && !expanded) || undefined}
                 >
                   {timeReply && (
                     <div className={styles.mediaTimeLink} data-media-timecode>
@@ -1391,6 +1397,18 @@ function MessageRowContent({
                     </MessageCard>
                   ) : (
                     body
+                  )}
+                  {longText && (
+                    <button
+                      type="button"
+                      data-team-more=""
+                      data-buzz-ui=""
+                      aria-expanded={expanded}
+                      onClick={() => setExpanded((open) => !open)}
+                    >
+                      <span>{expanded ? "접기" : "전체보기"}</span>
+                      <span aria-hidden="true">{expanded ? "⌃" : "›"}</span>
+                    </button>
                   )}
                   {editedInBubble && shown.edited && <EditedMarker />}
                   {reactionsInBubble && reactionContent}

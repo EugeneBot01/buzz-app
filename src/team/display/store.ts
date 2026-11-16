@@ -50,6 +50,7 @@ function apply(settings: DisplaySettings) {
   // 0% keeps the app's own dark colors untouched.
   root.dataset.teamDark = settings.dark > 0 ? "on" : "off";
   root.dataset.teamBackground = settings.background ? "on" : "off";
+  root.dataset.teamBubbles = settings.bubbles ? "on" : "off";
   showBackground(settings.background);
 }
 
@@ -115,6 +116,7 @@ export const displaySettings = {
         root.style.removeProperty(name);
       delete root.dataset.teamDark;
       delete root.dataset.teamBackground;
+      delete root.dataset.teamBubbles;
       showBackground(null);
       notify();
     };
