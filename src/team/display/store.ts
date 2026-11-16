@@ -42,6 +42,7 @@ let last: string | null | undefined;
 let workspace: unknown;
 let workspaceRead = false;
 let active = false;
+let runs = 0;
 
 function apply(settings: DisplaySettings) {
   const root = document.documentElement;
@@ -106,10 +107,14 @@ export const displaySettings = {
   },
   /** Shows the saved choices; returns how to undo them when the plugin stops. */
   start() {
+    // The plugin can restart with the old run's undo arriving after the new
+    // run began; only the latest run may undo, or the look vanishes.
+    const run = ++runs;
     active = true;
     apply(displaySettings.snapshot());
     notify();
     return () => {
+      if (run !== runs) return;
       active = false;
       const root = document.documentElement;
       for (const name of Object.keys(displayStyle(displaySettings.snapshot())))
