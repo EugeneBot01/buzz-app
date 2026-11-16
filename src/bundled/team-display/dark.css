@@ -81,3 +81,10 @@ html[data-team-bubbles="on"] [data-viewer-message] {
   opacity: 0.85;
   cursor: pointer;
 }
+/* A card inside a bubble keeps a readable width instead of one word a line. */
+html[data-team-bubbles="on"] [data-team-card] {
+  min-width: min(16rem, 100%);
+}
+html[data-team-bubbles="on"] [data-message-action-anchor]:has([data-team-card]) {
+  min-width: min(18rem, 62%);
+}

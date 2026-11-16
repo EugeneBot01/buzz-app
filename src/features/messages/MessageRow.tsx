@@ -449,11 +449,13 @@ function MessageRowContent({
   const [expanded, setExpanded] = useState(false);
   const longText =
     bubbles &&
-    (row.content.length > 280 || row.content.split("\n").length > 6);
+    // Sealed tokens are long but show as a short card, so they don't count.
+    (row.content.replace(/\S{80,}/g, "").length > 280 ||
+      row.content.split("\n").length > 6);
   // Own-message surface colours apply to a bubble, never to a shown thread root.
+  // UI EDIT bubbles apply at every message density.
   const ownBubble =
     bubbles &&
-    !flat &&
     !shownRow &&
     !row.workflowOwnerId &&
     !!viewer &&
@@ -1138,8 +1140,7 @@ function MessageRowContent({
         data-stack-previous={stackPrevious || undefined}
         data-stack-next={stackNext || undefined}
         data-viewer-message={
-          !flat &&
-          (alignViewer || bubbles) &&
+          (bubbles || (!flat && alignViewer)) &&
           !row.workflowOwnerId &&
           row.authorId === viewer
             ? ""
