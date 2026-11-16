@@ -2,7 +2,7 @@ import { afterEach, expect, it } from "vitest";
 import { createRelaySession } from "./session";
 import { createThreadView } from "./threads";
 import { ReadError } from "./errors";
-import type { RelayEvent } from "./events";
+import type { ReadFilter, RelayEvent } from "./events";
 import type { LiveCallbacks } from "./live";
 import {
   bounds,
@@ -112,6 +112,51 @@ it("retains the selected reply beyond traversal limits without using it as a cur
   ]);
 });
 
+it("admits passive label lookups in the background, so an opened thread's read starts at once", async () => {
+  const h = setup();
+  const linked = [1, 2, 3].map((n) =>
+    message(alice, "a", `Linked ${n}`, n + 1),
+  );
+  const labels = linked.map((target) =>
+    h.session.thread("a", target.id, { exact: true, priority: "background" }),
+  );
+  const held = labels.map((label) => label.refresh());
+  await flush();
+  const ids = () => h.pending.map((wire) => wire.filters[0]?.ids);
+  // Background reads run one at a time; the other two wait their turn.
+  expect(ids()).toEqual([[linked[0]?.id]]);
+  expect(labels.map((label) => label.snapshot().status)).toEqual([
+    "loading",
+    "loading",
+    "loading",
+  ]);
+  // The opened thread's reads are never queued behind the held label reads.
+  const take = (match: (filter: ReadFilter) => boolean) => {
+    const at = h.pending.findIndex(({ filters: [filter] }) =>
+      filter === undefined ? false : match(filter),
+    );
+    const [wire] = at < 0 ? [] : h.pending.splice(at, 1);
+    if (!wire) throw new Error("No matching pending query");
+    return wire;
+  };
+  const opened = h.view.refresh();
+  await flush();
+  expect(ids()).toEqual([[linked[0]?.id], [reply.id]]);
+  take((filter) => filter.ids?.[0] === reply.id).respond([reply]);
+  await flush();
+  take((filter) => filter["#e"]?.[0] === reply.id).respond([]);
+  await flush();
+  take((filter) => filter.ids?.[0] === root.id).respond([root]);
+  await opened;
+  expect(h.view.snapshot()).toMatchObject({
+    targetStatus: "ready",
+    target: { id: reply.id },
+  });
+  expect(ids()).toEqual([[linked[0]?.id]]);
+  for (const label of labels) label.dispose();
+  await Promise.all(held);
+});
+
 it("folds reference-only edits and deletes of overlays before exposing the target", async () => {
   const h = setup();
   const loading = h.view.refresh();
@@ -151,6 +196,11 @@ it("keeps an accessible reply when the original is unavailable, without a compos
     targetStatus: "ready",
     target: { id: reply.id },
   });
+  expect(h.view.snapshot().replies.map((row) => row.id)).toEqual([reply.id]);
+  // A sibling reply arriving later stays hidden: only the target shows.
+  h.traffic.receive([
+    message(alice, "a", "Sibling reply", 10002, [["e", root.id, "", "reply"]]),
+  ]);
   expect(h.view.snapshot().replies.map((row) => row.id)).toEqual([reply.id]);
 });
 

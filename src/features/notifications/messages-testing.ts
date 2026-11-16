@@ -1,3 +1,4 @@
+import { createLocalAgentActivity } from "../agents/local-activity";
 import { bindNames } from "../identity-names/service";
 import { channelAlertLevels } from "../../team/notifications/channel-levels";
 import { createAgentDirectory } from "../identity-names/testing";
@@ -139,6 +140,7 @@ export async function setup(
       },
     },
     {
+      readStateFloor: () => 0,
       identityNames: {
         register() {},
         bind: (source) =>
@@ -156,6 +158,7 @@ export async function setup(
           }
         : {}),
       readStateStorage: {
+        capture: async () => structuredClone(readState),
         async update(change) {
           await (typeof readBarrier === "function"
             ? readBarrier()
@@ -237,7 +240,12 @@ export async function setup(
     discover();
     void owner.session.unread.ensure();
   }
-  const stop = bindMessageNotifications(notifications, communities);
+  const activity = createLocalAgentActivity();
+  const stop = bindMessageNotifications(
+    notifications,
+    communities,
+    activity.reader,
+  );
   cleanups.push(stop);
   await flush();
   // Names retain owner inventory independently of notification/roster startup.
@@ -257,6 +265,7 @@ export async function setup(
     ]);
   return {
     owner,
+    activity,
     notifications,
     navigation,
     emit,

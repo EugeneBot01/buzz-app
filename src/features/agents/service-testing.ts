@@ -1,3 +1,5 @@
+import type { IdentityAttest } from "../relay/identity-archives";
+import type { OwnerProof } from "./relay-removal";
 // The agents service's relay, communities and native fakes, shared by its
 // tests. `steps` records the order of cleanup steps the fakes take.
 import { vi } from "vitest";
@@ -20,6 +22,10 @@ export const other = "b".repeat(64);
 export const bot = "c".repeat(64);
 export const sibling = "d".repeat(64);
 export const channel = "0b8e2a3c-1d4f-4a5b-8c6d-7e8f9a0b1c2d";
+/** A public channel the owner is in and the agent is not. */
+export const lobby = "1c9f3b4d-2e5a-4b6c-9d7e-8f9a0b1c2d3e";
+/** A public channel neither is in. */
+export const plaza = "2d0a4c5e-3f6b-4c7d-8e8f-9a0b1c2d3e4f";
 export const dm = "dm-with-bot";
 export const groupDm = "dm-with-bot-and-other";
 export const event = (id: string, patch: Partial<RelayEvent> = {}) =>
@@ -40,17 +46,21 @@ export function fakeRelay(origin = "https://relay.example.test") {
   const replays = new Set<LiveListener>();
   const changes = new Set<() => void>();
   const rosterChanges = new Set<() => void>();
+  const attended = new Set<readonly string[]>();
   // The agent is in `channel`, `dm` and `groupDm`; `private` is the owner's
   // alone, and `dm-others` and `dm-unknown` are DMs it is not known to be in
   // (discovery emits an empty roster, never a missing one). `saved` has only a
-  // roster loaded from disk, not yet confirmed by the relay.
+  // roster loaded from disk, not yet confirmed by the relay. `lobby` is
+  // public, and the agent is not in it.
   const rows: {
     id: string;
     name?: string;
     channelType?: "dm";
+    visibility?: "public";
     members: string[];
     cached?: true;
   }[] = [
+    { id: lobby, name: "lobby", visibility: "public", members: [viewer] },
     { id: channel, name: "general", members: [viewer, bot] },
     { id: "private", name: "private", members: [viewer] },
     { id: dm, channelType: "dm", members: [viewer, bot] },
@@ -64,7 +74,7 @@ export function fakeRelay(origin = "https://relay.example.test") {
     archived,
     /** The last read did not finish, as when its session closed. */
     unknown: false,
-    /** The community has no archives at all. */
+    /** The community advertises no archive authority. */
     unavailable: false,
     snapshot() {
       return { status: this.unavailable ? "unavailable" : "ready" };
@@ -83,17 +93,33 @@ export function fakeRelay(origin = "https://relay.example.test") {
       return archived.has(pubkey) ? "archived" : "not-archived";
     },
     writable: true,
-    request: vi.fn(async (action: string, pubkey: string) => {
-      steps.push(action);
-      if (action === "archive") archived.add(pubkey);
-      else archived.delete(pubkey);
-    }),
+    request: vi.fn(
+      async (
+        action: string,
+        pubkey: string,
+        _signal?: AbortSignal,
+        _issue?: OwnerProof,
+        _attest?: IdentityAttest,
+      ) => {
+        steps.push(action);
+        if (action === "archive") archived.add(pubkey);
+        else archived.delete(pubkey);
+      },
+    ),
   };
   let status = "connected";
+  /** Channels the session does not know yet, attended or not. */
+  const pending = new Set<string>();
+  /** Channels of the list live does not route. */
+  const unrouted = new Set<string>();
+  /** Channels it knows only from agents' lookups. */
+  const learned = new Set<string>();
+  /** Channels the viewer has open, live as the list's are. */
+  const opened = new Set<string>();
   const statuses = new Set<() => void>();
   /** The viewer's kind 30177 records the community returns. */
   const listed: RelayEvent[] = [];
-  /** The kind 9 messages it stores, which catch-up reads. */
+  /** The events it stores, which catch-up reads. */
   const history: RelayEvent[] = [];
   /** Each agent's `core` memory as the community holds it. */
   const memories = new Map<string, string>();
@@ -109,9 +135,24 @@ export function fakeRelay(origin = "https://relay.example.test") {
         };
       }),
     },
-    read: vi.fn(async (filters: readonly ReadFilter[]) =>
-      filters[0]?.kinds?.includes(9) ? page(history, filters[0]) : [...listed],
-    ),
+    read: vi.fn(async (filters: readonly ReadFilter[]) => {
+      // As the session's reader refuses it.
+      if (
+        filters.some((filter) => !filter.kinds?.length && !filter.ids?.length)
+      )
+        throw new Error("Relay reads need valid kinds or event IDs");
+      // A catch-up read is bounded on both sides; it may ask for any kinds.
+      // The session drops a channel's events until it knows the channel.
+      return filters[0]?.kinds?.includes(9) ||
+        (filters[0]?.since !== undefined && filters[0]?.until !== undefined)
+        ? page(history, filters[0]).filter(
+            ({ tags }) =>
+              !tags.some(
+                ([key, value]) => key === "h" && pending.has(value ?? ""),
+              ),
+          )
+        : [...listed];
+    }),
     readRemote: vi.fn(async (filters: readonly ReadFilter[]) => {
       const ids = filters[0]?.ids ?? [];
       return history.filter((event) => ids.includes(event.id));
@@ -128,9 +169,46 @@ export function fakeRelay(origin = "https://relay.example.test") {
         rosterChanges.add(listener);
         return () => rosterChanges.delete(listener);
       },
+      // Public, and neither the owner nor the agent is in it.
+      get: (id: string) =>
+        id === plaza
+          ? {
+              id,
+              name: id,
+              visibility: "public",
+              readOnly: true,
+              members: [other],
+            }
+          : undefined,
     },
+    /** Each list of channels an `attend` keeps live, while it does. */
+    attend: vi.fn((ids: readonly string[]) => {
+      attended.add(ids);
+      return () => attended.delete(ids);
+    }),
+    attendPending: (id: string) => pending.has(id),
+    // The list's channels are the viewer's; attended ones live only for agents.
+    unattended: (id: string, live: boolean) =>
+      rows.some((row) => row.id === id) ||
+      opened.has(id) ||
+      (!learned.has(id) &&
+        (!live || ![...attended].some((ids) => ids.includes(id)))),
     live: {
-      snapshot: () => ({ status }),
+      // Each channel of the list is live while connected, unless `unrouted`.
+      snapshot: () => ({
+        status,
+        routes:
+          status === "connected"
+            ? rows
+                .filter(({ id }) => !unrouted.has(id))
+                .map(({ id }) => ({
+                  id: `channel:${id}`,
+                  channelId: id,
+                  status: "live",
+                  replay: "unknown",
+                }))
+            : [],
+      }),
       subscribe(listener: () => void) {
         statuses.add(listener);
         return () => statuses.delete(listener);
@@ -148,6 +226,7 @@ export function fakeRelay(origin = "https://relay.example.test") {
         ___: AbortSignal,
       ) => true,
     ),
+    presence: { remoteRuntimes: vi.fn<(keys: Iterable<string>) => void>() },
   } as unknown as RelaySession;
   let snapshot: RelaySnapshot = {
     status: "ready",
@@ -212,7 +291,12 @@ export function fakeRelay(origin = "https://relay.example.test") {
       for (const listener of rosterChanges) listener();
     },
     archives,
+    attended,
     listed,
+    unrouted,
+    pending,
+    learned,
+    opened,
     history,
     memories,
     session,
@@ -229,6 +313,7 @@ export function page(events: readonly RelayEvent[], filter: ReadFilter) {
   return events
     .filter(
       (event) =>
+        (!filter.kinds || filter.kinds.includes(event.kind)) &&
         event.created_at >= (filter.since ?? 0) &&
         (event.created_at < until ||
           (event.created_at === until &&
@@ -285,7 +370,7 @@ function held(identities: AgentIdentity[]) {
 
 export function fakeNative(identities: AgentIdentity[] = []) {
   let published = 0;
-  const keys = [bot, sibling];
+  const keys = [bot, sibling, "e".repeat(64)];
   const removals = held(identities);
   const wss = (relay: string) => relay.replace(/^https:/, "wss:");
   /** Its live row in the membership's community, as native finds it. */
@@ -463,8 +548,11 @@ export function fakeNative(identities: AgentIdentity[] = []) {
           tags: (template.tags ?? []).map((tag) => [...tag]),
         }),
     ),
-    publishProfile: vi.fn(async (_: Membership) => {}),
+    publishProfile: vi.fn(async (_: Membership, _force?: boolean) => {}),
     query: vi.fn<AgentsNative["query"]>(async () => []),
+    effectiveEdit: vi.fn<AgentsNative["effectiveEdit"]>(async () => {
+      throw new Error("No effective edit fixture");
+    }),
     searchProfiles: vi.fn(async () => undefined),
     upload: vi.fn(async () => ({ url: "", sha256: "", size: 0, type: "" })),
     media: vi.fn(async () => ({ path: "", type: "", size: 0 })),

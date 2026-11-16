@@ -1,16 +1,18 @@
-import { RecommendationCount } from "../RecommendationCount";
+import { PluginUpdatesMenu } from "../PluginUpdates";
 import { formatPublicKey } from "../../shared/identity/public-key";
 import { usePresenceStatus } from "../../features/presence/react";
 import { useRelayConnection } from "../../features/relay/react";
 import { avatarMedia, avatarSource } from "../../shared/avatar-source";
 import { useUserStatus } from "../../features/user-status/useUserStatus";
 import { useStatusEditor } from "../../features/user-status/useStatusEditor";
+import { statusShortcut } from "../../features/user-status/status-shortcut";
 import { StatusEmoji } from "../../features/user-status/StatusEmoji";
 import { Button } from "../../shared/design-system/ui/Button";
 import { StatusEditor } from "../../features/user-status/StatusEditor";
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useId,
   useRef,
   useState,
@@ -23,7 +25,6 @@ import {
   GearIcon,
   UserIcon,
   PlugIcon,
-  SquaresFourIcon,
   SunIcon,
   MoonIcon,
   MonitorIcon,
@@ -55,6 +56,11 @@ import type {
 } from "../../features/account-actions/service";
 import type { Communities } from "../../features/communities/service";
 import styles from "./ProfileButton.module.css";
+import * as communityApi from "../../features/communities/api";
+import {
+  deviceTimeZone,
+  shareDeviceTimeZone,
+} from "../../features/profiles/share-time-zone";
 
 const noSubscription = () => () => {};
 // The parent row retains the icon for the saved appearance preference.
@@ -178,15 +184,37 @@ export function ProfileButton({
     // Roster setup can cancel earlier reads, and disk hydration can hold an old
     // profile. Refresh once at this authority boundary through the same session.
     const controller = new AbortController();
-    void session
-      .read([{ kinds: [0], authors: [viewer], limit: 5 }], {
-        priority: "background",
-        fresh: true,
+    const read = session.read([{ kinds: [0], authors: [viewer], limit: 5 }], {
+      priority: "background",
+      fresh: true,
+      signal: controller.signal,
+    });
+    read.catch(() => {});
+    // Local time is shared by default. This fresh read triggers it; a strong
+    // read just before publishing supplies what is published.
+    if (selected)
+      void shareDeviceTimeZone({
+        community: selected,
+        viewer,
+        communities,
+        read,
+        inspect: () => communityApi.inspectProfile(selected, session),
         signal: controller.signal,
-      })
-      .catch(() => {});
+        zone: deviceTimeZone(),
+        publish: (profile, existing) =>
+          communityApi.publishProfile(selected, profile, existing),
+      });
     return () => controller.abort();
-  }, [profiles, viewer, connection.status, session, roster, liveStatus]);
+  }, [
+    communities,
+    profiles,
+    viewer,
+    selected,
+    connection.status,
+    session,
+    roster,
+    liveStatus,
+  ]);
   const profile = selected ? communityProfile : localProfile;
   const displayName = profile?.name.trim();
   const name =
@@ -197,6 +225,18 @@ export function ProfileButton({
   const picture = selected ? avatarMedia(source, session?.media) : source;
   const status = useUserStatus(session?.statuses, viewer ?? "");
   const statusEditor = useStatusEditor(session, viewer ?? undefined);
+  // The Set status shortcut follows the menu item's availability.
+  const statusAvailable =
+    !!viewer && !!session?.statuses?.writable && !!connection.scope;
+  const openStatus = useEffectEvent(() => statusEditor.open());
+  useEffect(() => {
+    if (!statusAvailable) return;
+    const open = () => openStatus();
+    statusShortcut.current = open;
+    return () => {
+      if (statusShortcut.current === open) statusShortcut.current = undefined;
+    };
+  }, [statusAvailable]);
   const profileTrigger = useRef<HTMLButtonElement>(null);
   const appearanceTrigger = useRef<HTMLDivElement>(null);
   const openingStatus = useRef(false);
@@ -212,6 +252,12 @@ export function ProfileButton({
   const ActionDialog = actions.find(
     (action) => action === selectedAction,
   )?.component;
+  const renderAction = (action: RegisteredAccountAction) => (
+    <MenuItem key={action.key} onClick={() => setSelectedAction(action)}>
+      <MenuIcon>{action.icon ?? <PlugIcon size={17} />}</MenuIcon>
+      {action.title}
+    </MenuItem>
+  );
   const accountLabel = useId();
   const statusUnavailable = useId();
   const avatar = (
@@ -282,6 +328,8 @@ export function ProfileButton({
         />
         <MenuPopup
           data-profile-menu=""
+          side="right"
+          collisionAvoidance={{ fallbackAxisSide: "start" }}
           align="end"
           sideOffset={8}
           aria-labelledby={accountLabel}
@@ -418,6 +466,7 @@ export function ProfileButton({
                       session={session}
                       value={status.emoji}
                       url={status.emojiUrl}
+                      hint
                     />
                     <span className="min-w-0 truncate text-body-sm">
                       {status.text}
@@ -486,22 +535,16 @@ export function ProfileButton({
               )}
             </MenuSubmenuPopup>
           </MenuSubmenu>
-          <MenuItem
-            onClick={() => {
+          <PluginUpdatesMenu
+            recommendations={pluginRecommendations}
+            onManage={() => {
               handoff.current = true;
               onSettings("plugins");
             }}
-          >
-            <MenuIcon>
-              <SquaresFourIcon aria-hidden="true" size={16} />
-            </MenuIcon>
-            Plugins
-            {pluginRecommendations > 0 && (
-              <MenuTrailing>
-                <RecommendationCount count={pluginRecommendations} />
-              </MenuTrailing>
-            )}
-          </MenuItem>
+          />
+          {actions
+            .filter((action) => action.placement === "before-settings")
+            .map(renderAction)}
           <MenuItem
             aria-current={settingsSelected ? "page" : undefined}
             onClick={() => {
@@ -519,16 +562,12 @@ export function ProfileButton({
               </MenuTrailing>
             )}
           </MenuItem>
-          {actions.length > 0 && <MenuSeparator />}
-          {actions.map((action) => (
-            <MenuItem
-              key={action.key}
-              onClick={() => setSelectedAction(action)}
-            >
-              <MenuIcon>{action.icon ?? <PlugIcon size={17} />}</MenuIcon>
-              {action.title}
-            </MenuItem>
-          ))}
+          {actions.some((action) => action.placement !== "before-settings") && (
+            <MenuSeparator />
+          )}
+          {actions
+            .filter((action) => action.placement !== "before-settings")
+            .map(renderAction)}
         </MenuPopup>
       </MenuRoot>
       {ActionDialog && (

@@ -12,6 +12,7 @@ export const NOTIFICATION_CATEGORIES = [
   "direct",
   "thread",
   "channel",
+  "agent",
 ] as const;
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 export type NotificationPreferences = Readonly<{
@@ -32,11 +33,13 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences =
       direct: true,
       thread: true,
       channel: true,
+      agent: true,
     }),
   });
 const KEY = "buzz-notification-preferences.v1";
 // Values saved before per-category sounds existed omit `sounds`; they get the
-// defaults rather than failing restore and pausing alerts.
+// defaults rather than failing restore and pausing alerts. So does a category
+// whose saved name this build does not bundle (one chosen on a newer build).
 function parseSounds(raw: unknown): CategorySounds {
   if (raw === undefined) return DEFAULT_CATEGORY_SOUNDS;
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
@@ -47,9 +50,7 @@ function parseSounds(raw: unknown): CategorySounds {
   };
   for (const category of NOTIFICATION_CATEGORIES) {
     const picked = value[category];
-    if (picked === undefined) continue;
-    if (!isSoundName(picked)) throw new Error("Invalid notification sounds");
-    sounds[category] = picked;
+    if (isSoundName(picked)) sounds[category] = picked;
   }
   return Object.freeze(sounds);
 }

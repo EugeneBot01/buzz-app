@@ -10,6 +10,23 @@ the app's Delete action, from `features/agents` (`useAgent`, `agentSections`).
 Its settings, attention and identity are edited there or on the Agents page;
 Profiles adds no second editor, runtime view or process control.
 
+## Display names
+
+Kind-0 display names and handles are trimmed at the shared profile projection.
+Names containing control, line/paragraph separator, bidi-control, or interlinear
+annotation characters (U+FFF9–U+FFFB) fall back to a safe handle or the public-key
+fragment. Script joiners and variation selectors remain in displayed names,
+including Persian ZWNJ and ideographic variation sequences. Signed profile events
+are retained unchanged.
+
+Verified-name collision comparisons also ignore default-ignorable characters
+on both sides, then trim whitespace, so a hidden character or visually inert
+emoji selector cannot avoid the public-key suffix. This comparison can
+conservatively qualify visually different names. It does not provide
+general Unicode confusable detection: canonical-equivalent accents and repeated
+interior whitespace retain the existing naming policy. Names never replace keys
+as identity or authorization evidence.
+
 ## Agent activity
 
 Opening an agent's activity (`buzz:profile?agent=<key>&tab=activity`, from a
@@ -56,7 +73,8 @@ performs DNS verification. Ordinary human profiles have no agent fields.
 
 ## Boundaries
 
-- Shared message UI recognizes author-avatar targets and identity-bound mentions.
+- Shared message UI recognizes author-avatar and byline-name targets and
+  identity-bound mentions.
   Ordinary `canOpenLink` / `onOpenLink` props advertise availability and dispatch.
   Channels resolves active contributions at click time and owns the right slot.
 - `nostr:npub…` is the exact public-key target, with no relay hint or authority.
@@ -76,11 +94,13 @@ performs DNS verification. Ordinary human profiles have no agent fields.
   This is not a Markdown parser or a notification change.
 - Replacement edits remain readable but their mentions are not clickable: old
   Buzz can change body identity bindings without changing original recipients.
-  Full-key-qualified namesake occurrences also remain literal. After Markdown
-  image or file attachment removal, signed names in the remaining prose can bind
-  beside the removed attachment, but a name crossing an interior removal seam
-  stays plain text: stripping must not manufacture a name absent from the signed
-  prose. If Markdown link repair changes a body with attachment seams, mentions
+  The composer sends chips of different keys that share a name, ignoring
+  case, as `@Name (<64-hex key>)`; that span binds to the signed key it names
+  when the key carries `Name` in any case, and shows as that key's name. Any
+  other qualified span stays literal. After Markdown image or file attachment removal, signed names in the
+  remaining prose can bind beside the removed attachment, but a name crossing an
+  interior removal seam stays plain text: stripping must not manufacture a name
+  absent from the signed prose. If Markdown link repair changes a body with attachment seams, mentions
   remain unbound because the seam offsets no longer identify the repaired text.
   Image attachments and signed notification recipients are unchanged. Full
   edit-snapshot rendering compatibility is deliberately deferred.
@@ -113,11 +133,16 @@ space. Once settled, sidebar rows, bylines and the editor's emoji button show th
 default 💬. Rows and bylines keep the full status in their label and tooltip, and
 the editor's button names the shortcode in its hint; tooltips and profiles show
 the shortcode as status text.
-Set or clear your own status from the top-right profile menu. Shared design-system
-Avatar and Button use the host-loaded styles directly. The profile content marks its
-`data-buzz-ui` boundary and uses shared heading/body/mono roles; its stylesheet
-owns layout, not component overrides. No new theme owner, second global reset or
-shell migration. Designers own later refinement.
+Set or clear your own status from the top-right profile menu. When the community
+accepts status updates, your own profile also opens the same editor from a button
+above **Edit profile**: **Update status** when you have one, **Set a status** when
+you don't. It saves to that profile's community, closes if the community or
+identity changes, and returns focus to the button, whose label follows the result.
+A status wider than the profile column ends in an ellipsis.
+Shared design-system Avatar and Button use the host-loaded styles directly. The
+profile content marks its `data-buzz-ui` boundary and uses shared heading/body/mono
+roles; its stylesheet owns layout, not component overrides. No new theme owner,
+second global reset or shell migration. Designers own later refinement.
 
 Agent hints change avatar shape, not authority:
 

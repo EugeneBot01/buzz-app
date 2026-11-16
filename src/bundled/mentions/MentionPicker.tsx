@@ -1,3 +1,4 @@
+import { useProfileGeneration } from "../../features/relay/react";
 import { TeamMentionAvatars } from "./TeamMentionAvatars";
 import {
   PopoverRoot,
@@ -14,13 +15,17 @@ import {
   AtIcon,
   CaretDownIcon,
   CheckIcon,
+  RobotIcon,
 } from "../../shared/design-system/icons/index";
 import { useEffect, useId, useRef, useState } from "react";
 import { groupMentionSuggestions } from "../../team/mentions/group-suggestions";
 import { useTeamMentions } from "./use-team-mentions";
 import { useMentionChoices } from "./use-mention-choices";
 import type { ComposerSession } from "../../features/messages/composer-session";
-import { outsideMentionDetail } from "./mention-candidates";
+import {
+  outsideMentionDetail,
+  remoteMentionDetail,
+} from "./mention-candidates";
 import { matchPerson } from "../../features/search/person-match";
 import { MatchedLabel } from "../../features/search/MatchedLabel";
 import { useSearchHighlight } from "../../features/search/use-search-highlight";
@@ -65,6 +70,7 @@ export function MentionPicker({
   const searchInput = useRef<HTMLElement>(null);
   // The picker stays mounted while closed; each opening is its own lifetime.
   const [opening, setOpening] = useState(0);
+  const [addressed, setAddressed] = useState<ReadonlySet<string>>();
   const lifetime = `picker:${useId()}:${opening}`;
   const model = useMentionChoices(
     session,
@@ -73,6 +79,7 @@ export function MentionPicker({
     search,
     lifetime,
     open && !disabled,
+    addressed,
   );
   const {
     profiles,
@@ -95,7 +102,9 @@ export function MentionPicker({
     draftRoster?.map((person) => person.pubkey) ?? channel?.members;
   // Only an open chooser demands names; typing must not join every member.
   const memberKey = open && !draftRoster ? (members?.join(":") ?? "") : "";
+  const profileGeneration = useProfileGeneration(session.profiles);
   useEffect(() => {
+    void profileGeneration;
     if (draftRoster || !open || !memberKey) return;
     let current = true;
     void session.profiles
@@ -109,7 +118,7 @@ export function MentionPicker({
     return () => {
       current = false;
     };
-  }, [session, open, memberKey, draftRoster]);
+  }, [session, open, memberKey, draftRoster, profileGeneration]);
   const chooseRecipient = (
     recipient: (typeof candidates)[number]["recipient"],
   ) => {
@@ -151,7 +160,7 @@ export function MentionPicker({
   };
   const personKey = (pubkey: string) => `person:${pubkey}`;
   const teamKey = (id: string) => `team:${id}`;
-  // Order stays rankMentions', shared with inline @ completion and mobile.
+  // Highlight follows the installed order, including addressed-first rows.
   // The highlight skips rows that cannot be chosen, as the arrow keys did.
   const highlight = useSearchHighlight({
     query: search,
@@ -206,6 +215,11 @@ export function MentionPicker({
             : "inside";
         if (next) {
           setOpening((value) => value + 1);
+          setAddressed(
+            audience
+              ? new Set(audience.recipients.map((person) => person.pubkey))
+              : undefined,
+          );
           accepted.current = false;
           if (!draftRoster) session.channels.ensureList();
         }
@@ -372,7 +386,7 @@ export function MentionPicker({
               <p role="status">
                 {teams.status}{" "}
                 {teams.canRetry && (
-                  <Button onClick={teams.retry}>Retry teams</Button>
+                  <Button onClick={teams.retry}>Retry legacy teams</Button>
                 )}
               </p>
             )}
@@ -398,7 +412,17 @@ export function MentionPicker({
               {...highlight.listProps}
             >
               {candidates.map(
-                ({ recipient, label, agent, elsewhere, disabled: reason }) => {
+                ({
+                  recipient,
+                  label,
+                  agent,
+                  elsewhere,
+                  disabled: reason,
+                  otherName,
+                  execution,
+                }) => {
+                  const managedBy = model.managedBy.get(recipient.pubkey);
+                  const remoteDetail = remoteMentionDetail(execution);
                   // Each addressed agent's row shows a check; fill is only
                   // the keyboard and pointer highlight.
                   const addressed = !!audience?.recipients.some(
@@ -409,7 +433,8 @@ export function MentionPicker({
                   return (
                     <NavigationItem
                       variant="option"
-                      data-mention-choice=""
+                      // The exact key the row picks; its label may not show it.
+                      data-mention-choice={recipient.pubkey}
                       type="button"
                       key={recipient.pubkey}
                       {...highlight.rowProps(personKey(recipient.pubkey))}
@@ -417,7 +442,6 @@ export function MentionPicker({
                       highlighted={audience ? focused : false}
                       aria-current={false}
                       aria-pressed={audience ? addressed : undefined}
-                      aria-label={`${label} ${recipient.pubkey}`}
                       disabled={disabled || !!reason}
                       onClick={() => chooseRecipient(recipient)}
                       label={
@@ -429,27 +453,43 @@ export function MentionPicker({
                               label={label}
                               positions={matched(label)}
                             />
+                            {agent && (
+                              <span
+                                aria-hidden="true"
+                                className={styles.agentMark}
+                              >
+                                <RobotIcon />
+                              </span>
+                            )}
+                            {agent && <span className="sr-only"> Agent</span>}
                           </span>
                           {reason && <small>{reason}</small>}
-                          {!members?.includes(recipient.pubkey) && (
+                          {(remoteDetail ||
+                            otherName ||
+                            managedBy ||
+                            !members?.includes(recipient.pubkey)) && (
                             <small className="text-caption text-subtle">
-                              {inviteAgents
-                                ? parentAdmission
-                                  ? "Adds to channel when you send"
-                                  : "Adds to chat when you send"
-                                : outsideMentionDetail(channel, elsewhere)}
+                              {/* The other verified name sits beside the detail. */}
+                              {[
+                                otherName,
+                                remoteDetail,
+                                managedBy,
+                                members?.includes(recipient.pubkey)
+                                  ? undefined
+                                  : inviteAgents
+                                    ? parentAdmission
+                                      ? "Adds to channel when you send"
+                                      : "Adds to chat when you send"
+                                    : outsideMentionDetail(channel, elsewhere),
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                             </small>
                           )}
                         </span>
                       }
-                      title={recipient.pubkey}
                       trailing={
-                        <span className="flex items-center gap-2">
-                          <code>{recipient.pubkey.slice(0, 12)}</code>
-                          {addressed && (
-                            <CheckIcon size={16} aria-hidden="true" />
-                          )}
-                        </span>
+                        addressed && <CheckIcon size={16} aria-hidden="true" />
                       }
                       icon={
                         <Avatar
@@ -525,9 +565,6 @@ export function MentionPicker({
                   onClick={() => chooseGroup(group)}
                 />
               ))}
-              {model.truncated && (
-                <p>Narrow your search to see more members.</p>
-              )}
               {members &&
                 !candidates.length &&
                 !teams.choices.length &&

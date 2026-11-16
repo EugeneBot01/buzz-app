@@ -2,6 +2,7 @@ import type { Context, Fiber } from "@deepseek-ai/cordis";
 import type { PluginModule } from "./api";
 import type { PluginInfo } from "./types";
 import { withTimeout } from "./timeout.ts";
+import { bundledOwner } from "./provenance";
 import type {} from "./status";
 
 export type PluginState = {
@@ -109,6 +110,8 @@ export class PluginRuntime {
       this.update(entry, "starting", null);
       void this.start(entry);
     }
+    // Configuration can settle without changing the desired activations.
+    this.publish();
   }
 
   private update(
@@ -149,14 +152,20 @@ export class PluginRuntime {
         this.timeoutMs,
       );
       if (entry.cancelled) return;
+      const owner = Object.freeze({
+        id: entry.plugin.manifest.id,
+        revision: entry.plugin.revision,
+        agentHooks: Object.freeze([
+          ...(entry.plugin.manifest.host?.agentHooks ?? []),
+        ]),
+        agentExecution: Object.freeze([
+          ...(entry.plugin.manifest.host?.agentExecution ?? []),
+        ]),
+      });
+      // The loader runs only the host's own module for a bundled source.
       const scope = this.root.extend({
-        pluginOwner: Object.freeze({
-          id: entry.plugin.manifest.id,
-          revision: entry.plugin.revision,
-          agentHooks: Object.freeze([
-            ...(entry.plugin.manifest.host?.agentHooks ?? []),
-          ]),
-        }),
+        pluginOwner:
+          entry.plugin.source === "bundled" ? bundledOwner(owner) : owner,
       });
       const fiber = scope.plugin({
         name: entry.plugin.manifest.id,

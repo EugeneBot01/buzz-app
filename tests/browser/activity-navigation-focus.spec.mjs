@@ -2,6 +2,7 @@ import { openChannelDetails } from "./channel-details.mjs";
 import { test, expect } from "./fixture.mjs";
 import { open } from "./timeline.mjs";
 import { generateSecretKey } from "nostr-tools";
+import { channelUnread } from "./unread-state.mjs";
 
 test.use({
   productionBroker: true,
@@ -29,7 +30,13 @@ test("mark-read retains focus through a gated storage failure, working transitio
   await open(page, app);
   const row = page.locator('button[data-channel-id="alpha"]');
   const popup = page.getByRole("dialog", { name: "Activity in Alpha" });
-  await expect(row.getByRole("img", { name: /unread threads?/ })).toBeVisible();
+  // The open channel's row is quiet; its activity popup still lists threads.
+  await expect
+    .poll(async () => (await channelUnread(page, "alpha")).threads)
+    .toBeGreaterThan(0);
+  await expect(row.getByRole("img", { name: /unread threads?/ })).toHaveCount(
+    0,
+  );
   await row.focus();
   const originalRow = await row.elementHandle();
   await row.press("Enter");
@@ -138,15 +145,21 @@ for (const destination of ["reply", "off-window root"]) {
     // another tab is selected or the entire pane is collapsed.
     const workspace = page.locator("[data-panel-workspace]");
     for (const hiddenBy of ["settings", "collapsed"]) {
-      // This journey tests focus, not activity expiry. Renew the turn as a live
-      // agent would, keeping the browser clock aligned with relay timestamps.
-      app.observer(activity("turn_liveness", target.id), key);
       await openChannelDetails(page);
       await expect(panel).toBeHidden();
       if (hiddenBy === "collapsed")
         await workspace
           .getByRole("button", { name: "Toggle tab pane", exact: true })
           .click();
+      // This journey tests focus, not activity expiry. A slow runner can spend
+      // most of the 30 s activity window above, and the popover only opens and
+      // stays open while the turn is fresh. Renew it as a live agent would,
+      // keeping the browser clock aligned with relay timestamps, and wait for
+      // the badge that shares the popover's working-agent state before Enter.
+      app.observer(activity("turn_liveness", target.id), key);
+      await expect(
+        row.getByRole("img", { name: /working in Alpha/ }),
+      ).toBeVisible();
       await row.focus();
       await row.press("Enter");
       await expect(popup).toBeVisible();

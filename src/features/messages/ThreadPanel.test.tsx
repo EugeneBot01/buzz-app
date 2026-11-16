@@ -11,14 +11,24 @@ import {
 } from "@testing-library/react";
 import { StrictMode } from "react";
 import { renderToString } from "react-dom/server";
-import { afterEach, expect, it, vi } from "vitest";
-import { useActivityLanePublisher } from "./activity-lane";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import { ThreadPanel, type ThreadPanelProps } from "./ThreadPanel";
+import { selectNewestMessage } from "./message-selection";
 import type { MessageRowProps } from "./MessageRow";
 import type { MessageComposerProps } from "./MessageComposer";
 import { createAgentLibrary } from "../agents/library";
-import type { RelaySession } from "../relay/session";
+import { createRelaySession, type RelaySession } from "../relay/session";
+import type { RelayEvent } from "../relay/events";
+import type { ReadStateSigning } from "../relay/read-state-host";
+import { readJournal, type ReadJournal } from "../relay/read-state-storage";
+import { keypair, message, metadata, roster } from "../relay/testing";
+import {
+  decodeReadState,
+  signReadState,
+  // @ts-expect-error Test the production Node codec with disposable identities.
+} from "../../../browser-host/read-state.mjs";
 import type { PageNavigation } from "../navigation/service";
+import type { JsonValue } from "../navigation/targets";
 import { createNavigationController } from "../navigation/controller";
 import { createMemoryHistory } from "../navigation/history";
 import type { ThreadSnapshot, ThreadView } from "../relay/threads";
@@ -31,9 +41,14 @@ import { formatPublicKey } from "../../shared/identity/public-key";
 
 // Real React owns effects, refs and subscriptions. Only independent child UI is
 // reduced here; MessageRow/MessageComposer retain their own mounted suites.
+// Activity rendering/subscriptions have their own mounted integration suite.
+vi.mock("./TypingIndicator", () => ({
+  TypingIndicator: () => null,
+  useLiveConversationAgents: () => [],
+}));
 vi.mock("../relay/react", () => {
   const profiles = new Map();
-  return { useRowProfiles: () => profiles };
+  return { useProfileGeneration: () => 0, useRowProfiles: () => profiles };
 });
 vi.mock("./MessageRow", () => ({
   MessageRow: ({
@@ -85,7 +100,6 @@ vi.mock("./MessageComposer", () => ({
     scope,
     onSend,
     ownSoloConversation,
-    activityClickOpensPanel,
     disabled,
     placeholder,
     focusRequest,
@@ -98,7 +112,6 @@ vi.mock("./MessageComposer", () => ({
       data-channel={channelId}
       data-scope={scope}
       data-own-solo={ownSoloConversation}
-      data-direct-activity={activityClickOpensPanel}
       data-disabled={disabled}
       data-placeholder={placeholder}
       data-focus-request={focusRequest}
@@ -149,6 +162,9 @@ function ordinaryNavigation() {
     complete: vi.fn<PageNavigation["complete"]>(() => true),
     resolve: vi.fn(() => true),
     forSession: vi.fn<PageNavigation["forSession"]>(),
+    position: vi.fn<PageNavigation["position"]>(),
+    savePosition: vi.fn<PageNavigation["savePosition"]>(),
+    passThrough: () => () => {},
   } satisfies PageNavigation;
 }
 function messagesHarness(
@@ -197,10 +213,11 @@ function messagesHarness(
     .mockImplementationOnce(() => first)
     .mockImplementation(makeView);
   const ensure = vi.fn(async () => {});
+  const profiles = new Map();
   const session = {
     viewer,
     thread,
-    profiles: { ensure },
+    profiles: { ensure, snapshot: () => profiles, subscribe: () => () => {} },
     agentChoices: createAgentLibrary(undefined).queries,
     messages: { retry: vi.fn() },
     media: () => undefined,
@@ -343,6 +360,30 @@ it("allocates only after commit and disposes distinct owned views under StrictMo
     expect(view.dispose).toHaveBeenCalledOnce();
     expect(view.listeners.size).toBe(0);
   }
+});
+it("registers its messages for keyboard selection and leaves an Escape the selection handled open", () => {
+  const h = messagesHarness();
+  h.render();
+  const list = screen.getByRole("region", { name: "Thread messages" });
+  let selectedNewest = false;
+  act(() => {
+    selectedNewest = selectNewestMessage(list);
+  });
+  expect(selectedNewest).toBe(true);
+  const selected = document.activeElement;
+  expect(selected?.closest("[data-message-id]")).not.toBeNull();
+  // Shift+Escape is "Mark all as read", not a dismissal.
+  fireEvent.keyDown(selected as Element, { key: "Escape", shiftKey: true });
+  expect(h.close).not.toHaveBeenCalled();
+  // The mocked composer has no focus target; stand in for selection's handling.
+  const handled = (event: Event) => event.preventDefault();
+  selected?.addEventListener("keydown", handled);
+  fireEvent.keyDown(selected as Element, { key: "Escape" });
+  expect(h.close).not.toHaveBeenCalled();
+  selected?.removeEventListener("keydown", handled);
+  fireEvent.keyDown(selected as Element, { key: "Escape" });
+  expect(h.close).toHaveBeenCalledOnce();
+  h.unmount();
 });
 it("allocation failure exposes an effective retry rather than leaving a spinner", () => {
   const h = messagesHarness();
@@ -613,6 +654,158 @@ it.each([false, true])(
     expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
   },
 );
+it("scopes its reading leases to its thread while the original is unavailable", () => {
+  const h = messagesHarness();
+  h.resize(600);
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+    new DOMRect(0, 0, 500, 500),
+  ] as unknown as DOMRectList);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 500, 500),
+  );
+  const reading = vi.fn((_channelId: string, _rootId?: string) => ({
+    view: vi.fn(),
+    observe: vi.fn(async () => {}),
+    catchUp: vi.fn(async () => {}),
+    dispose: vi.fn(),
+  }));
+  Object.assign(h.session.unread, {
+    sync: () => ({ capability: "frontier-sync" }),
+    reading,
+  });
+  h.snapshot.root = undefined;
+  h.snapshot.replies = [{ ...row, id: "reply", content: "reply" }];
+  h.render();
+  expect(screen.getByText("Original message unavailable.")).toBeVisible();
+  h.element.focus();
+  // In a DM, the thread it opened bounds what its reads may cover.
+  expect(reading.mock.calls).not.toHaveLength(0);
+  for (const call of reading.mock.calls)
+    expect(call).toEqual(["channel", row.id]);
+});
+it("leaves a sibling reply it hides unread while a DM reply's original is unavailable", async () => {
+  // The real unread owner, so a dwell's DM read lands in its journal.
+  const self = keypair(),
+    relay = keypair(),
+    alice = keypair();
+  let journal: ReadJournal | undefined;
+  let incoming: (events: readonly RelayEvent[]) => void = () => {};
+  const owner = createRelaySession(
+    {
+      viewer: self.pubkey,
+      relayAuthor: relay.pubkey,
+      query: async () => [],
+      media: () => undefined,
+      readState: {
+        decode: async (events: readonly RelayEvent[]) =>
+          decodeReadState(events, self.secret),
+        sign: async (intent: ReadStateSigning) =>
+          signReadState(intent, self.secret),
+        publish: async () => {},
+      },
+      subscribe(callbacks) {
+        incoming = callbacks.receive;
+        return { update() {}, retry() {}, dispose() {} };
+      },
+    },
+    {
+      readStateFloor: () => 0,
+      readStateStorage: {
+        capture: async () => structuredClone(journal),
+        async update(change) {
+          journal = readJournal(change(journal), self.pubkey);
+          return journal;
+        },
+        close() {},
+      },
+      readPublisherLock: async (_signal, work) => work(),
+    },
+  );
+  onTestFinished(owner.dispose);
+  const h = messagesHarness();
+  const dm = h.props.channelId;
+  const unread = owner.session.unread;
+  // Neither the thread view nor the unread owner has the original.
+  const root = message(self, dm, "Original", 10);
+  const reply = (content: string, at: number) =>
+    message(alice, dm, content, at, [["e", root.id, "", "reply"]]);
+  const target = reply("Opened reply", 20);
+  const sibling = reply("Hidden sibling", 30);
+  incoming([
+    roster(relay, dm, [self.pubkey, alice.pubkey], 1),
+    metadata(relay, dm, "DM", 1, [["t", "dm"]]),
+    target,
+  ]);
+  await unread.ensure();
+  Object.assign(h.session, { viewer: self.pubkey, unread });
+  // What an exact view publishes when it cannot load the original: only its
+  // target, never the thread's other replies.
+  const shown = {
+    ...row,
+    id: target.id,
+    channelId: dm,
+    authorId: alice.pubkey,
+    content: target.content,
+    createdAt: target.created_at,
+    threadRootId: root.id,
+    replyParentId: root.id,
+    replyCount: 0,
+  };
+  h.snapshot.status = "error";
+  h.snapshot.error = "Error: The original thread message is unavailable.";
+  h.snapshot.root = undefined;
+  h.snapshot.replies = [shown];
+  h.snapshot.target = shown;
+  h.snapshot.targetStatus = "ready";
+  // Opened at the reply, as a conversation tab opens an exact message.
+  Object.assign(h.props as ThreadPanelProps, {
+    messageId: target.id,
+    retainThread: true,
+    revealSelected: true,
+    revealRequest: 1,
+  });
+  h.resize(600);
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+    new DOMRect(0, 0, 500, 500),
+  ] as unknown as DOMRectList);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 500, 500),
+  );
+  // A controlled clock runs the reveal's frames and the dwell.
+  vi.useFakeTimers({
+    toFake: [
+      "setTimeout",
+      "clearTimeout",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+    ],
+  });
+  try {
+    h.render();
+    expect(screen.getByText("Original message unavailable.")).toBeVisible();
+    // A sibling reply in the same thread arrives after opening, unread.
+    act(() => incoming([sibling]));
+    expect(unread.attention(dm, sibling.id).unread).toBe(true);
+    // The window gains focus: once revealed, the reader dwells on its reply.
+    vi.mocked(document.hasFocus).mockReturnValue(true);
+    await act(async () => h.element.focus());
+    for (
+      let elapsed = 0;
+      (journal?.state.frontiers[dm] ?? -1) < target.created_at;
+      elapsed += 50
+    ) {
+      if (elapsed >= 2000) throw new Error("The dwell never read the reply.");
+      await act(() => vi.advanceTimersByTimeAsync(50));
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+  // It reads the reply, but stops one second before the sibling it hides.
+  expect(journal?.state.frontiers[dm]).toBe(sibling.created_at - 1);
+  expect(unread.attention(dm, target.id).unread).toBe(false);
+  expect(unread.attention(dm, sibling.id).unread).toBe(true);
+});
 it("renders replies after the original without a reply-count divider", () => {
   const h = messagesHarness();
   h.snapshot.root = { ...row, replyCount: 0 };
@@ -859,55 +1052,6 @@ it("counts replies recovered after a completed traversal, not initial history pa
   ];
   h.render();
   expect(screen.getByRole("button", { name: "2 new messages" })).toBeVisible();
-});
-
-it("reserves the jump button's activity lane only for this thread's composer in a live channel", () => {
-  const h = messagesHarness();
-  const listeners = new Set<() => void>();
-  const subscribe = (listener: () => void) => {
-    listeners.add(listener);
-    return () => {
-      listeners.delete(listener);
-    };
-  };
-  let list: ChannelList = {
-    status: "ready",
-    channels: [{ id: "channel", name: "General" }],
-  };
-  Object.assign(h.session, {
-    channels: { list: () => list, subscribeList: subscribe },
-  });
-  // The composer is mocked here; publish what its TypingIndicator would.
-  function Shown({ threadRootId }: { threadRootId: string | undefined }) {
-    useActivityLanePublisher(h.session, "channel", threadRootId, true);
-    return null;
-  }
-  h.render();
-  h.scroll(500);
-  const lane = () =>
-    screen
-      .getByRole("button", { name: "Jump to latest" })
-      .closest("[data-visible]");
-  const live = lane();
-  expect(live).not.toHaveAttribute("data-activity-lane");
-  // Channel-level activity shows in the channel composer, not this thread's.
-  const channelLevel = render(<Shown threadRootId={undefined} />);
-  expect(live).not.toHaveAttribute("data-activity-lane");
-  channelLevel.unmount();
-  const thread = render(<Shown threadRootId={row.id} />);
-  expect(live).toHaveAttribute("data-activity-lane");
-  // A cached channel's composer mounts no TypingIndicator, so no lane; the
-  // gate flip keeps the same button mounted.
-  list = {
-    status: "ready",
-    channels: [{ id: "channel", name: "General", cached: true }],
-  };
-  act(() => {
-    for (const listener of listeners) listener();
-  });
-  expect(lane()).toBe(live);
-  expect(live).not.toHaveAttribute("data-activity-lane");
-  thread.unmount();
 });
 
 it("transfers keyboard focus to the thread history before removing the jump button", () => {
@@ -1415,8 +1559,13 @@ it("observes a visible reply before its root resolves, then enables thread catch
 
   h.snapshot.root = row;
   h.render();
+  // The rows measure in the next frame. That list mutation restarts dwell,
+  // which measures again in the frame after it.
   await act(() => vi.advanceTimersToNextFrame());
-  await act(() => vi.advanceTimersByTimeAsync(300));
+  await act(() => vi.advanceTimersToNextFrame());
+  await act(() => vi.advanceTimersByTimeAsync(299));
+  expect(catchUp).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTimeAsync(1));
   expect(catchUp).toHaveBeenCalledExactlyOnceWith(reply.id, row.id);
 });
 
@@ -1459,20 +1608,14 @@ it("names the conversation a thread lives in as a link, only when its host can o
   expect(within(thread).queryByText("#Alpha")).toBeNull();
 });
 
-it("passes readiness and direct Activity through to thread composition, and gives a Solo thread none", () => {
+it("passes readiness through to thread composition, and gives a Solo thread none", () => {
   const h = messagesHarness();
-  const view = render(
-    <ThreadPanel {...h.props} activityClickOpensPanel disabled />,
-  );
+  const view = render(<ThreadPanel {...h.props} disabled />);
   const composer = screen.getByRole("region", { name: "Composer" });
-  expect(composer).toHaveAttribute("data-direct-activity", "true");
   expect(composer).toHaveAttribute("data-disabled", "true");
-  view.rerender(
-    <ThreadPanel {...h.props} activityClickOpensPanel disabled={false} />,
-  );
+  view.rerender(<ThreadPanel {...h.props} disabled={false} />);
   expect(composer).toHaveAttribute("data-disabled", "false");
   view.rerender(<ThreadPanel {...h.props} />);
-  expect(composer).not.toHaveAttribute("data-direct-activity");
   // Solo agents answer at top level: its threads are read-only.
   view.rerender(<ThreadPanel {...h.props} soloConversation />);
   expect(
@@ -1489,13 +1632,19 @@ it.each([
   {
     channelType: "stream" as const,
     joinRole: "guest" as const,
-    joinable: false,
+    joinable: true,
   },
   { channelType: "stream" as const, archived: true as const, joinable: false },
   { channelType: "solo" as const, archived: true as const, joinable: false },
+  { channelType: "solo" as const, joinRole: "guest" as const, joinable: true },
+  {
+    channelType: "solo" as const,
+    joinRole: "member" as const,
+    joinable: false,
+  },
   { channelType: "solo" as const, joinable: false },
 ])(
-  "replaces the reply composer for a $channelType preview (joinable: $joinable)",
+  "replaces the reply composer for a $channelType preview (joinRole: $joinRole, joinable: $joinable)",
   ({ joinable, ...metadata }) => {
     const h = messagesHarness();
     Object.assign(h.props, {
@@ -1524,8 +1673,10 @@ it.each([
             ? "Archived chat"
             : "Archived channel"
           : metadata.joinRole === "guest"
-            ? "Read-only channel"
-            : "Channel preview",
+            ? `Read-only ${metadata.channelType === "solo" ? "chat" : "channel"}`
+            : metadata.channelType === "solo"
+              ? "Chat preview"
+              : "Channel preview",
       }),
     ).toBeVisible();
     if (metadata.archived) {
@@ -1892,6 +2043,45 @@ it("a retained reader reveals its exact selected message, again for each new req
   expect(revealedReply()).toBe(false);
 });
 
+it("reopens collapsed activity for a new reveal of the same step", async () => {
+  const h = messagesHarness();
+  const replies = ["d", "e"].map((id, index) => ({
+    ...row,
+    id: id.repeat(64),
+    content: `Agent step ${index}`,
+    audience: "agents" as const,
+    threadRootId: row.id,
+    replyToId: row.id,
+    createdAt: 2 + index,
+  }));
+  const target = replies[1];
+  if (!target) throw new Error("Missing activity fixture target");
+  h.snapshot.replies = replies;
+  h.snapshot.target = target;
+  h.snapshot.targetStatus = "ready";
+  const props = h.props as ThreadPanelProps;
+  Object.assign(props, {
+    messageId: target.id,
+    retainThread: true,
+    revealSelected: true,
+    revealRequest: 1,
+  });
+  h.render();
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Collapse activity history/ }),
+  );
+  expect(
+    screen.getByRole("button", { name: /Show activity history/ }),
+  ).toHaveAttribute("aria-expanded", "false");
+  props.revealRequest = 2;
+  h.rerenderProps();
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: /Collapse activity history/ }),
+    ).toHaveAttribute("aria-expanded", "true"),
+  );
+});
+
 it("a new reveal request reopens a branch the reader collapsed, and live updates leave it closed", async () => {
   const h = messagesHarness();
   const reply = (id: string, content: string, replyParentId: string) => ({
@@ -1953,6 +2143,307 @@ it("a new reveal request reopens a branch the reader collapsed, and live updates
   await revealed(second);
 });
 
+/** Visits as navigation keeps them: a visit's place outlives each presentation. */
+function visitPlaces() {
+  const places = new Map<string, JsonValue>();
+  const visit = (entryId: string, traversal?: true) => ({
+    ...ordinaryNavigation(),
+    entryId,
+    ...(traversal && { traversal }),
+    position: (key: string) => places.get(`${entryId}:${key}`),
+    savePosition(key: string, value: JsonValue) {
+      places.set(`${entryId}:${key}`, value);
+    },
+  });
+  /** A link to the root message: an exact reveal, not an ordinary opening. */
+  const linked = (
+    entryId: string,
+    traversal?: true,
+    messageId = row.id,
+  ): PageNavigation => {
+    const navigation = visit(entryId, traversal);
+    const { threadRootId: _root, ...target } = navigation.target;
+    return { ...navigation, target: { ...target, messageId } };
+  };
+  return { places, visit, linked };
+}
+const threadReply = (id: string, replyParentId: string) => ({
+  ...row,
+  id: id.repeat(64),
+  content: `reply ${id}`,
+  replyParentId,
+  createdAt: 2,
+});
+/** Lays rows out 2,000 px apart, 500 px tall, scrolling with the reader. */
+function layOutRows(ids: readonly string[]) {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      const index = ids.indexOf(this.dataset.messageId ?? "");
+      return index < 0
+        ? new DOMRect(0, 0, 500, 600)
+        : new DOMRect(0, index * 2000 - this.scrollTop, 500, 500);
+    },
+  );
+}
+
+it.each([
+  ["the reply it was left at, reopening its branch", true],
+  ["the nearest ancestor of a reply that is gone", false],
+])("Back to a thread visit anchors on %s", (_, present) => {
+  const { places, visit } = visitPlaces();
+  const parent = threadReply("d", row.id);
+  const child = threadReply("e", parent.id);
+  places.set("thread-visit:thread", {
+    anchor: { id: child.id, top: -100, ancestors: [parent.id] },
+  });
+  const h = messagesHarness(visit("thread-visit", true));
+  h.snapshot.replies = present ? [parent, child] : [parent];
+  h.render();
+  const anchor = present ? child : parent;
+  expect(
+    h.element.querySelector(`[data-message-id="${anchor.id}"]`),
+  ).not.toBeNull();
+  // jsdom rows sit at the scroller top, so the row moves back to 100 px above
+  // it: the place, not the end of the thread.
+  expect(h.element.scrollTop).toBe(100);
+  expect(h.element).not.toHaveAttribute("data-positioning");
+});
+
+it.each([
+  ["reveals its linked message again", true],
+  ["opens an ordinary thread at its end again", false],
+])("Back to a place no longer loaded %s", async (_, exact) => {
+  const { places, visit, linked } = visitPlaces();
+  // An older page the reopened thread has not loaded.
+  places.set("thread-visit:thread", {
+    anchor: { id: "f".repeat(64), top: -100, ancestors: [] },
+  });
+  const h = messagesHarness(
+    exact ? linked("thread-visit", true) : visit("thread-visit", true),
+  );
+  h.snapshot.replies = [threadReply("d", row.id)];
+  h.snapshot.target = row;
+  h.snapshot.targetStatus = "ready";
+  h.render();
+  if (!exact) {
+    expect(h.element.scrollTop).toBe(3400);
+    return;
+  }
+  const root = h.element.querySelector(`[data-message-id="${row.id}"]`);
+  await waitFor(() => expect(root).toHaveFocus());
+  expect(
+    vi
+      .mocked(HTMLElement.prototype.scrollIntoView)
+      .mock.contexts.includes(root),
+  ).toBe(true);
+});
+
+it("records a visit's place only once that visit was presented", async () => {
+  const { places, visit, linked } = visitPlaces();
+  const reply = threadReply("d", row.id);
+  const h = messagesHarness(visit("thread-visit"));
+  h.snapshot.replies = [reply];
+  const mounted = render(<ThreadPanel {...h.props} retainThread />);
+  // The retained reader is already positioned for the ordinary visit; the
+  // linked reply's target is still loading, so its reveal has not run.
+  await act(async () =>
+    mounted.rerender(
+      <ThreadPanel
+        {...h.props}
+        retainThread
+        messageId={reply.id}
+        navigation={linked("linked", undefined, reply.id)}
+      />,
+    ),
+  );
+  expect(h.view.retarget).toHaveBeenCalledOnce();
+  expect(places.get("thread-visit:thread")).toEqual({});
+  mounted.unmount();
+  expect(places.has("linked:thread")).toBe(false);
+});
+
+it("records a visit's place when the reader leaves, not as replies arrive", () => {
+  const { places, visit } = visitPlaces();
+  // A return with no recorded place opens as it first did.
+  const h = messagesHarness(visit("thread-visit", true));
+  h.render();
+  expect(h.element.scrollTop).toBe(3400);
+  h.snapshot.replies = [threadReply("d", row.id)];
+  h.render();
+  expect(places.has("thread-visit:thread")).toBe(false);
+  h.unmount();
+  expect(places.has("thread-visit:thread")).toBe(true);
+});
+
+it("a reader still shown after its route is withdrawn records its place when it leaves", async () => {
+  const { visit } = visitPlaces();
+  // Rows sit below the scroller top, so the reader's first row anchors it.
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 500, 500),
+  );
+  const h = messagesHarness(visit("thread-visit"));
+  h.snapshot.replies = [threadReply("d", row.id)];
+  const props = h.props as ThreadPanelProps;
+  Object.assign(props, { retainThread: true });
+  h.render();
+  expect(h.element.scrollTop).toBe(3400);
+  // A link in the timeline routes elsewhere; the thread stays open beside it
+  // and the reader keeps scrolling.
+  Object.assign(props, { navigation: undefined });
+  h.rerenderProps();
+  h.scroll(1000);
+  Object.assign(props, { navigation: visit("thread-visit", true) });
+  await act(async () => h.rerenderProps());
+  expect(h.view.retarget).toHaveBeenCalledOnce();
+  expect(h.element.scrollTop).toBe(1000);
+});
+
+it.each([
+  ["withdrawn, then hidden", ["navigation", "active"]],
+  ["hidden, then withdrawn", ["active", "navigation"]],
+] as const)(
+  "a reader %s is shown again at its place, which the returning route keeps",
+  async (_, order) => {
+    const { visit } = visitPlaces();
+    const reply = threadReply("d", row.id);
+    layOutRows([row.id, reply.id]);
+    const h = messagesHarness(visit("thread-visit"));
+    h.snapshot.replies = [reply];
+    const props = h.props as ThreadPanelProps;
+    Object.assign(props, { retainThread: true });
+    h.render();
+    h.scroll(1000);
+    // Back to the channel withdraws the route and closes the pane around it.
+    for (const prop of order) {
+      Object.assign(props, { [prop]: prop === "active" ? false : undefined });
+      h.rerenderProps();
+    }
+    // WebKit drops the hidden reader's scroll offset.
+    h.element.scrollTop = 0;
+    // Forward shows it again before the route lands.
+    Object.assign(props, { active: true });
+    h.rerenderProps();
+    expect(h.element.scrollTop).toBe(1000);
+    Object.assign(props, { navigation: visit("thread-visit", true) });
+    await act(async () => h.rerenderProps());
+    expect(h.view.retarget).toHaveBeenCalledOnce();
+    expect(h.element.scrollTop).toBe(1000);
+  },
+);
+
+it("a withdrawn reader shown again records where it then reads", async () => {
+  const { visit } = visitPlaces();
+  const reply = threadReply("d", row.id);
+  layOutRows([row.id, reply.id]);
+  const h = messagesHarness(visit("thread-visit"));
+  h.snapshot.replies = [reply];
+  const props = h.props as ThreadPanelProps;
+  Object.assign(props, { retainThread: true });
+  h.render();
+  h.scroll(1000);
+  // A timeline link withdraws the route. The pane is closed and reopened
+  // around the thread, and the reader scrolls on before going Back.
+  Object.assign(props, { navigation: undefined });
+  h.rerenderProps();
+  Object.assign(props, { active: false });
+  h.rerenderProps();
+  Object.assign(props, { active: true });
+  h.rerenderProps();
+  h.scroll(2000);
+  Object.assign(props, { navigation: visit("thread-visit", true) });
+  await act(async () => h.rerenderProps());
+  expect(h.view.retarget).toHaveBeenCalledOnce();
+  expect(h.element.scrollTop).toBe(2000);
+});
+
+it("a reader first shown while its route retargets stays hidden until the route restores its place", async () => {
+  const { places, visit } = visitPlaces();
+  places.set("thread-visit:thread", {
+    anchor: { id: row.id, top: 100, ancestors: [] },
+  });
+  const h = messagesHarness();
+  h.snapshot.status = "loading";
+  const props = h.props as ThreadPanelProps;
+  Object.assign(props, { retainThread: true });
+  h.render();
+  let release!: (value: "selected") => void;
+  h.view.retarget.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  Object.assign(props, { navigation: visit("thread-visit", true) });
+  h.rerenderProps();
+  try {
+    expect(h.view.retarget).toHaveBeenCalledOnce();
+    // The first page lands: the reader positions at the end, out of sight.
+    h.snapshot.status = "ready";
+    h.render();
+    expect(h.element.scrollTop).toBe(3400);
+    expect(h.element).toHaveAttribute("data-positioning");
+  } finally {
+    await act(async () => release("selected"));
+  }
+  expect(h.element).not.toHaveAttribute("data-positioning");
+  expect(h.element.scrollTop).toBe(3300);
+});
+
+it("a reader hidden while its route retargets reads nothing until the route restores its place", async () => {
+  vi.useFakeTimers();
+  const { places, visit } = visitPlaces();
+  places.set("thread-visit:thread", {
+    anchor: { id: row.id, top: 100, ancestors: [] },
+  });
+  const h = messagesHarness();
+  h.snapshot.status = "loading";
+  h.snapshot.replies = [threadReply("d", row.id)];
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
+    new DOMRect(0, 0, 500, 500),
+  ] as unknown as DOMRectList);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 500, 500),
+  );
+  const observe = vi.fn(async () => {});
+  const catchUp = vi.fn(async () => {});
+  Object.assign(h.session.unread, {
+    sync: () => ({ capability: "frontier-sync" }),
+    reading: () => ({ view() {}, observe, catchUp, dispose() {} }),
+  });
+  const props = h.props as ThreadPanelProps;
+  Object.assign(props, { retainThread: true });
+  h.render();
+  let release!: (value: "selected") => void;
+  h.view.retarget.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  Object.assign(props, { navigation: visit("thread-visit", true) });
+  h.rerenderProps();
+  try {
+    // The first page lands at the end behind the loader, with focus inside.
+    h.snapshot.status = "ready";
+    h.render();
+    expect(h.element.scrollTop).toBe(3400);
+    h.element.focus();
+    await act(() => vi.advanceTimersToNextFrame());
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(catchUp).not.toHaveBeenCalled();
+    expect(observe).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => release("selected"));
+  }
+  // The restored place is read, not the end the reader never saw.
+  expect(h.element.scrollTop).toBe(3300);
+  await act(() => vi.advanceTimersToNextFrame());
+  await act(() => vi.advanceTimersByTimeAsync(300));
+  expect(observe).toHaveBeenCalled();
+  expect(catchUp).not.toHaveBeenCalled();
+});
+
 it("an unrouted retained opening retries allocation locally", () => {
   const h = messagesHarness();
   const navigationRetry = vi.fn();
@@ -1994,4 +2485,41 @@ it("releases bottom following after a jump that included child-only resizing", (
   h.snapshot.replies = [{ ...row, id: "new", content: "new" }];
   h.render();
   expect(h.element.scrollTop).toBe(2000);
+});
+
+it("reveals a completed step selected by an exact thread link", async () => {
+  const h = messagesHarness();
+  const target = {
+    ...row,
+    id: "d".repeat(64),
+    content: "Completed tool result",
+    audience: "agents" as const,
+    threadRootId: row.id,
+    replyParentId: row.id,
+    createdAt: 2,
+  };
+  h.snapshot.replies = [
+    target,
+    {
+      ...row,
+      id: "e".repeat(64),
+      content: "Final response",
+      threadRootId: row.id,
+      replyParentId: row.id,
+      createdAt: 3,
+    },
+  ];
+  h.snapshot.target = target;
+  h.snapshot.targetStatus = "ready";
+  Object.assign(h.props, {
+    messageId: target.id,
+    retainThread: true,
+    revealSelected: true,
+    revealRequest: 1,
+  });
+  h.render();
+  expect(await screen.findByText("Completed tool result")).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: /Collapse activity history/ }),
+  ).toBeVisible();
 });

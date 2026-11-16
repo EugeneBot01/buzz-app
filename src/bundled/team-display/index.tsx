@@ -374,7 +374,7 @@ function TopTabs({ pages }: { pages: PagesReader }) {
     orderPages(
       all.filter(
         (page) =>
-          pagePlacement(page) === "topbar" && page.key !== ALWAYS_SHOWN_TAB,
+          pagePlacement(page) === "dock" && page.key !== ALWAYS_SHOWN_TAB,
       ),
     ),
     settings.tabOrder,

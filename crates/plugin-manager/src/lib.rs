@@ -13,12 +13,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub mod access;
 pub mod imports;
 pub mod managed;
 mod migrate_agent_flag;
 
 pub type Result<T> = std::result::Result<T, String>;
-const LIMIT: u64 = 8 * 1024 * 1024;
+pub const LIMIT: u64 = 8 * 1024 * 1024;
 const MAX_README_BYTES: usize = 256 * 1024;
 const MAX_ICON_BYTES: usize = 1024 * 1024;
 const MAX_ICON_DIMENSION: u32 = 4096;
@@ -36,9 +37,16 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updates: Option<UpdatePolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discovery: Option<Discovery>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<HostGrants>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdatePolicy {
+    pub default_enabled: bool,
 }
 /// Display-only metadata is deliberately forward-compatible. Unknown fields are
 /// ignored so adding a discovery hint does not make a plugin unloadable.
@@ -58,6 +66,9 @@ pub struct HostGrants {
     /// Hook callbacks may observe and influence these agent types.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agent_hooks: Vec<String>,
+    /// Execution targets may run these native agent types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_execution: Vec<String>,
     #[serde(default)]
     pub commands: Vec<HostCommand>,
     #[serde(default)]
@@ -74,6 +85,17 @@ pub struct HostGrants {
     /// access, without starting a program for it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub files: bool,
+    /// Pathless temporary saves in host-selected private storage; no read access.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub managed_files: bool,
+    /// `requestBytes` may also read raster images from any public HTTPS
+    /// address, one hop at a time, with no cookies; never pages.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub public_images: bool,
+    /// `readPage` may read the preview fields of a web page on any public
+    /// HTTPS address, one hop at a time, with no cookies; never its HTML.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub public_pages: bool,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -106,6 +128,9 @@ pub struct HostCommand {
         skip_serializing_if = "Option::is_none"
     )]
     pub max_output_bytes: Option<u64>,
+    /// Run these verified bytes, never a program found on PATH.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<ProcessArtifact>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -141,9 +166,11 @@ fn valid_sha256(hash: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
+/// An artifact is absolute, or under the user's home written `~/…`, which the
+/// host expands when it starts the process.
 fn valid_artifact(artifact: &ProcessArtifact) -> bool {
     let path = Path::new(&artifact.path);
-    if !path.is_absolute()
+    if !(path.is_absolute() || artifact.path.starts_with("~/"))
         || artifact.path.len() > 4096
         || artifact.path.contains('\0')
         || !valid_sha256(&artifact.sha256)
@@ -219,6 +246,7 @@ impl Manifest {
         }
         if let Some(host) = &self.host {
             if host.agent_hooks.len() > 16
+                || host.agent_execution.len() > 16
                 || host.commands.len() > 16
                 || host.network_origins.len() > 16
                 || host.processes.len() > 16
@@ -232,6 +260,15 @@ impl Manifest {
                 valid_id(kind)?;
                 if !hook_types.insert(key) {
                     return Err("Duplicate agent hook type".into());
+                }
+            }
+            let mut execution_types = std::collections::HashSet::new();
+            for key in &host.agent_execution {
+                let (plugin, kind) = key.split_once('/').ok_or("Invalid agent execution type")?;
+                valid_id(plugin)?;
+                valid_id(kind)?;
+                if !execution_types.insert(key) {
+                    return Err("Duplicate agent execution type".into());
                 }
             }
             if let Some(grant) = &host.federated_identity {
@@ -272,6 +309,10 @@ impl Manifest {
                     || command
                         .max_output_bytes
                         .is_some_and(|limit| !(1..=MAX_HOST_COMMAND_OUTPUT_BYTES).contains(&limit))
+                    || command
+                        .artifact
+                        .as_ref()
+                        .is_some_and(|artifact| !valid_artifact(artifact))
                 {
                     return Err("Invalid host command declaration".into());
                 }
@@ -323,14 +364,20 @@ pub fn valid_id(id: &str) -> Result<()> {
 pub const BUILDERLAB_ORIGIN: &str = env!("BUZZ_BUILDERLAB_ORIGIN");
 /// Exact Apps domain paired with the build's login origin, or empty when native SSO is unconfigured.
 pub const BUILDERLAB_APPS_DOMAIN: &str = env!("BUZZ_BUILDERLAB_APPS_DOMAIN");
+/// The `BUZZ_BUILDERLAB_APPS_CONTROL_PLANE` build input, or empty when unset.
+const BUILDERLAB_APPS_CONTROL_PLANE: &str = env!("BUZZ_BUILDERLAB_APPS_CONTROL_PLANE");
 /// The Apps Platform control plane of the tenant whose Builderlab sign-in
-/// `origin` is, which the bundled Builderlab plugin deploys apps to. Kept in
-/// step with `src/bundled/builderlab/apps/environment.ts`.
+/// `origin` is, which the bundled Builderlab plugin deploys apps to through
+/// the native FI session: the build's own control plane for its login origin,
+/// otherwise the public tenants. Kept in step with
+/// `src/bundled/builderlab/apps/environment.ts`.
 pub fn apps_control_plane(origin: &str) -> Option<&'static str> {
+    if !BUILDERLAB_APPS_CONTROL_PLANE.is_empty() && origin == BUILDERLAB_ORIGIN {
+        return Some(BUILDERLAB_APPS_CONTROL_PLANE);
+    }
     match origin {
         "https://app.builderlab.xyz" => Some("https://compose-ctrl.builderlab.xyz"),
         "https://app.builderlabstaging.xyz" => Some("https://compose-ctrl.builderlabstaging.xyz"),
-        "https://block.builderlab.xyz" => Some("https://compose-ctrl.block.builderlab.xyz"),
         _ => None,
     }
 }
@@ -344,11 +391,13 @@ const BUILDERLAB_FI_ROUTES: &[&str] = &[
     "v3/beekeeper/list-agents",
     "v3/beekeeper/get-model-catalog",
     "v3/beekeeper/cancel-agent-turn",
+    "v3/beekeeper/get-agent-turn-status",
     "GET v1/auth/me",
     "v1/buzz/nostr-identities/current",
     "v1/buzz/nostr-identities/delete",
     "v1/buzz/nostr-identities/challenge",
     "v1/buzz/nostr-identities/verify",
+    "v1/buzz/nsec-backups/status",
     "v1/buzz/communities/list",
     "v1/buzz/communities/availability",
     "v1/buzz/communities",
@@ -367,24 +416,11 @@ pub fn bundled_manifests() -> Vec<Manifest> {
         "../../../src/bundled/builderlab/manifest.json"
     ))
     .expect("builderlab manifest");
-    let origin = BUILDERLAB_ORIGIN;
+    // Builderlab is reached only through the native FI session forwarder: no
+    // renderer network or file access. A development broker build reaches it
+    // through the broker, and a build with neither has no Builderlab.
     let descriptor = env!("BUZZ_BUILD_FEDERATED_IDENTITY_CONFIG");
-    builderlab.host = Some(if descriptor.is_empty() {
-        HostGrants {
-            files: apps_control_plane(origin).is_some(),
-            network_origins: if origin.is_empty() {
-                vec![]
-            } else {
-                std::iter::once(origin)
-                    .chain(apps_control_plane(origin))
-                    .map(Into::into)
-                    .collect()
-            },
-            ..HostGrants::default()
-        }
-    } else {
-        // An FI build reaches Builderlab only through the native session
-        // forwarder: no renderer network or file access.
+    builderlab.host = (!descriptor.is_empty()).then(|| {
         let config: serde_json::Value =
             serde_json::from_str(descriptor).expect("validated FI descriptor");
         let base = config["apiBasePath"].as_str().expect("API base");
@@ -407,6 +443,10 @@ pub fn bundled_manifests() -> Vec<Manifest> {
         }
     });
     vec![
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/mesh-compute/manifest.json"
+        ))
+        .expect("mesh manifest"),
         serde_json::from_str(include_str!("../../../src/bundled/huddles/manifest.json"))
             .expect("huddles manifest"),
         builderlab,
@@ -418,6 +458,12 @@ pub fn bundled_manifests() -> Vec<Manifest> {
             .expect("bundled diffs manifest"),
         serde_json::from_str(include_str!("../../../src/bundled/mermaid/manifest.json"))
             .expect("bundled mermaid manifest"),
+        serde_json::from_str(include_str!("../../../src/bundled/charts/manifest.json"))
+            .expect("bundled charts manifest"),
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/file-viewer/manifest.json"
+        ))
+        .expect("bundled file viewer manifest"),
         serde_json::from_str(include_str!(
             "../../../src/bundled/identity-naming/manifest.json"
         ))
@@ -442,6 +488,10 @@ pub fn bundled_manifests() -> Vec<Manifest> {
             .expect("github manifest"),
         serde_json::from_str(include_str!("../../../src/bundled/inbox/manifest.json"))
             .expect("valid Inbox manifest"),
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/drafts-sent/manifest.json"
+        ))
+        .expect("drafts-sent manifest"),
         serde_json::from_str(include_str!("../../../src/bundled/reminders/manifest.json"))
             .expect("reminders manifest"),
         serde_json::from_str(include_str!("../../../src/bundled/bestie/manifest.json"))
@@ -537,6 +587,16 @@ pub fn bundled_manifests() -> Vec<Manifest> {
         .expect("team-mcp manifest"),
         serde_json::from_str(include_str!("../../../src/bundled/typesafe/manifest.json"))
             .expect("typesafe manifest"),
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/plugin-development/manifest.json"
+        ))
+        .expect("plugin development manifest"),
+        serde_json::from_str(include_str!("../../../src/bundled/focus/manifest.json"))
+            .expect("focus manifest"),
+        serde_json::from_str(include_str!(
+            "../../../src/bundled/changesets/manifest.json"
+        ))
+        .expect("changesets manifest"),
     ]
 }
 /// New bundles must opt in to the default-on policy.
@@ -555,16 +615,15 @@ fn enabled_by_default(id: &str) -> bool {
             | "buzz.voice-notes"
             | "buzz.huddles"
             | "buzz.github"
+            | "buzz.bestie"
             | "buzz.watching"
             | "buzz.pairing"
             | "buzz.inbox"
-            | "buzz.reminders"
             | "buzz.repos"
             | "buzz.agents"
             | "buzz.claude-code"
             | "buzz.codex"
             | "buzz.goose"
-            | "buzz.workflows"
             | "block.builderlab"
             | "buzz.moderation"
             | "buzz.relay-staff"
@@ -580,12 +639,13 @@ fn enabled_by_default(id: &str) -> bool {
             | "buzz.team.display"
             | "buzz.team.mcp"
             | "buzz.typesafe"
+            | "buzz.plugin-development"
     )
 }
 /// Bundled ids that older profiles may still hold as installed plugins.
 const FORMERLY_INSTALLED: &[&str] = &["buzz.claude-code", "buzz.codex"];
 /// Host-owned features stay reserved even though they have no catalog entries.
-const BUILT_IN: &[&str] = &["buzz.emoji", "buzz.mentions"];
+const BUILT_IN: &[&str] = &["buzz.emoji", "buzz.mentions", "buzz.plugin-requests"];
 fn is_bundled(id: &str) -> bool {
     bundled_manifests().iter().any(|manifest| manifest.id == id)
 }
@@ -608,6 +668,8 @@ struct Installed {
     #[serde(default)]
     previous_source: Option<InstallSource>,
     enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    update_checks: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     readme_revision: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -636,6 +698,7 @@ impl ReloadSource {
 pub enum InstallSource {
     Folder(ReloadSource),
     Git(GitSource),
+    Url(UrlSource),
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -645,6 +708,13 @@ pub struct GitSource {
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit: Option<String>,
+}
+/// A single plugin artifact downloaded over HTTPS and accepted only if its SHA-256 matches.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UrlSource {
+    pub url: String,
+    pub sha256: String,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -664,6 +734,26 @@ impl Default for Registry {
             installed: BTreeMap::new(),
         }
     }
+}
+// Freeze known defaults so later releases cannot silently change a feature's state.
+fn pin_bundled_defaults(registry: &mut Registry, existing_profile: bool) -> bool {
+    let mut changed = false;
+    for manifest in bundled_manifests() {
+        registry
+            .bundled_overrides
+            .entry(manifest.id.clone())
+            .or_insert_with(|| {
+                changed = true;
+                if existing_profile && manifest.id == "buzz.bestie" {
+                    false
+                } else {
+                    enabled_by_default(&manifest.id)
+                        || (existing_profile
+                            && matches!(manifest.id.as_str(), "buzz.reminders" | "buzz.workflows"))
+                }
+            });
+    }
+    changed
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -699,7 +789,21 @@ struct Release {
 }
 const RELEASE_MARKER: &str = "buzz-plugin-release-v1";
 const RELEASE_KIND: Kind = Kind::Custom(1064);
-const SIGNED_ROLLBACK_ERROR: &str = "Cannot roll back a signed plugin to an unsigned revision";
+const UNSIGNED_PLUGIN_ERROR: &str =
+    "External plugins require a signed release (plugin.artifact.json and plugin.signature.json)";
+const SIGNED_ROLLBACK_ERROR: &str = "Cannot roll back to an unsigned revision";
+
+fn signatures_required() -> bool {
+    std::env::var("BUZZ_REQUIRE_PLUGIN_SIGNATURES").as_deref() == Ok("1")
+}
+
+fn verified_publisher(digest: &str, signature: Option<&Event>) -> Result<Option<String>> {
+    match signature {
+        Some(signature) => publisher_for_hash(digest, signature).map(Some),
+        None if signatures_required() => Err(UNSIGNED_PLUGIN_ERROR.into()),
+        None => Ok(None),
+    }
+}
 
 fn publisher(bytes: &[u8], signature: &Event) -> Result<String> {
     publisher_for_hash(&hash(bytes), signature)
@@ -764,7 +868,9 @@ fn sign_release_from_store<K: AsRef<[u8]>>(
         Error::Absent => "Set up your Buzz human identity in the desktop app before signing",
         Error::Denied => "Secure storage access was denied; unlock it and retry signing",
         Error::Busy => "Secure storage is busy; retry signing shortly",
-        Error::Corrupt => "Saved Buzz human identity is malformed; nothing was changed",
+        Error::Corrupt | Error::Ambiguous => {
+            "Saved Buzz human identity is malformed; nothing was changed"
+        }
         _ => "Saved Buzz human identity could not be read from secure storage",
     })?;
     let text = std::str::from_utf8(bytes.as_ref())
@@ -785,6 +891,7 @@ pub struct PluginInfo {
     pub manifest: Manifest,
     pub source: &'static str,
     pub enabled: bool,
+    pub update_checks: Option<bool>,
     pub revision: String,
     pub previous: Option<String>,
     pub has_signature: bool,
@@ -860,6 +967,8 @@ pub struct Manager {
     root: PathBuf,
     profile: String,
     safe_mode: bool,
+    existing_profile: bool,
+    packaged_fetch: std::sync::Arc<std::sync::Mutex<managed::PackagedFetch>>,
 }
 impl Manager {
     /// Host control-plane location that protected workers must not modify.
@@ -876,11 +985,16 @@ impl Manager {
         if !home.is_absolute() {
             return Err("Plugin home must be an absolute path".into());
         }
+        let root = home.join("profiles").join(profile);
+        // Catalog reads created this folder even when no preferences were saved.
+        let existing_profile = root.try_exists().map_err(err)?;
         Ok(Self {
-            root: home.join("profiles").join(profile),
+            root,
             home,
             profile: profile.into(),
             safe_mode,
+            existing_profile,
+            packaged_fetch: Default::default(),
         })
     }
     /// Opens the environment's plugin home, else `home`: the desktop passes its own app data folder.
@@ -893,10 +1007,38 @@ impl Manager {
     }
     /// The managed plugin policy and how each recommendation stands in `catalog`.
     pub fn managed(&self, catalog: &Catalog) -> managed::Managed {
-        managed::status(
-            managed::path(&self.home, std::env::var_os(managed::PATH_ENV)),
+        let fetch = self.packaged_fetch.lock().map_or_else(
+            |_| managed::PackagedFetch::Failed("Policy fetch state is unavailable".into()),
+            |fetch| fetch.clone(),
+        );
+        managed::effective(
+            &self.home,
+            std::env::var_os(managed::PATH_ENV),
+            (!managed::PACKAGED_URL.is_empty()).then_some((managed::PACKAGED_URL, &fetch)),
             catalog,
         )
+    }
+    /// Repository access rules for Git imports, from the file beside the profile folders.
+    pub fn repository_access(&self) -> access::AccessRules {
+        access::load(&self.home, std::env::var_os(access::PATH_ENV))
+    }
+    /// Keeps a policy fetched from [`managed::PACKAGED_URL`] if Buzz can use it.
+    pub fn store_packaged_policy(&self, bytes: &[u8]) -> Result<bool> {
+        let stored = managed::store_packaged(&self.home, managed::PACKAGED_URL, bytes);
+        self.record_packaged_fetch(stored.as_ref().map(|_| ()).map_err(Clone::clone));
+        stored
+    }
+    /// Records a fetch that failed before Buzz could check the response.
+    pub fn packaged_policy_failed(&self, reason: String) {
+        self.record_packaged_fetch(Err(reason));
+    }
+    fn record_packaged_fetch(&self, outcome: std::result::Result<(), String>) {
+        if let Ok(mut fetch) = self.packaged_fetch.lock() {
+            *fetch = match outcome {
+                Ok(()) => managed::PackagedFetch::Fetched,
+                Err(reason) => managed::PackagedFetch::Failed(reason),
+            };
+        }
     }
     fn lock(&self) -> Result<File> {
         fs::create_dir_all(&self.root).map_err(err)?;
@@ -912,15 +1054,11 @@ impl Manager {
     }
     fn read(&self) -> Result<Registry> {
         let path = self.root.join("registry.json");
-        let file = match File::open(&path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Registry::default())
-            }
+        let mut r: Registry = match File::open(&path) {
+            Ok(file) => serde_json::from_str(&read_file_limited(file)?).map_err(err)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Registry::default(),
             Err(error) => return Err(err(error)),
         };
-        let text = read_file_limited(file)?;
-        let mut r: Registry = serde_json::from_str(&text).map_err(err)?;
         if r.version != 1 && r.version != 2 {
             return Err(
                 "Unsupported settings version; use a compatible Buzz or recover settings".into(),
@@ -945,8 +1083,14 @@ impl Manager {
                 valid_hash(h)?;
             }
         }
-        if migrate_agent_flag::migrate(&mut r) {
+        let renamed = migrate_agent_flag::migrate(&mut r);
+        let pinned = pin_bundled_defaults(&mut r, self.existing_profile);
+        if renamed {
             self.save(&r)?;
+        } else if pinned {
+            // Readable settings must remain usable when the default snapshot
+            // cannot be written. Later reads retry; explicit edits still fail.
+            let _ = self.save(&r);
         }
         Ok(r)
     }
@@ -974,9 +1118,7 @@ impl Manager {
                 "Installed artifact failed its integrity check; reinstall or roll back".into(),
             );
         }
-        if let Some(signature) = signature {
-            publisher(text.as_bytes(), signature)?;
-        }
+        verified_publisher(revision, signature)?;
         let a: Artifact = serde_json::from_str(&text).map_err(err)?;
         a.manifest.validate()?;
         if a.manifest.id != id {
@@ -1003,6 +1145,7 @@ impl Manager {
                     manifest,
                     source: "bundled",
                     enabled,
+                    update_checks: None,
                     revision: "bundled".into(),
                     previous: None,
                     has_signature: false,
@@ -1020,22 +1163,21 @@ impl Manager {
         for (id, p) in registry.installed {
             // Catalog polling stays cheap; verify content hashes before enabling/loading.
             let has_signature = p.current_signature.is_some();
-            let rollback_blocked_reason =
-                (has_signature && p.previous.is_some() && p.previous_signature.is_none())
-                    .then_some(SIGNED_ROLLBACK_ERROR);
+            let rollback_blocked_reason = ((signatures_required() || has_signature)
+                && p.previous.is_some()
+                && p.previous_signature.is_none())
+            .then_some(SIGNED_ROLLBACK_ERROR);
             let mut error = fs::metadata(self.artifact_path(&id, &p.current))
                 .map_err(err)
                 .err();
             let publisher = if error.is_none() {
-                p.current_signature.as_ref().and_then(|signature| {
-                    match publisher_for_hash(&p.current, signature) {
-                        Ok(key) => Some(key),
-                        Err(reason) => {
-                            error = Some(reason);
-                            None
-                        }
+                match verified_publisher(&p.current, p.current_signature.as_ref()) {
+                    Ok(key) => key,
+                    Err(reason) => {
+                        error = Some(reason);
+                        None
                     }
-                })
+                }
             } else {
                 None
             };
@@ -1043,6 +1185,7 @@ impl Manager {
                 manifest: p.manifest,
                 source: "external",
                 enabled: p.enabled,
+                update_checks: p.update_checks,
                 revision: p.current,
                 previous: p.previous,
                 has_signature,
@@ -1101,6 +1244,7 @@ impl Manager {
                 }
             });
             let enabled = old.is_some_and(|p| p.enabled);
+            let update_checks = old.and_then(|p| p.update_checks);
             let previous_signature = old.and_then(|p| {
                 if p.current == revision {
                     p.previous_signature.clone()
@@ -1120,6 +1264,7 @@ impl Manager {
                     previous_signature,
                     previous_source,
                     enabled,
+                    update_checks,
                     readme_revision,
                     icon_png_revision,
                     icon_jpg_revision,
@@ -1161,12 +1306,22 @@ impl Manager {
                         p.enabled = true;
                     }
                     "disable" => p.enabled = false,
+                    "enable-update-checks" | "disable-update-checks" => {
+                        if p.manifest.updates.is_none()
+                            || !matches!(p.current_source, Some(InstallSource::Git(_)))
+                        {
+                            return Err("This plugin does not support Git update checks".into());
+                        }
+                        p.update_checks = Some(action == "enable-update-checks");
+                    }
                     "remove" => {
                         registry.installed.remove(id);
                     }
                     "rollback" => {
                         let previous = p.previous.clone().ok_or("No previous revision")?;
-                        if p.current_signature.is_some() && p.previous_signature.is_none() {
+                        if (signatures_required() || p.current_signature.is_some())
+                            && p.previous_signature.is_none()
+                        {
                             return Err(SIGNED_ROLLBACK_ERROR.into());
                         }
                         let a = self.artifact(id, &previous, p.previous_signature.as_ref())?;
@@ -1376,7 +1531,9 @@ impl Manager {
                 backup.as_file().sync_all().map_err(err)?;
                 backup.keep().map_err(err)?;
             }
-            self.save(&Registry::default())?;
+            let mut defaults = Registry::default();
+            pin_bundled_defaults(&mut defaults, false);
+            self.save(&defaults)?;
         }
         self.catalog()
     }
@@ -1400,13 +1557,12 @@ impl Release {
         if is_reserved(&artifact.manifest.id) || artifact.code.trim().is_empty() {
             return Err("Invalid plugin artifact".into());
         }
-        // IMPORTANT: We allow unsigned plugins currently. Before release, we should add UI to restrict the public keys we trust; and also allowlist Block plugins.
         if let Some(signature) = &self.signature {
             if serde_json::to_vec(signature).map_err(err)?.len() > 64 * 1024 {
                 return Err("Plugin release signature exceeds 64 KiB".into());
             }
-            publisher(&self.bytes, signature)?;
         }
+        verified_publisher(&hash(&self.bytes), self.signature.as_ref())?;
         Ok(artifact)
     }
     fn validate(&self) -> Result<Manifest> {
@@ -1423,6 +1579,14 @@ fn prepare_artifact(directory: &Path) -> Result<Release> {
 }
 pub fn release_manifest(directory: &Path) -> Result<Manifest> {
     prepare_artifact(directory)?.validate()
+}
+/// The single-file artifact a URL source serves, and its SHA-256: the exact bytes Buzz
+/// installs. A release signature is not part of it.
+pub fn pack_release(directory: &Path) -> Result<(Manifest, Vec<u8>, String)> {
+    let release = prepare_artifact(directory)?;
+    let manifest = release.validate()?;
+    let digest = hash(&release.bytes);
+    Ok((manifest, release.bytes, digest))
 }
 fn prepare_reload_artifact(source: &InstallSource) -> Result<Release> {
     let InstallSource::Folder(source) = source else {
@@ -1621,6 +1785,29 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
+    fn sign_source(directory: &Path) {
+        super::sign_release(directory, &"01".repeat(32)).unwrap();
+    }
+
+    pub(super) fn rerun_with_signatures_required(test: &str) -> bool {
+        if std::env::var("BUZZ_REQUIRE_PLUGIN_SIGNATURES").as_deref() == Ok("1") {
+            return false;
+        }
+        // Keep the launch policy isolated from parallel tests in this process.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--nocapture"])
+            .env("BUZZ_REQUIRE_PLUGIN_SIGNATURES", "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        true
+    }
+
     #[test]
     fn compressed_png_profile_is_bounded_before_header_decode() {
         use image::{ImageDecoder as _, ImageEncoder as _};
@@ -1689,6 +1876,33 @@ mod tests {
             .collect();
         assert_eq!(native, expected);
 
+        let storage = fs::read_to_string(format!("{root}/../plugins/storage.ts")).unwrap();
+        let mut browser_legacy_on: Vec<_> = storage
+            .split("(existing && (")
+            .nth(1)
+            .expect("browser legacy-On condition")
+            .split("))")
+            .next()
+            .unwrap()
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .collect();
+        browser_legacy_on.sort_unstable();
+        let mut upgraded = super::Registry::default();
+        super::pin_bundled_defaults(&mut upgraded, true);
+        let native_legacy_on: Vec<_> = upgraded
+            .bundled_overrides
+            .iter()
+            .filter_map(|(id, enabled)| {
+                (*enabled && !enabled_by_default(id)).then_some(id.as_str())
+            })
+            .collect();
+        assert_eq!(
+            native_legacy_on, browser_legacy_on,
+            "legacy-On migration set"
+        );
+
         let features =
             fs::read_to_string(format!("{root}/../app/conversation-features.ts")).unwrap();
         let manifests: BTreeMap<_, _> = features
@@ -1706,17 +1920,27 @@ mod tests {
         let mut host_ids: Vec<_> = features
             .split("manifest: { ...")
             .skip(1)
-            .map(|entry| manifests[entry.split(',').next().unwrap()].as_str())
+            .map(|entry| manifests[entry.split(',').next().unwrap()].to_string())
             .collect();
+        // A feature whose manifest is written out names its id by a constant.
+        let constants = fs::read_to_string(format!("{root}/../plugins/review-access.ts")).unwrap();
+        host_ids.extend(features.lines().filter_map(|line| {
+            let constant = line.trim().strip_prefix("id: ")?.trim_end_matches(',');
+            let declaration = format!("export const {constant} = \"");
+            let value = constants
+                .lines()
+                .find_map(|line| line.strip_prefix(&declaration))?;
+            Some(value.trim_end_matches("\";").to_string())
+        }));
         host_ids.sort_unstable();
-        let mut reserved_ids = super::BUILT_IN.to_vec();
+        let mut reserved_ids: Vec<_> = super::BUILT_IN.iter().map(|id| id.to_string()).collect();
         reserved_ids.sort_unstable();
         assert_eq!(reserved_ids, host_ids);
     }
 
     #[test]
     fn prebuilt_artifacts_cannot_claim_built_in_conversation_ids() {
-        for id in ["buzz.emoji", "buzz.mentions"] {
+        for id in ["buzz.emoji", "buzz.mentions", "buzz.plugin-requests"] {
             let release = Release {
                 bytes: serde_json::to_vec(&serde_json::json!({
                     "manifest": { "id": id, "name": "Reserved feature", "apiVersion": 1 },
@@ -1734,10 +1958,19 @@ mod tests {
 
     #[test]
     fn legacy_manifest_and_code_artifacts_remain_compatible() {
-        let release = Release {
-            bytes: br#"{"manifest":{"id":"example.page","name":"Example","apiVersion":1},"code":"export function apply() {}"}"#.to_vec(),
-            signature: None,
-        };
+        let source = tempfile::tempdir().unwrap();
+        fs::write(
+            source.path().join("manifest.json"),
+            r#"{"id":"example.page","name":"Example","apiVersion":1}"#,
+        )
+        .unwrap();
+        fs::write(
+            source.path().join("plugin.js"),
+            "export function apply() {}",
+        )
+        .unwrap();
+        sign_source(source.path());
+        let release = super::prepare_artifact(source.path()).unwrap();
         let artifact = release.artifact().unwrap();
         assert_eq!(artifact.manifest.id, "example.page");
         assert!(artifact.readme.is_none());
@@ -1819,6 +2052,155 @@ mod tests {
             .module("example.saved", &plugin.revision)
             .unwrap()
             .contains("saved = true"));
+    }
+
+    #[test]
+    fn persisted_missing_or_invalid_signatures_block_execution_and_host_access() {
+        if rerun_with_signatures_required(
+            "tests::persisted_missing_or_invalid_signatures_block_execution_and_host_access",
+        ) {
+            return;
+        }
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        fs::write(
+            source.path().join("manifest.json"),
+            r#"{"id":"example.page","name":"Example","apiVersion":1,"host":{"files":true}}"#,
+        )
+        .unwrap();
+        fs::write(
+            source.path().join("plugin.js"),
+            "export function apply() {}",
+        )
+        .unwrap();
+        sign_source(source.path());
+        let manager = Manager::open(Some(home.path().into()), "test", false).unwrap();
+        manager.install(source.path()).unwrap();
+        manager.change("enable", "example.page").unwrap();
+        let original = manager.read().unwrap();
+        let revision = original.installed["example.page"].current.clone();
+        assert!(manager.module("example.page", &revision).is_ok());
+
+        for missing in [true, false] {
+            let mut registry = manager.read().unwrap();
+            let installed = registry.installed.get_mut("example.page").unwrap();
+            installed.current_signature =
+                original.installed["example.page"].current_signature.clone();
+            if missing {
+                installed.current_signature = None;
+            } else {
+                installed.current_signature.as_mut().unwrap().content = "altered".into();
+            }
+            manager.save(&registry).unwrap();
+            let reopened = Manager::open(Some(home.path().into()), "test", false).unwrap();
+            let catalog = reopened.catalog().unwrap();
+            let plugin = catalog
+                .plugins
+                .iter()
+                .find(|p| p.manifest.id == "example.page")
+                .unwrap();
+            assert!(plugin.enabled, "retain the user's setting for repair");
+            assert!(plugin.error.is_some());
+            assert!(plugin.publisher.is_none());
+            let expected = if missing {
+                super::UNSIGNED_PLUGIN_ERROR
+            } else {
+                "Invalid plugin release event ID or signature"
+            };
+            assert_eq!(plugin.error.as_deref(), Some(expected));
+            assert_eq!(
+                reopened.module("example.page", &revision).err().as_deref(),
+                Some(expected)
+            );
+            assert_eq!(
+                reopened.content("example.page", &revision).err().as_deref(),
+                Some(expected)
+            );
+            assert_eq!(
+                reopened
+                    .host_grants("example.page", &revision)
+                    .err()
+                    .as_deref(),
+                Some(expected)
+            );
+            assert_eq!(
+                reopened.change("enable", "example.page").err().as_deref(),
+                Some(expected)
+            );
+        }
+        manager.change("disable", "example.page").unwrap();
+        manager.change("remove", "example.page").unwrap();
+        manager.install(source.path()).unwrap();
+        manager.change("enable", "example.page").unwrap();
+        assert!(manager.module("example.page", &revision).is_ok());
+    }
+
+    #[test]
+    fn unsigned_legacy_installation_can_be_replaced_with_a_signed_release() {
+        if rerun_with_signatures_required(
+            "tests::unsigned_legacy_installation_can_be_replaced_with_a_signed_release",
+        ) {
+            return;
+        }
+        let home = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        fs::write(
+            source.path().join("manifest.json"),
+            r#"{"id":"example.page","name":"Example","apiVersion":1}"#,
+        )
+        .unwrap();
+        fs::write(
+            source.path().join("plugin.js"),
+            "export function apply() {}",
+        )
+        .unwrap();
+        sign_source(source.path());
+        let manager = Manager::open(Some(home.path().into()), "test", false).unwrap();
+        manager.install(source.path()).unwrap();
+        manager.change("enable", "example.page").unwrap();
+        let mut registry = manager.read().unwrap();
+        let installed = registry.installed.get_mut("example.page").unwrap();
+        installed.current_signature = None;
+        installed.previous = Some(installed.current.clone());
+        installed.previous_signature = None;
+        manager.save(&registry).unwrap();
+
+        let catalog = manager.catalog().unwrap();
+        let plugin = catalog
+            .plugins
+            .iter()
+            .find(|p| p.manifest.id == "example.page")
+            .unwrap();
+        assert_eq!(
+            plugin.rollback_blocked_reason,
+            Some(super::SIGNED_ROLLBACK_ERROR)
+        );
+        assert_eq!(
+            manager.change("rollback", "example.page").err().as_deref(),
+            Some(super::SIGNED_ROLLBACK_ERROR)
+        );
+        let original_revision = plugin.revision.clone();
+        let checked = serde_json::to_value(
+            super::imports::check_saved_folder(&manager, "example.page").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(checked["revision"], original_revision);
+        assert!(checked["publisher"].as_str().is_some());
+        let prepared = super::imports::prepare_saved_folder(&manager, "example.page").unwrap();
+        assert!(manager.module("example.page", &original_revision).is_err());
+        let repaired = prepared
+            .install(&manager, &prepared.preview.token, ".")
+            .unwrap();
+        let plugin = repaired
+            .plugins
+            .iter()
+            .find(|p| p.manifest.id == "example.page")
+            .unwrap();
+        assert_eq!(plugin.revision, original_revision);
+        assert!(plugin.enabled);
+        assert!(plugin.error.is_none());
+        assert!(plugin.publisher.is_some());
+        assert!(manager.module("example.page", &plugin.revision).is_ok());
     }
 
     #[test]
@@ -1939,6 +2321,87 @@ mod tests {
         ] {
             assert!(publisher(&bytes, &sign(invalid)).is_err());
         }
+    }
+
+    #[test]
+    fn update_check_choices_survive_reinstall_update_rollback_and_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        let open = || Manager::open(Some(temp.path().into()), "test", false).unwrap();
+        let manager = open();
+        let source = Some(super::InstallSource::Git(super::GitSource {
+            repository: "https://example.com/plugins.git".into(),
+            reference: "main".into(),
+            path: ".".into(),
+            commit: None,
+        }));
+        let directory = tempfile::tempdir().unwrap();
+        let release = |policy: Option<bool>| {
+            let mut manifest = serde_json::json!({
+                "id": "example.updates", "name": "Updates", "apiVersion": 1
+            });
+            if let Some(default_enabled) = policy {
+                manifest["updates"] = serde_json::json!({"defaultEnabled": default_enabled});
+            }
+            fs::write(directory.path().join("manifest.json"), manifest.to_string()).unwrap();
+            fs::write(
+                directory.path().join("plugin.js"),
+                "export function apply() {}",
+            )
+            .unwrap();
+            sign_source(directory.path());
+            super::prepare_artifact(directory.path()).unwrap()
+        };
+        let installed = |manager: &Manager| {
+            manager
+                .catalog()
+                .unwrap()
+                .plugins
+                .into_iter()
+                .find(|plugin| plugin.manifest.id == "example.updates")
+                .unwrap()
+        };
+        manager
+            .install_artifact(&release(None), source.clone())
+            .unwrap();
+        assert_eq!(installed(&manager).update_checks, None);
+        assert!(manager
+            .change("enable-update-checks", "example.updates")
+            .is_err());
+        for default_enabled in [false, true] {
+            manager
+                .install_artifact(&release(Some(default_enabled)), source.clone())
+                .unwrap();
+            assert_eq!(
+                installed(&manager)
+                    .manifest
+                    .updates
+                    .unwrap()
+                    .default_enabled,
+                default_enabled
+            );
+            for (action, expected) in [
+                ("enable-update-checks", true),
+                ("disable-update-checks", false),
+            ] {
+                manager.change(action, "example.updates").unwrap();
+                manager
+                    .install_artifact(&release(Some(default_enabled)), source.clone())
+                    .unwrap();
+                assert_eq!(installed(&open()).update_checks, Some(expected));
+                manager
+                    .install_artifact(&release(Some(!default_enabled)), source.clone())
+                    .unwrap();
+                assert_eq!(installed(&open()).update_checks, Some(expected));
+                manager.change("rollback", "example.updates").unwrap();
+                assert_eq!(installed(&open()).update_checks, Some(expected));
+                assert!(!installed(&manager).enabled);
+            }
+        }
+        manager.change("remove", "example.updates").unwrap();
+        manager
+            .install_artifact(&release(Some(true)), source)
+            .unwrap();
+        assert_eq!(installed(&open()).update_checks, None);
     }
 
     #[test]
@@ -2080,6 +2543,50 @@ mod tests {
             None
         );
         assert_eq!(serde_json::to_value(&old).unwrap(), manifest);
+        assert!(!old.host.as_ref().unwrap().managed_files);
+        let mut managed = manifest.clone();
+        managed["host"]["managedFiles"] = serde_json::json!(false);
+        let parsed: Manifest = serde_json::from_value(managed.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), manifest);
+        managed["host"]["managedFiles"] = serde_json::json!(true);
+        let parsed: Manifest = serde_json::from_value(managed.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), managed);
+        assert_ne!(
+            artifact_from_text(&manifest.to_string(), "export const x = 1".into()).unwrap(),
+            artifact_from_text(&managed.to_string(), "export const x = 1".into()).unwrap()
+        );
+        managed["host"]["managedFiles"] = serde_json::json!("true");
+        assert!(serde_json::from_value::<Manifest>(managed).is_err());
+        assert!(!old.host.as_ref().unwrap().public_images);
+        let mut images = manifest.clone();
+        images["host"]["publicImages"] = serde_json::json!(false);
+        let parsed: Manifest = serde_json::from_value(images.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), manifest);
+        images["host"]["publicImages"] = serde_json::json!(true);
+        let parsed: Manifest = serde_json::from_value(images.clone()).unwrap();
+        assert!(parsed.host.as_ref().unwrap().public_images);
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), images);
+        assert_ne!(
+            artifact_from_text(&manifest.to_string(), "export const x = 1".into()).unwrap(),
+            artifact_from_text(&images.to_string(), "export const x = 1".into()).unwrap()
+        );
+        images["host"]["publicImages"] = serde_json::json!("true");
+        assert!(serde_json::from_value::<Manifest>(images).is_err());
+        assert!(!old.host.as_ref().unwrap().public_pages);
+        let mut pages = manifest.clone();
+        pages["host"]["publicPages"] = serde_json::json!(false);
+        let parsed: Manifest = serde_json::from_value(pages.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), manifest);
+        pages["host"]["publicPages"] = serde_json::json!(true);
+        let parsed: Manifest = serde_json::from_value(pages.clone()).unwrap();
+        assert!(parsed.host.as_ref().unwrap().public_pages);
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), pages);
+        assert_ne!(
+            artifact_from_text(&manifest.to_string(), "export const x = 1".into()).unwrap(),
+            artifact_from_text(&pages.to_string(), "export const x = 1".into()).unwrap()
+        );
+        pages["host"]["publicPages"] = serde_json::json!("true");
+        assert!(serde_json::from_value::<Manifest>(pages).is_err());
         for limit in [1, 4096, MAX_HOST_COMMAND_OUTPUT_BYTES] {
             let mut valid = manifest.clone();
             valid["host"]["commands"][0]["maxOutputBytes"] = serde_json::json!(limit);
@@ -2130,6 +2637,18 @@ mod tests {
             .unwrap()
             .push(manifest["host"]["commands"][0].clone());
         assert!(artifact_from_text(&invalid.to_string(), "export const x = 1".into()).is_err());
+        let mut pinned = manifest.clone();
+        pinned["host"]["commands"][0]["artifact"] =
+            serde_json::json!({"path": "~/example/cli", "sha256": "a".repeat(64)});
+        assert!(artifact_from_text(&pinned.to_string(), "export const x = 1".into()).is_ok());
+        for (field, value) in [
+            ("path", serde_json::json!("relative/cli")),
+            ("sha256", serde_json::json!("A".repeat(64))),
+        ] {
+            let mut invalid = pinned.clone();
+            invalid["host"]["commands"][0]["artifact"][field] = value;
+            assert!(artifact_from_text(&invalid.to_string(), "export const x = 1".into()).is_err());
+        }
 
         let mut processes = manifest.clone();
         processes["host"]["processes"] = serde_json::json!([
@@ -2154,8 +2673,12 @@ mod tests {
             "siblings": [{"name": "runtime.js", "sha256": "b".repeat(64)}]
         });
         assert!(artifact_from_text(&artifact.to_string(), "export const x = 1".into()).is_ok());
+        let mut home = artifact.clone();
+        home["host"]["processes"][0]["artifact"]["path"] = serde_json::json!("~/agent/cli");
+        assert!(artifact_from_text(&home.to_string(), "export const x = 1".into()).is_ok());
         for (field, value) in [
             ("path", serde_json::json!("relative/agent")),
+            ("path", serde_json::json!("~agent/cli")),
             ("sha256", serde_json::json!("A".repeat(64))),
             ("sha256", serde_json::json!("a".repeat(63))),
             (
@@ -2246,6 +2769,7 @@ mod tests {
             r#"{"id":"example.page","name":"Example","apiVersion":1,"host":{"commands":[{"id":"first","program":"example-cli","args":["status"]}],"networkOrigins":["https://one.example"]}}"#,
         )
         .unwrap();
+        sign_source(&source);
         let first = manager
             .install(&source)
             .unwrap()
@@ -2270,9 +2794,10 @@ mod tests {
 
         fs::write(
             source.join("manifest.json"),
-            r#"{"id":"example.page","name":"Example","apiVersion":1,"host":{"commands":[{"id":"second","program":"example-cli","args":["status","--json"],"maxOutputBytes":65536}],"networkOrigins":["https://two.example"]}}"#,
+            r#"{"id":"example.page","name":"Example","apiVersion":1,"host":{"commands":[{"id":"second","program":"example-cli","args":["status","--json"],"maxOutputBytes":65536}],"networkOrigins":["https://two.example"],"managedFiles":true}}"#,
         )
         .unwrap();
+        sign_source(&source);
         let second = manager
             .install(&source)
             .unwrap()
@@ -2283,6 +2808,7 @@ mod tests {
             .revision;
         assert!(manager.host_grants("example.page", &first).is_err());
         let grants = manager.host_grants("example.page", &second).unwrap();
+        assert!(grants.managed_files);
         assert_eq!(grants.commands[0].id, "second");
         assert_eq!(grants.commands[0].max_output_bytes, Some(65536));
         let reopened = Manager::open(Some(temp.path().into()), "test", false).unwrap();
@@ -2306,10 +2832,6 @@ mod tests {
             Some("https://compose-ctrl.builderlabstaging.xyz")
         );
         assert_eq!(
-            super::apps_control_plane("https://block.builderlab.xyz"),
-            Some("https://compose-ctrl.block.builderlab.xyz")
-        );
-        assert_eq!(
             super::apps_control_plane("https://builderlab.example"),
             None
         );
@@ -2320,25 +2842,11 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let manager = Manager::open(Some(temp.path().into()), "test", false).unwrap();
         let grants = manager.host_grants("block.builderlab", "bundled").unwrap();
+        // Only the native session's Builderlab routes are granted, and only in
+        // an FI build.
         if env!("BUZZ_BUILD_FEDERATED_IDENTITY_CONFIG").is_empty() {
-            assert_eq!(
-                grants.files,
-                super::apps_control_plane(super::BUILDERLAB_ORIGIN).is_some()
-            );
-            assert_eq!(
-                grants.network_origins,
-                if env!("BUZZ_BUILDERLAB_ORIGIN").is_empty() {
-                    vec![]
-                } else {
-                    std::iter::once(env!("BUZZ_BUILDERLAB_ORIGIN"))
-                        .chain(super::apps_control_plane(env!("BUZZ_BUILDERLAB_ORIGIN")))
-                        .map(str::to_owned)
-                        .collect()
-                }
-            );
-            assert_eq!(grants.federated_identity, None);
+            assert_eq!(grants, super::HostGrants::default());
         } else {
-            // An FI build grants only the native session's Builderlab routes.
             assert!(!grants.files);
             assert!(grants.network_origins.is_empty());
             let grant = grants.federated_identity.clone().unwrap();
@@ -2350,6 +2858,8 @@ mod tests {
                 .collect();
             assert!(operations.contains(&format!("GET {base}v1/auth/me")));
             assert!(operations.contains(&format!("POST {base}v3/beekeeper/register-agent")));
+            assert!(operations.contains(&format!("POST {base}v3/beekeeper/get-agent-turn-status")));
+            assert!(operations.contains(&format!("POST {base}v1/buzz/nsec-backups/status")));
             assert_eq!(operations.len(), super::BUILDERLAB_FI_ROUTES.len());
         }
         assert!(grants.commands.is_empty());
@@ -2391,6 +2901,7 @@ mod tests {
             r#"{"id":"example.page","name":"Example","apiVersion":1}"#,
         )
         .unwrap();
+        sign_source(&source);
         let first = manager
             .install(&source)
             .unwrap()
@@ -2406,12 +2917,24 @@ mod tests {
             r#"{"id":"example.page","name":"Example","apiVersion":1,"host":{"commands":[{"id":"status","program":"example-cli","args":["status"]}]}}"#,
         )
         .unwrap();
+        sign_source(&source);
         let error = match manager.reload("example.page") {
             Ok(_) => panic!("reload should reject changed host grants"),
             Err(error) => error,
         };
         assert!(error.contains("Load from folder"));
 
+        fs::write(
+            source.join("manifest.json"),
+            r#"{"id":"example.page","name":"Example","apiVersion":1,"host":{"managedFiles":true}}"#,
+        )
+        .unwrap();
+        sign_source(&source);
+        assert!(manager
+            .reload("example.page")
+            .err()
+            .unwrap()
+            .contains("Load from folder"));
         let catalog = manager.catalog().unwrap();
         let plugin = catalog
             .plugins
@@ -2512,11 +3035,8 @@ mod tests {
             &fs::read(manager.storage_root().join("registry.json")).unwrap(),
         )
         .unwrap();
-        assert_eq!(
-            saved["bundledOverrides"],
-            serde_json::json!({ "buzz.agents": true }),
-            "the switch now uses the current plugin id"
-        );
+        assert_eq!(saved["bundledOverrides"]["buzz.agents"], true);
+        assert!(saved["bundledOverrides"].get("buzz.agents2").is_none());
     }
 
     #[test]
@@ -2606,6 +3126,7 @@ mod tests {
         )
         .unwrap();
         fs::write(source.join("plugin.js"), "export function apply() {}").unwrap();
+        sign_source(&source);
         let first = manager
             .install(&source)
             .unwrap()
@@ -2616,6 +3137,7 @@ mod tests {
             .revision
             .clone();
         fs::write(source.join("plugin.js"), "export const reloaded = true;").unwrap();
+        sign_source(&source);
 
         let error = match manager.reload_with_commit_hook("example.page", false, || {
             manager.change("enable", "example.page").unwrap();
@@ -2636,7 +3158,7 @@ mod tests {
         assert_eq!(plugin.previous, None);
     }
     #[test]
-    fn validates_agent_hook_grants() {
+    fn validates_agent_type_grants() {
         for (keys, valid) in [
             (vec!["buzz.pi/pi"], true),
             (vec!["buzz.pi/pi", "buzz.codex/codex"], true),
@@ -2644,12 +3166,14 @@ mod tests {
             (vec!["buzz.pi/pi", "buzz.pi/pi"], false),
             (vec!["buzz.pi/../pi"], false),
         ] {
-            let manifest: super::Manifest = serde_json::from_value(serde_json::json!({
-                "id": "policy", "name": "Policy", "apiVersion": 1,
-                "host": { "agentHooks": keys },
-            }))
-            .unwrap();
-            assert_eq!(manifest.validate().is_ok(), valid);
+            for field in ["agentHooks", "agentExecution"] {
+                let manifest: super::Manifest = serde_json::from_value(serde_json::json!({
+                    "id": "policy", "name": "Policy", "apiVersion": 1,
+                    "host": { field: keys },
+                }))
+                .unwrap();
+                assert_eq!(manifest.validate().is_ok(), valid);
+            }
         }
     }
 }

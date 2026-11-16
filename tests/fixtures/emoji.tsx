@@ -12,12 +12,14 @@ import { MessageComposer } from "../../src/features/messages/MessageComposer";
 import { MessageRow } from "../../src/features/messages/MessageRow";
 import { createRelaySession } from "../../src/features/relay/session";
 import { PublishRejected } from "../../src/features/relay/outbox";
+import { ReadError } from "../../src/features/relay/errors";
 import { foldMessages } from "../../src/features/relay/fold";
 import { mediaUrl } from "../../src/features/relay/transport";
 import {
   keypair,
   message,
   metadata,
+  profile,
   roster,
   signed,
 } from "../../src/features/relay/testing";
@@ -41,6 +43,7 @@ const viewer = keypair(),
   relay = keypair(),
   member = keypair();
 const wrap = new URLSearchParams(location.search).has("wrap");
+const coldProfiles = new URLSearchParams(location.search).has("cold-profiles");
 const grouped = new URLSearchParams(location.search).has("grouped");
 const singleReaction = new URLSearchParams(location.search).has(
   "single-reaction",
@@ -58,6 +61,7 @@ const report = {
 };
 const sessions = ["a", "b"].map((community) => {
   const origin = `https://${community}.test`;
+  const reactorProfiles = new Map<string, RelayEvent>();
   let time = 1,
     fail = false,
     rejectReaction = false,
@@ -66,7 +70,14 @@ const sessions = ["a", "b"].map((community) => {
   let live!: LiveCallbacks;
   let catalogRead: Promise<void> | undefined;
   let coldFailure = new URLSearchParams(location.search).has("cold-error");
+  let timeouts = Number(
+    new URLSearchParams(location.search).get("catalog-timeouts") ?? 0,
+  );
   let releaseCatalogRead: (() => void) | undefined;
+  if (new URLSearchParams(location.search).has("hold-catalog"))
+    catalogRead = new Promise<void>((resolve) => {
+      releaseCatalogRead = resolve;
+    });
   const makeSet = (empty = false) =>
     signed(member, {
       kind: 30030,
@@ -97,6 +108,20 @@ const sessions = ["a", "b"].map((community) => {
                       "very-long-community-emoji-name-that-does-not-fit",
                       `${origin}/media/long.png`,
                     ],
+                    [
+                      "emoji",
+                      "very-long-community-emoji-name-that-does-not-fit-either",
+                      `${origin}/media/longer.png`,
+                    ],
+                    ...(new URLSearchParams(location.search).has(
+                      "completion-scroll",
+                    )
+                      ? Array.from({ length: 30 }, (_, index) => [
+                          "emoji",
+                          `scrolling-emoji-with-a-long-common-name-${String(index).padStart(2, "0")}`,
+                          `${origin}/media/scroll-${index}.png`,
+                        ])
+                      : []),
                   ]
                 : []),
             ]),
@@ -130,7 +155,25 @@ const sessions = ["a", "b"].map((community) => {
             throw new Error("Fixture catalog offline");
           }
           if (fail) throw new Error("Fixture catalog offline");
+          if (timeouts > 0) {
+            timeouts--;
+            throw new ReadError("unavailable", "Relay read timed out");
+          }
           return [catalog];
+        }
+        if (
+          coldProfiles &&
+          filters.some((filter) => filter.kinds?.includes(0))
+        ) {
+          const events = [...reactorProfiles.values()].filter((event) =>
+            filters.some((filter) => matchesEvent(event, filter)),
+          );
+          if (events.length) {
+            await fetch(
+              `/fixture-reactor-profiles?names=${encodeURIComponent(events.map((event) => JSON.parse(event.content).name).join(","))}`,
+            );
+          }
+          return events;
         }
         return [
           roster(relay, "c", [viewer.pubkey], 1),
@@ -228,11 +271,14 @@ const sessions = ["a", "b"].map((community) => {
         },
         (_, index) => {
           const person = keypair();
-          participantProfiles.set(person.pubkey, {
+          const details = {
             name: new URLSearchParams(location.search).has("long-names")
               ? `Teammate ${index + 1} ${"Long display name ".repeat(10)}`
               : `Teammate ${index + 1}`,
-          });
+          };
+          if (coldProfiles)
+            reactorProfiles.set(person.pubkey, profile(person, details));
+          else participantProfiles.set(person.pubkey, details);
           return signed(person, {
             kind: 7,
             content: "👍",

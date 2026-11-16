@@ -34,18 +34,25 @@ export const historySize = 640;
 // broker/subscriber and model only the upstream relay policy with ephemeral keys.
 export const test = base.extend({
   productionBroker: [false, { option: true }],
+  enabledPlugins: [[], { option: true }],
+  builderlab: [{}, { option: true }],
   /** The production broker's live setup deadline. It runs in Node, so the
    * page clock cannot hold it; a test that keeps EOSE pending sets it longer. */
   liveSetupTimeoutMs: [undefined, { option: true }],
   actionProfile: [false, { option: true }],
   agentMessageDeletion: [false, { option: true }],
   profilePicture: ["", { option: true }],
+  // The viewer profile's `tz`. The empty opt-out keeps launch from sharing the
+  // browser's zone into it; null leaves the key out so launch shares one.
+  profileTimeZone: ["", { option: true }],
   readState: [false, { option: true }],
   threadUnread: [false, { option: true }],
   presenceThreadAuthors: [0, { option: true }],
   threadUnreadMentions: [false, { option: true }],
   threadUnreadJoined: [false, { option: true }],
   threadUnreadOwnedRoot: [true, { option: true }],
+  // Newer top-level alpha rows put the threadUnread roots beyond the head page.
+  threadUnreadNewerRows: [0, { option: true }],
   exactMessages: [false, { option: true }],
   openSearch: [false, { option: true }],
   searchAuthor: [false, { option: true }],
@@ -60,13 +67,22 @@ export const test = base.extend({
   sortingSidebar: [false, { option: true }],
   initialSidebarSort: [{}, { option: true }],
   channelLifecycle: [false, { option: true }],
+  leaveRosterBeforeAck: [false, { option: true }],
   guestPermalinks: [false, { option: true }],
   lifecycleRole: ["owner", { option: true }],
   lifecycleOwnerAgent: [false, { option: true }],
   lifecycleVisibility: [{ archived: [], hidden: [] }, { option: true }],
+  autoJoinChannels: [[], { option: true }],
   sidebarIcons: [false, { option: true }],
   channelNames: [{}, { option: true }],
   expectedPageFailure: [false, { option: true }],
+  // Startup failure journeys inject one failure. An injected exception's
+  // console and page errors contain this text.
+  expectedStartupFailure: [false, { option: true }],
+  // A resource whose URL contains this text fails to load. Only each failed
+  // response's own "Failed to load resource" error passes; errors the app
+  // logs from that same chunk after Reload still fail.
+  expectedStartupLoadFailure: [false, { option: true }],
   expectedSidebarIconFailure: [false, { option: true }],
   largeSidebar: [false, { option: true }],
   iconCongestion: [false, { option: true }],
@@ -95,9 +111,16 @@ export const test = base.extend({
   historyRowsPerSecond: [1, { option: true }],
   channelIds: [channels, { option: true }],
   developmentReact: [false, { option: true, scope: "worker" }],
+  builderlabLogin: [false, { option: true, scope: "worker" }],
+  // An FI build with no native host: the Builderlab plugin applies, signed out.
+  federatedIdentity: [false, { option: true, scope: "worker" }],
   pluginFixtures: [false, { option: true, scope: "worker" }],
   localAgentActivity: [false, { option: true, scope: "worker" }],
   pairingFixture: [false, { option: true, scope: "worker" }],
+  // A build whose startup throws where `window.__buzzFixtureStartupFailure`
+  // says: "services" in createServices, "render" in App, and "running" in
+  // the app's content the next time it renders.
+  startupFailureFixture: [false, { option: true, scope: "worker" }],
   companionFixture: [false, { option: true, scope: "worker" }],
   compiledApp: [buildApp, { scope: "worker" }],
   app: async (
@@ -107,16 +130,20 @@ export const test = base.extend({
       browserName,
       browser,
       productionBroker,
+      enabledPlugins,
+      builderlab,
       liveSetupTimeoutMs,
       actionProfile,
       agentMessageDeletion,
       profilePicture,
+      profileTimeZone,
       readState,
       threadUnread,
       presenceThreadAuthors,
       threadUnreadMentions,
       threadUnreadJoined,
       threadUnreadOwnedRoot,
+      threadUnreadNewerRows,
       exactMessages,
       openSearch,
       searchAuthor,
@@ -131,13 +158,17 @@ export const test = base.extend({
       sortingSidebar,
       initialSidebarSort,
       channelLifecycle,
+      leaveRosterBeforeAck,
       guestPermalinks,
       lifecycleRole,
       lifecycleOwnerAgent,
       lifecycleVisibility,
+      autoJoinChannels,
       sidebarIcons,
       channelNames,
       expectedPageFailure,
+      expectedStartupFailure,
+      expectedStartupLoadFailure,
       expectedSidebarIconFailure,
       largeSidebar,
       iconCongestion,
@@ -230,7 +261,11 @@ export const test = base.extend({
         sign(
           0,
           [],
-          JSON.stringify({ name: "Fixture Reader", picture: profilePicture }),
+          JSON.stringify({
+            name: "Fixture Reader",
+            picture: profilePicture,
+            ...(profileTimeZone === null ? {} : { tz: profileTimeZone }),
+          }),
           userKey,
         ),
       ]),
@@ -334,6 +369,8 @@ export const test = base.extend({
     const archivedIds = new Set(lifecycleVisibility.archived);
     const hiddenDmIds = new Set(lifecycleVisibility.hidden);
     let lifecycleTime = 1700000001;
+    const joinedRoles = new Map();
+    const channelGuests = new Map();
     const rosterIds = [
       ...new Set([
         ...channels,
@@ -435,7 +472,10 @@ export const test = base.extend({
       }
     }
     const hiddenChannels = new Set();
+    // Channels an admin removed the viewer from: metadata stays, membership goes.
+    const removedIds = new Set();
     const soloDetails = new Map();
+    const servedMembers = new Map(Object.entries(sessionMembers));
     const streams = new Map();
     const streamOwners = new Map();
     // Tall histories leave room above the older-page prefetch threshold, even
@@ -818,6 +858,21 @@ export const test = base.extend({
         ),
       );
     }
+    if (threadUnread && threadUnreadNewerRows) {
+      const history = histories.get("primary/alpha");
+      const after = Math.max(...history.map((event) => event.created_at)) + 20;
+      history.push(
+        ...Array.from({ length: threadUnreadNewerRows }, (_, index) =>
+          sign(
+            9,
+            [["h", "alpha"]],
+            `Newer alpha message ${index}`,
+            userKey,
+            after + index,
+          ),
+        ),
+      );
+    }
     let inboxWindow;
     if (inboxThreadWindow) {
       const channelId = channels.find((id) => /^[0-9a-f-]{36}$/.test(id));
@@ -1030,6 +1085,36 @@ export const test = base.extend({
         return [39000, 39002].flatMap((kind) =>
           answer(community, { ...filter, kinds: [kind] }),
         );
+      const previewId = filter["#d"]?.length === 1 && filter["#d"][0];
+      const preview =
+        previewId &&
+        !rosterIds.includes(previewId) &&
+        soloDetails.get(`${community}/${previewId}`);
+      const rosterKind = filter.kinds?.find(
+        (kind) => kind === 39001 || kind === 39002,
+      );
+      if (preview && rosterKind) {
+        const owner = preview.tags.find(([key]) => key === "P")?.[1];
+        if (filter["#p"] && !filter["#p"].includes(owner)) return [];
+        return [
+          sign(
+            rosterKind,
+            [
+              ["d", previewId],
+              ...(owner
+                ? [
+                    rosterKind === 39002
+                      ? ["p", owner, "", "owner"]
+                      : ["p", owner, "owner"],
+                  ]
+                : []),
+            ],
+            "",
+            relayKey,
+            lifecycleTime,
+          ),
+        ];
+      }
       if (filter.kinds?.includes(13535)) {
         expect(filter).toEqual({
           kinds: [13535],
@@ -1063,7 +1148,16 @@ export const test = base.extend({
       if (ownSoloChannels.length > 0 && filter.ids)
         return [
           ...readEvents.get(community).values(),
-          ...(histories.get(`${community}/${filter["#h"]?.[0]}`) ?? []),
+          ...[...histories.entries()]
+            .filter(
+              ([key]) =>
+                key.startsWith(`${community}/`) &&
+                (!filter["#h"] ||
+                  filter["#h"].some(
+                    (channel) => key === `${community}/${channel}`,
+                  )),
+            )
+            .flatMap(([, events]) => events),
         ].filter((event) => filter.ids.includes(event.id));
       if (filter.kinds?.includes(20001))
         return filter.authors.map((author) =>
@@ -1110,6 +1204,7 @@ export const test = base.extend({
                 ["d", id],
                 ...((lifecycleRows.some((row) => row.id === id) ||
                   ownSoloChannels.includes(id)) &&
+                !removedIds.has(id) &&
                 ["owner", "admin"].includes(lifecycleRole)
                   ? [["p", viewer, lifecycleRole]]
                   : []),
@@ -1125,59 +1220,107 @@ export const test = base.extend({
               lifecycleTime,
             ),
           );
-      if (filter.kinds?.includes(39002))
-        return rosterIds
-          .filter((id) => !filter["#d"] || filter["#d"].includes(id))
-          .map((id) =>
-            sign(39002, [
-              ["d", id],
-              [
+      // Search's member count reads rosters without the viewer filter, so
+      // the unjoined public channel answers with its members, not the viewer.
+      if (
+        filter.kinds?.includes(39002) &&
+        !filter["#p"] &&
+        openSearch &&
+        !rosterIds.includes(OPEN_CHANNEL) &&
+        filter["#d"]?.includes(OPEN_CHANNEL)
+      )
+        return [
+          sign(
+            39002,
+            [
+              ["d", OPEN_CHANNEL],
+              ...["a", "b", "c"].map((digit) => [
                 "p",
-                viewer,
-                "",
-                lifecycleRows.some((row) => row.id === id)
-                  ? lifecycleRole === "nonmember"
-                    ? "member"
-                    : lifecycleRole
-                  : "member",
-              ],
-              ...(ownSoloChannels.includes(id)
-                ? soloAgents.map(({ pubkey }) => ["p", pubkey, "", "member"])
-                : []),
-              ...(ownerAgent && lifecycleRows.some((row) => row.id === id)
-                ? [["p", ownerAgent, "", "owner"]]
-                : []),
-              ...(sessionMembers[id] ?? []).map((pubkey) => [
-                "p",
-                pubkey,
+                digit.repeat(64),
                 "",
                 "member",
               ]),
-              ...(dmMembers[id]
-                ? dmMembers[id].map((index) => [
-                    "p",
-                    participants[index],
-                    "",
-                    "member",
-                  ])
-                : agentPeers && channels.includes(id)
-                  ? participants.map((pubkey) => ["p", pubkey, "", "member"])
-                  : dmLabels && id === "dm-peer"
-                    ? [["p", participants[0], "", "member"]]
-                    : dmLabels && id === "dm-group"
-                      ? participants.map((pubkey) => [
-                          "p",
-                          pubkey,
-                          "",
-                          "member",
-                        ])
-                      : participants
-                          .slice(
-                            dmIds.indexOf(id) * 8,
-                            (dmIds.indexOf(id) + 1) * 8,
-                          )
-                          .map((pubkey) => ["p", pubkey, "", "member"])),
-            ]),
+            ],
+            "",
+            relayKey,
+            lifecycleTime,
+          ),
+        ];
+      if (filter.kinds?.includes(39002))
+        return rosterIds
+          .filter(
+            (id) =>
+              (!filter["#d"] || filter["#d"].includes(id)) &&
+              !(removedIds.has(id) && filter["#p"]?.includes(viewer)),
+          )
+          .map((id) =>
+            sign(
+              39002,
+              [
+                ["d", id],
+                ...(removedIds.has(id)
+                  ? []
+                  : [
+                      [
+                        "p",
+                        viewer,
+                        "",
+                        joinedRoles.get(id) ??
+                          (lifecycleRows.some((row) => row.id === id) ||
+                          ownSoloChannels.includes(id)
+                            ? lifecycleRole === "nonmember"
+                              ? "member"
+                              : lifecycleRole
+                            : "member"),
+                      ],
+                    ]),
+                ...(ownSoloChannels.includes(id)
+                  ? soloAgents.map(({ pubkey }) => ["p", pubkey, "", "member"])
+                  : []),
+                ...(ownerAgent && lifecycleRows.some((row) => row.id === id)
+                  ? [["p", ownerAgent, "", "owner"]]
+                  : []),
+                ...(servedMembers.get(id) ?? []).map((pubkey) => [
+                  "p",
+                  pubkey,
+                  "",
+                  "member",
+                ]),
+                ...[...(channelGuests.get(id) ?? [])].map((pubkey) => [
+                  "p",
+                  pubkey,
+                  "",
+                  "guest",
+                ]),
+                ...(dmMembers[id]
+                  ? dmMembers[id].map((index) => [
+                      "p",
+                      participants[index],
+                      "",
+                      "member",
+                    ])
+                  : agentPeers && channels.includes(id)
+                    ? participants.map((pubkey) => ["p", pubkey, "", "member"])
+                    : dmLabels && id === "dm-peer"
+                      ? [["p", participants[0], "", "member"]]
+                      : dmLabels && id === "dm-group"
+                        ? participants.map((pubkey) => [
+                            "p",
+                            pubkey,
+                            "",
+                            "member",
+                          ])
+                        : participants
+                            .slice(
+                              dmIds.indexOf(id) * 8,
+                              (dmIds.indexOf(id) + 1) * 8,
+                            )
+                            .map((pubkey) => ["p", pubkey, "", "member"])),
+              ],
+              "",
+              relayKey,
+              lifecycleTime,
+            ),
           );
       if (filter.kinds?.includes(39000))
         return [
@@ -1215,6 +1358,7 @@ export const test = base.extend({
                   ],
                   ...(id === guestChannelId ? [["join_role", "guest"]] : []),
                   ...(archivedIds.has(id) ? [["archived", "true"]] : []),
+                  ...(autoJoinChannels.includes(id) ? [["auto_join"]] : []),
                   // Ordinary channels are explicitly public; do not add a public
                   // flag to private Solo chats or change the separate DM fixtures.
                   ...(!soloChannels.includes(id) &&
@@ -1455,8 +1599,14 @@ export const test = base.extend({
               ),
             ),
         ];
-      if (filter["#p"] && !filter["#h"] && filter.kinds?.includes(9)) {
-        expect([...filter.kinds].sort((a, b) => a - b)).toEqual([9, 40002]);
+      if (
+        filter["#p"] &&
+        !filter["#h"] &&
+        (filter.kinds?.includes(9) || filter.kinds?.includes(7))
+      ) {
+        expect([...filter.kinds].sort((a, b) => a - b)).toEqual(
+          filter.kinds.includes(7) ? [7] : [9, 40002],
+        );
         expect(filter["#p"]).toEqual([viewer]);
         expect(filter.limit).toBe(50);
         const candidates = [...histories.entries()]
@@ -1789,6 +1939,22 @@ export const test = base.extend({
         deliverRoster(OPEN_CHANNEL, community);
         return heldJoin.promise;
       }
+      if (channelLifecycle && event.kind === 9021) {
+        const id = event.tags.find(([key]) => key === "h")?.[1];
+        expect(lifecycleRows.some((row) => row.id === id)).toBe(true);
+        const metadata = answer(community, { kinds: [39000], "#d": [id] })[0];
+        expect(metadata.tags).toContainEqual(["public"]);
+        expect(metadata.tags).not.toContainEqual(["private"]);
+        joinedRoles.set(
+          id,
+          metadata.tags.find(([key]) => key === "join_role")?.[1] ?? "member",
+        );
+        if (!rosterIds.includes(id)) rosterIds.push(id);
+        lifecycleTime++;
+        report.lifecyclePublications ??= [];
+        report.lifecyclePublications.push(event);
+        return;
+      }
       if (
         event.kind === 9002 &&
         ownSoloChannels.includes(event.tags.find(([key]) => key === "h")?.[1])
@@ -1841,6 +2007,11 @@ export const test = base.extend({
         if (event.kind === 9008 || event.kind === 9022)
           rosterIds.splice(rosterIds.indexOf(id), 1);
         lifecycleTime++;
+        if (event.kind === 9022 && leaveRosterBeforeAck)
+          relay.publish(
+            community,
+            sign(39002, [["d", id]], "", relayKey, lifecycleTime),
+          );
         report.lifecyclePublications ??= [];
         report.lifecyclePublications.push(event);
         return;
@@ -1986,7 +2157,7 @@ export const test = base.extend({
                   expect(event.pubkey).toBe(viewer);
                   if (
                     channelLifecycle &&
-                    [9002, 9008, 9022, 41012].includes(event.kind)
+                    [9002, 9008, 9021, 9022, 41012].includes(event.kind)
                   )
                     return acceptReadPublication(community, event);
                   if (event.kind === 30078 || event.kind === 20002)
@@ -2028,6 +2199,22 @@ export const test = base.extend({
         })
       : undefined;
     const middleware = async (request, response, next) => {
+      // Development-React journeys restore the shared login at startup too.
+      // This synthetic host has no Builderlab account; keep its stream open
+      // until the page disconnects, just like the real broker's signed-out state.
+      if (
+        request.method === "GET" &&
+        request.url === "/api/builderlab/events"
+      ) {
+        response.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-store",
+        });
+        response.write(
+          `data: ${JSON.stringify({ revision: "fixture", pending: false, auth: null })}\n\n`,
+        );
+        return;
+      }
       if (!request.url?.startsWith("/api/relay/")) return next();
       try {
         const parts = request.url.split("/");
@@ -2196,6 +2383,10 @@ export const test = base.extend({
             : 3,
         );
         const filter = body[0];
+        if (body.length === 1 && filter.read_state_snapshot === 1) {
+          report.queries.push({ community, filter });
+          return send(response, answer(community, filter));
+        }
         const result = [
           ...new Map(
             body
@@ -2292,6 +2483,7 @@ export const test = base.extend({
                   next();
                 });
                 const broker = relayBrokerPlugin({
+                  builderlab,
                   archiveFile: ":memory:",
                   relayUrl: fixtureRelayUrl,
                   communityAliases: fixtureAliases,
@@ -2348,9 +2540,21 @@ export const test = base.extend({
           report.consoleErrors.push(message.text());
         }
       });
+      const startupLoadFailures = [];
       page.on("response", (response) => {
         if (
-          response.url().endsWith("/stream-observer") &&
+          expectedStartupLoadFailure &&
+          response.status() >= 400 &&
+          response.url().includes(expectedStartupLoadFailure)
+        )
+          startupLoadFailures.push({
+            url: response.url(),
+            status: String(response.status()),
+          });
+        if (
+          /\/stream-(observer|priority|retry|interests|artifact-sync|artifact-sync-close)$/.test(
+            response.url(),
+          ) &&
           response.status() === 404
         ) {
           const { streamId } = response.request().postDataJSON();
@@ -2381,7 +2585,21 @@ export const test = base.extend({
           observer.observe(document, { childList: true, subtree: true });
         });
       await page.addInitScript(
-        ({ viewer, profilePicture, iconCongestion }) => {
+        ({ viewer, profilePicture, iconCongestion, enabledPlugins }) => {
+          // Model fresh plugin choices before seeding an existing community.
+          // Feature journeys opt in once; reloads retain later user choices.
+          if (!localStorage.getItem("buzzodz.plugins.v1"))
+            localStorage.setItem(
+              "buzzodz.plugins.v1",
+              JSON.stringify({
+                version: 3,
+                enabled: {
+                  "buzz.reminders": false,
+                  "buzz.workflows": false,
+                  ...Object.fromEntries(enabledPlugins.map((id) => [id, true])),
+                },
+              }),
+            );
           const key = `buzz-client.v1:${viewer}`;
           if (!localStorage.getItem(key))
             localStorage.setItem(
@@ -2405,11 +2623,25 @@ export const test = base.extend({
               }),
             );
         },
-        { viewer, profilePicture, iconCongestion },
+        { viewer, profilePicture, iconCongestion, enabledPlugins },
       );
       await use({
         sign: (template) => finalizeEvent(template, userKey),
         channelMetadata: (id, tags) => sign(39000, [["d", id], ...tags]),
+        // Model an owner changing visibility; production discovery consumes the
+        // signed metadata through normal reads/live traffic.
+        setChannelMetadata(id, tags) {
+          const event = sign(
+            39000,
+            [["d", id], ...tags],
+            "",
+            relayKey,
+            ++lifecycleTime,
+          );
+          soloDetails.set(`primary/${id}`, event);
+          relay.publish("primary", event, { requireSubscriber: false });
+          return event;
+        },
         signRelay: (template) => finalizeEvent(template, relayKey),
         membershipSnapshot(role) {
           expect(["owner", "admin", "member"]).toContain(role);
@@ -2417,6 +2649,8 @@ export const test = base.extend({
         },
         origin,
         report,
+        /** The viewer's current kind 0 content in `community`. */
+        ownProfile: (community) => JSON.parse(profiles.get(community).content),
         watchPageErrors(other) {
           const watched = watchPageErrors(other);
           watchedPages.push(watched);
@@ -2561,8 +2795,21 @@ export const test = base.extend({
           servedProfiles.set(event.pubkey, event);
           return event;
         },
+        // Configure pre-existing members before opening the app. Reads stay at
+        // the modeled relay, without a second browser-owned HTTP request.
+        serveMembers(id, pubkeys) {
+          expect(rosterIds).toContain(id);
+          servedMembers.set(id, [...pubkeys]);
+        },
         // Change only modeled relay state. The app must consume the next real
         // roster response; this does not call client purge/recovery internals.
+        addChannelGuest(id, pubkey) {
+          expect(rosterIds).toContain(id);
+          const guests = channelGuests.get(id) ?? new Set();
+          guests.add(pubkey);
+          channelGuests.set(id, guests);
+          lifecycleTime++;
+        },
         renameChannel(id, name) {
           expect(rosterIds).toContain(id);
           renamedChannels.set(id, name);
@@ -2575,6 +2822,16 @@ export const test = base.extend({
         omitChannel(id) {
           expect(rosterIds).toContain(id);
           rosterIds.splice(rosterIds.indexOf(id), 1);
+        },
+        // An admin removes the viewer: the relay republishes the roster live
+        // without them, and later reads agree. Channel metadata remains.
+        removeViewer(id) {
+          expect(rosterIds).toContain(id);
+          removedIds.add(id);
+          lifecycleTime++;
+          const roster = answer("primary", { kinds: [39002], "#d": [id] })[0];
+          relay.publish("primary", roster);
+          return roster;
         },
         // Hold the join's OK; its live roster still arrives first.
         holdJoin() {
@@ -2703,6 +2960,7 @@ export const test = base.extend({
           root,
           parent,
           attachmentTags = [],
+          createdAt,
         ) {
           const history = histories.get(`${community}/${channel}`);
           const event = sign(
@@ -2721,7 +2979,7 @@ export const test = base.extend({
             ],
             content ?? `Live append ${history.length}`,
             own ? userKey : peerKey,
-            (history.at(-1)?.created_at ?? 1700000900) + 1,
+            createdAt ?? (history.at(-1)?.created_at ?? 1700000900) + 1,
           );
           history.push(event);
           if (relay && deliver) relay.publish(community, event);
@@ -2736,7 +2994,9 @@ export const test = base.extend({
         },
       });
       expect(report.unexpected).toEqual([]);
-      // Aborted startup streams can race an already-dispatched observer control.
+      // Retired streams can race already-dispatched live controls. Observer,
+      // priority, retry, interests and artifact-sync controls all answer 404
+      // once the broker has closed the stream (presence controls answer 200).
       // Permit only 404s whose exact stream was already closed by the real host;
       // a current/unknown stream failure still fails, and all errors stay recorded.
       report.retiredObserverControls = [...observerFailures];
@@ -2765,6 +3025,7 @@ export const test = base.extend({
         ...(report.sidebarRemovalFailures ?? []),
         ...(report.sidebarPreferenceFailures ?? []),
         ...(report.startupFailures ?? []),
+        ...(report.builderlabFailures ?? []),
       ];
       // Activity reads retry a 502 quietly, so their journeys inject a 403.
       const activityFailures = [...(report.sidebarActivityFailures ?? [])];
@@ -2801,10 +3062,30 @@ export const test = base.extend({
         githubFailures.splice(match, 1);
         return true;
       };
+      // Bundle-load journeys fail the app's entry. Match each failed response
+      // once, by exact URL and status, so an error the recovered app logs
+      // from that chunk still fails.
+      report.startupLoadFailures = [...startupLoadFailures];
+      const injectedStartupLoadFailure = (message, index) => {
+        const status =
+          /^Failed to load resource: the server responded with a status of (\d+)/.exec(
+            message,
+          )?.[1];
+        if (!status) return false;
+        const match = startupLoadFailures.findIndex(
+          (failure) =>
+            failure.url === consoleLocations.get(index) &&
+            failure.status === status,
+        );
+        if (match < 0) return false;
+        startupLoadFailures.splice(match, 1);
+        return true;
+      };
       expect(
         report.consoleErrors.filter(
           (message, index) =>
             !retiredConsole(message, index) &&
+            !injectedStartupLoadFailure(message, index) &&
             !injectedSidebarFailure(message, index) &&
             !injectedGitHubFailure(message, index) &&
             !(
@@ -2816,6 +3097,9 @@ export const test = base.extend({
               message.includes("Fixture page render failure")
             ) &&
             !(
+              expectedStartupFailure && message.includes(expectedStartupFailure)
+            ) &&
+            !(
               relay?.expectedHttpErrors() &&
               /^Failed to load resource: the server responded with a status of 429/.test(
                 message,
@@ -2823,8 +3107,14 @@ export const test = base.extend({
             ),
         ),
       ).toEqual([]);
-      // All page errors stay in the evidence; only known engine reports pass.
-      expect(unexplainedPageErrors()).toEqual([]);
+      // All page errors stay in the evidence; only known engine reports, and
+      // a startup journey's injected failure, pass.
+      expect(
+        unexplainedPageErrors().filter(
+          (error) =>
+            !(expectedStartupFailure && error.includes(expectedStartupFailure)),
+        ),
+      ).toEqual([]);
     } finally {
       for (const timer of olderPageTimers) clearTimeout(timer);
       if (iconCongestion)

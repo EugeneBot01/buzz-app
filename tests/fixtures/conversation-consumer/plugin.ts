@@ -4,12 +4,53 @@ import type { Context, RelaySnapshot } from "@buzz/author";
 // Test-only external consumer, built into a temporary profile by conversation.spec.mjs.
 // Type-only author contract. The installed artifact has no private paths, React
 // copy, bundled Channels import, or runtime dependencies.
-export const inject = ["react", "pages", "relay", "conversation"];
+export const inject = ["react", "pages", "panels", "relay", "conversation"];
 export function apply(ctx: Context) {
   const React = ctx.react;
   const h = React.createElement;
   const ui = ctx.conversation;
   const relay = ctx.relay;
+  function RetainedReplies() {
+    const [open, setOpen] = React.useState(false);
+    return h(ui.ui.ReplyBranch, {
+      message: h("p", { "data-message-id": "example-root" }, "Example root"),
+      layout: "thread",
+      summary: h(ui.ui.ReplySummary, {
+        count: 1,
+        participants: [],
+        resolveName: (_id, fallback) => fallback,
+        media: () => undefined,
+      }),
+      label: "View 1 reply",
+      collapseLabel: "Collapse example reply",
+      hasReplies: true,
+      open,
+      depth: 0,
+      onExpand: () => setOpen(true),
+      onCollapse: () => setOpen(false),
+      children: h("p", { "data-message-id": "example-reply" }, "Example reply"),
+    });
+  }
+  const target = "consumer://message/inspect";
+  ctx.panels.register({
+    id: "inspect",
+    title: "Message inspection",
+    matches: (url) => url === target,
+    component: () => h("p", null, "Consumer message panel"),
+  });
+  ui.registerMessageAction({
+    id: "inspect",
+    title: "Inspect message",
+    placement: "toolbar",
+    matches: () => true,
+    component: function Inspect({ open, close }) {
+      React.useEffect(() => {
+        open(target);
+        close();
+      }, [open, close]);
+      return null;
+    },
+  });
   function Connected({ connection }: { connection: RelaySnapshot }) {
     const session = connection.session;
     const list = React.useSyncExternalStore(
@@ -34,6 +75,7 @@ export function apply(ctx: Context) {
         { title: ui.format.fullTimestamp(Date.now() / 1000) },
         `Consumer dates ${ui.format.dayGroupLabel(Date.now() / 1000)}, ${ui.format.itemTimestamp(Date.now() / 1000 - 86_400)}, ${ui.format.relativeTimestamp(Date.now() / 1000 - 300)}`,
       ),
+      h(RetainedReplies),
       h(
         "label",
         null,
@@ -98,26 +140,38 @@ export function apply(ctx: Context) {
         { type: "button", onClick: () => rerender(renders + 1) },
         `Rerender consumer ${renders}`,
       ),
-      h(
-        "div",
-        { "aria-label": "Consumer messages" },
-        window.rows.map((row) =>
-          h(ui.ui.Message, {
-            key: row.id,
-            row,
-            profile: undefined,
-            media: session.media,
-            onOpenLink: () => false,
-            day: false,
-            retry: session.messages.retry,
-          }),
-        ),
-      ),
-      h(ui.ui.Composer, {
+      // The host's no-visit scope gives these rows its message actions.
+      h(ui.ui.Conversation, {
         session,
         scope: connection.scope ?? "disconnected",
         channelId,
         channelName,
+        children: (interactions) =>
+          h(
+            React.Fragment,
+            null,
+            h(
+              "div",
+              { "aria-label": "Consumer messages" },
+              window.rows.map((row) =>
+                h(ui.ui.Message, {
+                  key: row.id,
+                  row,
+                  profile: undefined,
+                  media: session.media,
+                  onOpenLink: interactions.onOpenLink,
+                  day: false,
+                  retry: session.messages.retry,
+                }),
+              ),
+            ),
+            h(ui.ui.Composer, {
+              session,
+              scope: connection.scope ?? "disconnected",
+              channelId,
+              channelName,
+            }),
+          ),
       }),
     );
   }

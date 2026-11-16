@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 /** One signed-in Builderlab lifetime; never passed to website JavaScript.
  * `federated` is the public NIP-FI session revision; native holds its token. */
 export type BuilderlabViewerSession = Readonly<
-  ({ credential: string } | { federated: string }) & {
+  ({ federated: string } | { broker: { origin: string; revision: string } }) & {
     storage: string;
     signal: AbortSignal;
   }
@@ -22,6 +22,9 @@ export type BrowserViewProps = Readonly<{
   /** Names the view's tab until the website has a title, and while a hidden
    * tab has not opened it yet. */
   label?: string | undefined;
+  /** Opens where `builderlab`'s sign-in is renewed, for an app that refused
+   * it. Without it, that page offers only Try again. */
+  openSignIn?: (() => void) | undefined;
 }>;
 
 export interface Browser {

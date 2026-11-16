@@ -47,7 +47,9 @@ export type ComposerToolProps = Readonly<{
         toggle(recipient: Readonly<{ pubkey: string; name: string }>): void;
       }>
     | undefined;
-  /** False after removal, destination change, read-only state or a rejected edit. */
+  /** Insert text at the caret. Emoji-only text is followed by a space unless a
+   * space or tab already follows, which the caret then moves past. False after
+   * removal, destination change, read-only state or a rejected edit. */
   insertText(text: string): boolean;
   /** Atomically insert display text and explicit notification intent at the caret.
    * Prose never resolves to identities. Membership is checked by session delivery.
@@ -81,9 +83,19 @@ export type ComposerCaptureProps = Readonly<{
   accept(recording: VoiceRecording): boolean;
   cancel(): void;
 }>;
+export type FileCardProps = Readonly<{
+  attachment: Attachment;
+  source: string;
+  onOpenLink(url: string): boolean;
+  onPreview?: (() => void) | undefined;
+  typeLabel?: string | undefined;
+}>;
 export type AttachmentRendererProps = Readonly<{
   attachment: Attachment;
   source: string;
+  placement?: "message" | "composer";
+  message?: ChannelMessage | undefined;
+  FileCard?: ComponentType<FileCardProps> | undefined;
   onRemove?: (() => void) | undefined;
 }> &
   TargetOpener;
@@ -91,6 +103,8 @@ export type AttachmentRenderer = Readonly<{
   id: string;
   title: string;
   matches(attachment: Attachment): boolean;
+  /** Claim strength when several renderers match an attachment; see `MatchOrder`. */
+  order?: MatchOrder<Attachment> | undefined;
   component: ComponentType<AttachmentRendererProps>;
 }>;
 export type ReactionToolProps = Readonly<{
@@ -138,6 +152,26 @@ export type LinkRenderer = Readonly<{
   className?: string | undefined;
   component: ComponentType<{ url: string }>;
 }>;
+export type LinkPreviewProps = Readonly<{
+  url: string;
+  /** The host's id for the message the link is in. */
+  messageId: string;
+  /** Opens `url` through the host, as clicking the link does. False once the
+   * contribution or message retires. */
+  open(): boolean;
+}>;
+/** A card below a message for one of its links. The lowest `order` among
+ * matches draws it, so a plugin can claim its own URLs ahead of the default
+ * web card; a component that renders nothing leaves the link without a card.
+ * Links written `<url>`, in code, or naming an attachment get no card. */
+export type LinkPreviewRenderer = Readonly<{
+  id: string;
+  title: string;
+  matches(url: string): boolean;
+  /** Claim strength when several renderers match a URL; see `MatchOrder`. */
+  order?: MatchOrder | undefined;
+  component: ComponentType<LinkPreviewProps>;
+}>;
 /** Presentation for a fenced code block, chosen by its info-string language.
  * The host retains the frame and copy action; failure or removal restores the code. */
 export type CodeBlockRenderer = Readonly<{
@@ -166,6 +200,16 @@ export type ComposerAccessoryProps = Readonly<{
   threadRootId?: string | undefined;
   /** Present only for message-placed accessories; the exact triggering row. */
   message?: ChannelMessage;
+  /** Agents already represented by subsequent content in this request's visible run. */
+  representedAgents?: readonly string[] | undefined;
+  /** Agents with a later public reply to this request; their outcome captions
+   * follow that reply instead of this message. */
+  repliedAgents?: readonly string[] | undefined;
+  /** The request this row is its author's latest public reply to; that
+   * author's outcome caption follows this row. */
+  stoppedRequest?: ChannelMessage | undefined;
+  /** Host geometry for response-side accessories. */
+  messageLayout?: "timeline" | "thread" | "continuation" | undefined;
   /** A single selected decorator may wrap the host summary with its preview.
    * Render without activity when idle; the host owns reply counts/navigation. */
   renderMessageSummary?:
@@ -178,12 +222,15 @@ export type ComposerAccessoryProps = Readonly<{
   onFocusedRemoval?: (() => void) | undefined;
   /** Presentation only; the host re-resolves targets. No editor or access grant. */
   canOpen(target: string): boolean;
-  /** False after contribution removal or the originating composer retires. */
+  /** False after contribution removal or the originating composer retires.
+   * A message-placed accessory's target opens in that message's thread, like
+   * a link in its body. */
   open(target: string): boolean;
 }>;
 export type ComposerAccessory = Readonly<{
-  /** Defaults to the composer. Message accessories render beside reactions. */
-  placement?: "composer" | "message";
+  /** Defaults to the composer. Message accessories sit beside reactions;
+   * response accessories occupy an incoming row after the triggering message. */
+  placement?: "composer" | "message" | "response";
   /** Opt into decorating the message summary; only the first ordered owner wins. */
   decoratesMessageSummary?: boolean;
   id: string;
@@ -206,15 +253,16 @@ export type MessageRenderer = Readonly<{
   ): boolean;
   component: ComponentType<TargetOpener & { message: ChannelMessage }>;
 }>;
-/** One ⋯ menu entry for a message. The host owns the menu, focus and row lifetime. */
+/** A message action. The host owns placement, focus and row lifetime. */
 export type MessageAction = Readonly<{
   id: string;
   title: string;
   icon?: ComponentType;
   matches(message: ChannelMessage, session: RelaySession): boolean;
-  /** A menu contribution (such as a submenu) mounts inside the host menu. */
-  placement?: "menu";
-  /** Mounted after the menu closes by default; call close() to dismiss. */
+  /** `menu` mounts inside the menu. `toolbar` uses a host icon button.
+   * Without a placement, the host adds a menu entry that opens the component. */
+  placement?: "menu" | "toolbar";
+  /** Mounted on activation, or inside the menu for `menu`; call close() to dismiss. */
   component: ComponentType<
     TargetOpener & {
       message: ChannelMessage;
@@ -228,16 +276,73 @@ export type MessageAction = Readonly<{
    */
   marker?: ComponentType<{ message: ChannelMessage; session: RelaySession }>;
 }>;
+/** Presentation after a person's name in @mention suggestions, such as an
+ * identity check. The host owns placement, focus and the row; the component
+ * decides from `pubkey` whether to draw anything. */
+export type IdentityMark = Readonly<{
+  id: string;
+  title: string;
+  component: ComponentType<IdentityMarkProps>;
+}>;
+/** `profiles` is the session's shared profile directory, whose entries carry
+ * community verification (`verified`) when the community provides it. */
+export type IdentityMarkProps = Readonly<{
+  pubkey: string;
+  profiles: RelaySession["profiles"];
+}>;
 export type ConversationExtensions = Readonly<{
   attachments?: ContributionReader<AttachmentRenderer>;
   messages?: ContributionReader<MessageRenderer>;
   actions?: ContributionReader<MessageAction>;
+  identityMarks?: ContributionReader<IdentityMark>;
   accessories?: ContributionReader<ComposerAccessory>;
   tools: ContributionReader<ComposerTool>;
   inline: ContributionReader<InlineRenderer>;
   completions?: ContributionReader<ComposerCompletion>;
   links?: ContributionReader<LinkRenderer>;
+  linkPreviews?: ContributionReader<LinkPreviewRenderer>;
   codeBlocks?: ContributionReader<CodeBlockRenderer>;
+  annotators?: ContributionReader<ComposerAnnotator>;
+}>;
+
+/** One document revision of the draft an annotator may mark: the projected text
+ * completion providers observe, without the selection. `prose` lists its
+ * ascending, disjoint runs of ordinary prose, outside code, links, chips, line
+ * breaks and raw Markdown syntax. */
+export type AnnotationObservation = Pick<
+  ComposerObservation,
+  "revision" | "text"
+> &
+  Readonly<{ prose: readonly InlineRange[] }>;
+/** Text the person may put in place of an annotation's range. `label` names the
+ * choice when the text alone would not, and is required for an empty `text`. */
+export type ComposerReplacement = Readonly<{ text: string; label?: string }>;
+/** A mark on UTF-16 `[start, end)` of the observed text, which must equal `text`
+ * and lie within one prose run. `label` says what is wrong; `kind` announces a
+ * spelling or grammar error rather than a general one. */
+export type ComposerAnnotation = Readonly<{
+  start: number;
+  end: number;
+  text: string;
+  label: string;
+  kind?: "spelling" | "grammar" | undefined;
+  replacements?: readonly ComposerReplacement[] | undefined;
+}>;
+export type ComposerAnnotatorProps = CompletionContext &
+  Readonly<{
+    observation: AnnotationObservation;
+    /** Shows annotations for this observation, replacing this annotator's
+     * earlier ones. Returns false once the draft has changed or the annotator
+     * retired; cleanup of the returned disposer withdraws them. */
+    publish(annotations: readonly ComposerAnnotation[]): (() => void) | false;
+  }>;
+/** A headless component that marks ranges of the focused composer's prose. The
+ * host draws the marks and replaces text only when the person picks a
+ * replacement; scheduling and the annotations themselves are the plugin's. */
+export type ComposerAnnotator = Readonly<{
+  id: string;
+  title: string;
+  component: ComponentType<ComposerAnnotatorProps>;
 }>;
 
 /** Immutable host-issued evidence, scoped to one live editor observation. */
@@ -304,6 +409,11 @@ export type CompletionSuggestion = Readonly<{
   detail?: string;
   /** Decorative presentation only; the host owns option semantics and interaction. */
   preview?: import("react").ReactNode;
+  /**
+   * An agent, not a person. The host marks the name and announces "Agent" only
+   * for its bundled people providers (mentions, channels); others are ignored.
+   */
+  agent?: boolean;
   edit: CompletionEdit;
   /** Keep an installed identity in place after eligibility is revoked. */
   disabled?: string | undefined;
@@ -350,6 +460,20 @@ export type PageTabTarget = {
   channelId: string;
   threadId?: string;
   messageId?: string;
+};
+/** A page-owned conversation with the host's reader, composer, and side pane. */
+export type ConversationWorkspaceProps = {
+  id: string;
+  session: RelaySession;
+  scope: string;
+  target: PageTabTarget;
+  label: string;
+  /** Content at the start of history. It scrolls with the messages. */
+  intro?: ReactNode;
+  /** Actions in the pane's menu and the main tab's context menu. */
+  actions?: readonly { label: string; run(): void }[];
+  /** Select this panel on entry. Closing it keeps the main conversation. */
+  detail?: { target: string; rootId?: string };
 };
 /** `keep` opens a tab beside the others instead of in place of the last.
  * `markRead: false` keeps a conversation tab from marking what it shows read,

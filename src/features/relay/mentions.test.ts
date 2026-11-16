@@ -1,7 +1,9 @@
 import { assert, afterEach, expect, it, vi } from "vitest";
 import type { EventTemplate } from "nostr-tools";
 import type { RelayEvent } from "./events";
+import type { LiveCallbacks } from "./live";
 import { createRelaySession } from "./session";
+import { localAgentsFixture } from "../agents/local-testing";
 import { mentionConformance } from "../../bundled/mentions/mention-rules.conformance";
 import {
   flush,
@@ -17,8 +19,13 @@ const viewer = keypair(),
   honey = keypair(),
   namesake = keypair();
 const owners: ReturnType<typeof createRelaySession>[] = [];
-function setup(soloMode = false) {
+function setup(
+  soloMode = false,
+  withLive = false,
+  agents?: ReturnType<typeof localAgentsFixture>,
+) {
   const wire = scriptedTransport(viewer.pubkey, relay.pubkey);
+  let live: LiveCallbacks | undefined;
   let release: (() => void) | undefined;
   let held = false;
   const publish = vi.fn(async (_event: RelayEvent) => {});
@@ -35,6 +42,7 @@ function setup(soloMode = false) {
   const owner = createRelaySession(
     {
       ...wire.transport,
+      ...(agents ? { scope: "https://relay.example.test" } : {}),
       query: (filters, ...args) => {
         if (
           filters[0]?.authors?.[0] === relay.pubkey &&
@@ -49,7 +57,7 @@ function setup(soloMode = false) {
                 : [],
           );
         if (
-          soloMode &&
+          (soloMode || profileEvents.length) &&
           filters.every((filter) => filter.kinds?.every((kind) => kind === 0))
         )
           return Promise.resolve(profileEvents);
@@ -58,9 +66,18 @@ function setup(soloMode = false) {
         return wire.transport.query(filters, ...args);
       },
       writer: { sign, publish },
+      ...(withLive
+        ? {
+            subscribe(callbacks: LiveCallbacks) {
+              live = callbacks;
+              return { update() {}, retry() {}, dispose() {} };
+            },
+          }
+        : {}),
     },
     {
       outboxStorage: { load: () => [], save: () => {} },
+      ...(agents ? { agentChoices: agents } : {}),
     },
   );
   owners.push(owner);
@@ -68,6 +85,7 @@ function setup(soloMode = false) {
     keys = [viewer.pubkey, honey.pubkey, namesake.pubkey],
     time = 1700000000,
     author = relay,
+    meta?: RelayEvent,
   ) {
     const read = owner.session.read([
       { kinds: [39002, 39000], "#d": ["c"], limit: 10 },
@@ -97,7 +115,7 @@ function setup(soloMode = false) {
               ["t", "buzz.solo"],
             ],
           })
-        : metadata(relay, "c", "General"),
+        : (meta ?? metadata(relay, "c", "General")),
     ]);
     await read;
   }
@@ -105,6 +123,13 @@ function setup(soloMode = false) {
     ...wire,
     ...owner,
     members,
+    live: () => {
+      assert(live, "setup(_, true) subscribes a live stream");
+      return live;
+    },
+    setRoster: (keys: readonly string[]) => {
+      currentRoster = roster(relay, "c", keys, 1700000001);
+    },
     lagReplica: () => {
       replicaRoster = currentRoster;
     },
@@ -407,6 +432,101 @@ it("asks a one-to-one DM's other member for a model and effort without a mention
       [namesake.pubkey]: { effort: "high" },
     }),
   ).toThrow(/addressed agent/);
+});
+
+it("queues a plain one-to-one DM message to an agent while the live stream reconnects, and checks membership fresh before publishing", async () => {
+  const h = setup(false, true);
+  h.live().state({ status: "connected", routes: [] });
+  await h.members(
+    [viewer.pubkey, honey.pubkey],
+    1700000000,
+    relay,
+    metadata(relay, "c", "Honey", 1700000000, [["t", "dm"], ["private"]]),
+  );
+  await h.agentProfile(honey);
+  h.live().state({ status: "retrying", routes: [] });
+  // The agent partner's implicit tag no longer blocks queueing.
+  const id = h.session.messages.send("c", "hello");
+  await flush();
+  const event = h.publish.mock.calls[0]?.[0];
+  expect(event?.id).toBe(id);
+  expect(event?.tags).toContainEqual(["p", honey.pubkey]);
+  // Publication still reads the roster fresh: a partner who has left is refused.
+  h.setRoster([viewer.pubkey]);
+  const refused = h.session.messages.send("c", "still there?");
+  await flush();
+  expect(h.publish).toHaveBeenCalledTimes(1);
+  expect(
+    h.session.outbox?.snapshot().find((item) => item.event.id === refused),
+  ).toMatchObject({
+    delivery: "failed",
+    // The fresh roster no longer lists them, so they are not the DM partner.
+    error: expect.stringMatching(/channel membership/),
+  });
+});
+
+it("refuses at signing a recipient whose Delete started after the send began", async () => {
+  const agent = {
+    pubkey: honey.pubkey,
+    name: "Honey",
+    relayUrl: "wss://relay.example.test",
+    owner: viewer.pubkey,
+  };
+  const agents = localAgentsFixture([agent]);
+  const h = setup(false, false, agents);
+  await h.members([viewer.pubkey, honey.pubkey]);
+  expect(h.session.agentChoices.snapshot().identities).toContainEqual(
+    expect.objectContaining({ pubkey: honey.pubkey }),
+  );
+  // Admitted at send; its Delete starts before the event is signed.
+  h.session.messages.send("c", "@Honey", [honey.pubkey]);
+  agents.set({ agents: [{ ...agent, deleting: true }] });
+  await flush();
+  expect(h.publish).not.toHaveBeenCalled();
+  expect(h.session.outbox?.snapshot()).toMatchObject([
+    {
+      delivery: "failed",
+      error: expect.stringMatching(/being deleted/),
+    },
+  ]);
+});
+
+it("still confirms an event signed before its recipient's Delete started", async () => {
+  const agent = {
+    pubkey: honey.pubkey,
+    name: "Honey",
+    relayUrl: "wss://relay.example.test",
+    owner: viewer.pubkey,
+  };
+  const agents = localAgentsFixture([agent]);
+  const h = setup(false, false, agents);
+  await h.members([viewer.pubkey, honey.pubkey]);
+  // Signed and sent, with an outcome the relay never confirmed.
+  h.publish.mockRejectedValueOnce(
+    new Error("Relay delivery could not be confirmed"),
+  );
+  const id = h.session.messages.send("c", "@Honey", [honey.pubkey]);
+  await flush();
+  expect(h.publish).toHaveBeenCalledOnce();
+  agents.set({ agents: [{ ...agent, deleting: true }] });
+  h.session.outbox?.retry(id);
+  await flush();
+  expect(h.publish).toHaveBeenCalledTimes(2);
+  expect(h.publish.mock.calls[1]?.[0].id).toBe(id);
+});
+
+it("still requires a connected live stream to mention anyone else while it reconnects", async () => {
+  const h = setup(false, true);
+  h.live().state({ status: "connected", routes: [] });
+  await h.members([viewer.pubkey, honey.pubkey, namesake.pubkey]);
+  h.live().state({ status: "retrying", routes: [] });
+  expect(() => h.session.messages.send("c", "@Honey", [honey.pubkey])).toThrow(
+    /Refresh channel membership/,
+  );
+  // A plain message with no mention queues as before.
+  h.session.messages.send("c", "hello");
+  await flush();
+  expect(h.publish).toHaveBeenCalledTimes(1);
 });
 
 it.each(mentionConformance.tags.write)(

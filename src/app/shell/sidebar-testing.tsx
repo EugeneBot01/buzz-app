@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
+import type { SidebarScope } from "../../features/channel-navigation/sidebar-scope-service";
 import { act, render } from "@testing-library/react";
 import { vi } from "vitest";
 import { createRelaySession } from "../../features/relay/session";
@@ -8,8 +9,15 @@ import type { RelaySession } from "../../features/relay/session";
 import type { ReadTransport } from "../../features/relay/transport";
 import type { FederatedIdentity } from "../../features/federated-identity/service";
 import type { RelayData, RelaySnapshot } from "../../features/relay/service";
-import type { Navigation } from "../../features/navigation/controller";
-import { ChannelNavigationProvider } from "../../features/channel-navigation/ChannelNavigationState";
+import type {
+  Navigation,
+  NavigationOpenOptions,
+} from "../../features/navigation/controller";
+import type { ChannelList } from "../../features/relay/contracts";
+import {
+  ChannelNavigationProvider,
+  useChannelNavigation,
+} from "../../features/channel-navigation/ChannelNavigationState";
 import type { OpenTarget } from "../../features/navigation/targets";
 import { NewMenu } from "./NewMenu";
 import type { Agents } from "../../features/agents/service";
@@ -19,6 +27,7 @@ import { SoloInventory } from "../../features/channel-navigation/SoloInventory";
 import { conversationTarget } from "../../features/channel-navigation/routes";
 import type { ContributionReader } from "../../features/conversation/contracts";
 import type { ChatIcon, ChatMenu } from "../../features/conversation/service";
+import type { SidebarRows } from "../../features/channel-navigation/sidebar-rows-service";
 
 export const owners: ReturnType<typeof createRelaySession>[] = [];
 export const id = "11111111-1111-4111-8111-111111111111";
@@ -40,12 +49,15 @@ export function fixture(
   host: {
     transport?: ReadTransport;
     federatedIdentity?: FederatedIdentity;
+    sidebarScope?: SidebarScope;
+    sidebarRows?: SidebarRows;
   } = {},
 ) {
   const owner = createRelaySession(host.transport ?? null);
   owners.push(owner);
   const base = owner.session;
   const listeners = new Set<() => void>();
+  const rosterListeners = new Set<() => void>();
   const subscribe = (listener: () => void) => {
     listeners.add(listener);
     return () => {
@@ -79,7 +91,7 @@ export function fixture(
     durability: "saved" as const,
     sync: "pending" as const,
   }));
-  const list = {
+  let list: ChannelList = {
     status: "ready" as const,
     channels: [
       {
@@ -120,7 +132,15 @@ export function fixture(
     scope,
     viewer,
     channelCreation: { ...base.channelCreation, available: canCreate },
-    channels: { ...base.channels, list: () => list, ensureList() {} },
+    channels: {
+      ...base.channels,
+      list: () => list,
+      subscribeList(listener) {
+        rosterListeners.add(listener);
+        return () => rosterListeners.delete(listener);
+      },
+      ensureList() {},
+    },
     sidebarPreferences: {
       ...base.sidebarPreferences,
       sectionCreationWritable: canCreate,
@@ -176,27 +196,38 @@ export function fixture(
     session,
     generation: 1,
     scope,
+    viewer,
   };
   const relay: RelayData = {
     snapshot: () => snapshot,
     subscribe,
     retry() {},
+    tryAgain() {},
     disconnect() {},
     async clearCache() {},
   };
   let attempt = 0;
-  const open = vi.fn(async (next: OpenTarget) => {
-    target = next;
-    attempt++;
-    rendered.rerender(tree());
-    publish();
-    return { status: "opened" as const };
-  });
+  let sidebar: NavigationOpenOptions["sidebar"];
+  const open = vi.fn(
+    async (next: OpenTarget, options?: NavigationOpenOptions) => {
+      sidebar = options?.sidebar;
+      target = next;
+      attempt++;
+      rendered.rerender(tree());
+      publish();
+      return { status: "opened" as const };
+    },
+  );
   const navigator = {
     open,
     subscribe,
     snapshot: () => ({
-      attempt: { id: String(attempt), signal: new AbortController().signal },
+      entry: { target },
+      attempt: {
+        id: String(attempt),
+        signal: new AbortController().signal,
+        sidebar,
+      },
     }),
   } as unknown as Navigation;
   let target: OpenTarget = conversationTarget(scope, other);
@@ -204,9 +235,15 @@ export function fixture(
   const publish = () => {
     for (const listener of listeners) listener();
   };
+  let handoff: ReturnType<typeof useChannelNavigation>;
+  const HandoffProbe = () => {
+    handoff = useChannelNavigation();
+    return null;
+  };
   const tree = () => (
     <ToastProvider>
       <ChannelNavigationProvider relay={relay}>
+        <HandoffProbe />
         {combined ? (
           <SidebarCreationHost
             relay={relay}
@@ -222,6 +259,8 @@ export function fixture(
                   target={target}
                   chatIcons={chatIcons}
                   chatMenus={chatMenus}
+                  sidebarRows={host.sidebarRows}
+                  sidebarScope={host.sidebarScope}
                   {...(host.federatedIdentity
                     ? { federatedIdentity: host.federatedIdentity }
                     : {})}
@@ -239,6 +278,7 @@ export function fixture(
             target={target}
             chatIcons={chatIcons}
             chatMenus={chatMenus}
+            sidebarRows={host.sidebarRows}
           />
         )}
       </ChannelNavigationProvider>
@@ -269,6 +309,8 @@ export function fixture(
       });
     },
     open,
+    /** The sidebar's hand-off to the conversation page it opens. */
+    handoff: () => handoff,
     markThrough,
     listeners,
     typing(next: typeof typing) {
@@ -287,6 +329,13 @@ export function fixture(
       act(() => {
         threads = next;
         publish();
+      });
+    },
+    /** A roster update, as the relay delivers one: a new list of channels. */
+    roster(update: (channels: typeof list.channels) => typeof list.channels) {
+      act(() => {
+        list = { ...list, channels: update(list.channels) };
+        for (const listener of rosterListeners) listener();
       });
     },
     clearUnread() {

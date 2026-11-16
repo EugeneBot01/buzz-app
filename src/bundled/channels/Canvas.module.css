@@ -10,6 +10,11 @@
   overflow: auto;
   padding: var(--space-panel-inset);
 }
+/* The views track stays at the panel's width, so a long code line scrolls
+   inside its block instead of widening the Canvas. */
+.views {
+  grid-template-columns: minmax(0, 1fr);
+}
 .footer {
   display: flex;
   flex-wrap: wrap;
@@ -17,4 +22,13 @@
   justify-content: flex-end;
   padding: var(--space-3) var(--space-panel-inset);
   border-top: 1px solid var(--border-standard);
+}
+.markdown {
+  overflow-wrap: anywhere;
+}
+.failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }

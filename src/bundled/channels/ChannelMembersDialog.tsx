@@ -1,6 +1,15 @@
+import { ChannelHeaderIdentity, memberAccess } from "./ChannelHeaderIdentity";
+import { useHeaderChannel } from "../../features/relay/listed-channel";
+import {
+  useVerifiedNames,
+  withVerifiedNames,
+} from "../../features/profiles/useVerifiedNames";
+import { useProfileGeneration } from "../../features/relay/react";
+import { agentUnavailable } from "../../features/agents/choices";
 import { archiveHides } from "../../features/relay/identity-archives";
 import { Button as BaseButton } from "@base-ui/react/button";
 import referenceStyles from "../../shared/InlineReference.module.css";
+import { SEARCH_MIN_CHARS } from "../../shared/search-debounce";
 import { npubEncode } from "nostr-tools/nip19";
 import {
   memo,
@@ -26,6 +35,12 @@ import { splitPartition } from "../../features/relay/partition";
 import { useIdentityNames } from "../../features/identity-names/react";
 import { usePresenceStatus } from "../../features/presence/react";
 import { profileTarget } from "../../features/profiles/target";
+import {
+  otherVerifiedName,
+  useNamePreference,
+  verifiedLabel,
+} from "../../features/profiles/name-preference";
+import type { VerifiedProfile } from "../../features/relay/verified-profile";
 import { peopleRelationships } from "../../features/profiles/relationships";
 import { personKey, rankPeople } from "../../features/search/people-rank";
 import {
@@ -33,7 +48,11 @@ import {
   readSearchUsage,
   recordChoice,
 } from "../../features/search/usage";
-import { matchPerson } from "../../features/search/person-match";
+import {
+  matchPerson,
+  matchTier,
+  normalizeName,
+} from "../../features/search/person-match";
 import { useSearchHighlight } from "../../features/search/use-search-highlight";
 import styles from "./ChannelMembersDialog.module.css";
 import { SoloOwnerAvatar, soloOwnerLabel } from "./ChatSharedMark";
@@ -45,12 +64,14 @@ import {
   canAddMembers,
   canShareSoloChat,
 } from "../../features/channel-members/members";
-import { ownSolo } from "../../features/solo/labels";
+import { ownSolo, soloShareDisclosure } from "../../features/solo/labels";
 import { soloChatLink } from "../../features/solo/share";
 import {
   formatPublicKey,
   publicKeyLabels,
+  typedPublicKey,
 } from "../../shared/identity/public-key";
+import { AlertDialog } from "../../shared/design-system/ui/AlertDialog";
 import { Dialog } from "../../shared/design-system/ui/Dialog";
 import { InlineHeader } from "../../shared/design-system/ui/Header";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
@@ -65,11 +86,11 @@ import {
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
+  MenuSeparator,
 } from "../../shared/design-system/ui/Menu";
 import { ChoiceRow } from "../../shared/design-system/ui/ChoiceRow";
 import { SearchField } from "../../shared/design-system/ui/SearchField";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
-import { Accordion } from "../../shared/design-system/ui/Accordion";
 import { Tooltip } from "../../shared/design-system/ui/Tooltip";
 import {
   PopoverRoot,
@@ -82,27 +103,32 @@ import {
   Filter2Icon,
   InfoIcon,
   UsersIcon,
-  XIcon,
 } from "../../shared/design-system/icons";
 import {
+  MemberMenus,
   MemberRow,
   useMemberAdministration,
   memberAccessLabel,
 } from "./MemberAdministration";
+import type { MemberRole } from "../../features/channel-members/administration-protocol";
 import { useMemberSearch } from "./useMemberSearch";
 import { useMemberOwners } from "./useMemberOwners";
 import { useSoloShare } from "./useSoloShare";
 import { useReauthorizedRetry } from "../../features/relay/RecoveryNotice";
 import { ChannelGeneralAccess } from "./ChannelGeneralAccess";
 import { avatarMedia } from "../../shared/avatar-source";
-import {
-  type ChannelLabel,
-  channelIcon,
-  channelText,
-} from "../../features/channels/channel-icon";
+import { channelIcon, channelText } from "../../features/channels/channel-icon";
 import { writeClipboardText } from "../../shared/clipboard";
 
 const INVITATION_GROUP_SIZE = 4;
+const MEMBER_PAGE_SIZE = 50;
+const accessFilterNames = (["owner", "admin", "member", "guest"] as const).map(
+  memberAccessLabel,
+);
+const accessFilterLabel = (role: MemberRole | undefined) =>
+  role === undefined || role === "unknown"
+    ? undefined
+    : memberAccessLabel(role);
 
 const additionRoles = [
   {
@@ -166,6 +192,7 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
   place,
   pubkey,
   name,
+  otherName,
   keyLabel,
   qualified,
   adding,
@@ -182,7 +209,6 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
   ownerClickable,
   descriptionId,
   input,
-  scrollport,
   focusedAdd,
   openProfile,
   onSendMessage,
@@ -200,6 +226,8 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
   place: "chat" | "channel";
   pubkey: string;
   name: string;
+  /** The verified name `name` is not, shown beside it. */
+  otherName: string | undefined;
   keyLabel: string | undefined;
   /** Another shown row has the same name; show the key so Add picks the right one. */
   qualified: boolean;
@@ -217,7 +245,6 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
   ownerClickable: boolean;
   descriptionId: string;
   input: RefObject<HTMLElement | null>;
-  scrollport: RefObject<HTMLElement | null>;
   focusedAdd: RefObject<{
     key: string;
     button: HTMLButtonElement;
@@ -287,9 +314,19 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
               {name}
               {pubkey === session.viewer ? " (you)" : ""}
             </span>
+            {otherName && (
+              <span className="min-w-0 truncate text-caption text-subtle">
+                {otherName}
+              </span>
+            )}
             {qualified && keyLabel && (
               <span className="shrink-0 text-caption text-subtle">
                 {keyLabel}
+              </span>
+            )}
+            {!adding && archived && (
+              <span className="shrink-0 text-caption text-subtle">
+                Archived
               </span>
             )}
           </span>
@@ -323,7 +360,6 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
       verifiedOwner={verifiedOwner}
       onChange={onChange}
       returnFocus={input}
-      scrollport={scrollport}
       onViewProfile={clickable ? viewProfile : undefined}
       onViewOwnerProfile={
         ownerClickable ? () => openProfile(ownerTarget) : undefined
@@ -409,10 +445,12 @@ export function ChannelMembersButton({
   signal,
   owner,
   label = "Access",
+  conversationName,
 }: {
   session: RelaySession;
   channelId: string;
   label?: string;
+  conversationName?: string;
   /** Someone else's Solo chat names its owner on the Access control. */
   owner?: { name: string; picture?: string | undefined } | undefined;
   agents?: Agents | undefined;
@@ -427,24 +465,38 @@ export function ChannelMembersButton({
   const open = presentation ? presentation.open : localOpen;
   const setOpen = presentation ? presentation.onOpenChange : setLocalOpen;
   const trigger = useRef<HTMLButtonElement>(null);
+  const access = useHeaderChannel(session.channels, channelId, memberAccess);
   return (
     <>
-      <IconButton
-        ref={trigger}
-        size="sm"
-        aria-label={owner ? `${label}, ${soloOwnerLabel(owner)}` : label}
-        title={owner ? soloOwnerLabel(owner) : label}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-        icon={
-          owner ? (
-            <SoloOwnerAvatar owner={owner} />
-          ) : (
-            <UsersIcon size="1rem" aria-hidden="true" />
-          )
-        }
-      />
+      {conversationName !== undefined ? (
+        <ChannelHeaderIdentity
+          ref={trigger}
+          session={session}
+          channelId={channelId}
+          name={conversationName}
+          access={access}
+          detail={owner && soloOwnerLabel(owner)}
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+        />
+      ) : (
+        <IconButton
+          ref={trigger}
+          size="sm"
+          aria-label={owner ? `${label}, ${soloOwnerLabel(owner)}` : label}
+          title={owner ? soloOwnerLabel(owner) : label}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+          icon={
+            owner ? (
+              <SoloOwnerAvatar owner={owner} />
+            ) : (
+              <UsersIcon size="1rem" aria-hidden="true" />
+            )
+          }
+        />
+      )}
       {open && (
         <ChannelMembersDialog
           key={channelId}
@@ -515,6 +567,12 @@ function TeamRow({
   );
 }
 
+/** Whether removing `control` took the focus with it. Removal emits no blur and
+ * leaves the body focused, so focus anywhere else was moved there since. */
+function lostFocus(control: HTMLElement) {
+  return !control.isConnected && document.activeElement === document.body;
+}
+
 /** The one access dialog. Any conversation lists and adds members; a Solo chat
  * adds people under its share rule and can also be shared to a channel. */
 export function ChannelMembersDialog({
@@ -531,6 +589,7 @@ export function ChannelMembersDialog({
   communities,
   navigator,
   signal,
+  visit = false,
 }: {
   session: RelaySession;
   channelId: string;
@@ -543,6 +602,8 @@ export function ChannelMembersDialog({
   navigator?: Navigation | undefined;
   /** The visit that opened this dialog; leaving it retires late results. */
   signal?: AbortSignal | undefined;
+  /** Opened as its own navigation visit, so Back closes it; local opens are not. */
+  visit?: boolean;
 } & MemberNavigation) {
   const presenceId = useId();
   const openingDestination = useRef(false);
@@ -551,6 +612,7 @@ export function ChannelMembersDialog({
   const [messageError, setMessageError] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
+  const apply = useRef<HTMLButtonElement>(null);
   const [changeError, setChangeError] = useState<{
     session: RelaySession;
     channelId: string;
@@ -560,25 +622,112 @@ export function ChannelMembersDialog({
     session: RelaySession;
     channelId: string;
     change: MemberChange;
+    /** The list's offset when the change was chosen; the step replaces it. */
+    scrollTop: number;
   }>();
-  const selection =
+  const shownIntent =
     intent?.session === session && intent.channelId === channelId
-      ? intent.change
+      ? intent
       : undefined;
+  const selection = shownIntent?.change;
+  const scrollport = useRef<HTMLElement>(null);
+  // Set when the step is left by confirming. That member's Actions are then
+  // watched until its row leaves and until the change settles.
+  const confirmed = useRef(false);
+  const handOff = useRef<{
+    button: HTMLElement;
+    at: number;
+    /** The members beside it in the whole list, not only the shown page. */
+    next?: string | undefined;
+    before?: string | undefined;
+  }>(undefined);
+  // Every listed member in order, across pages, for a removal's hand-off.
+  const listedMembers = useRef<readonly string[]>([]);
+  const keepInView = useRef<{ button: HTMLElement; scrollTop: number }>(
+    undefined,
+  );
   const chooseChange = useCallback(
     (change: MemberChange) => {
       setChangeError(undefined);
-      setIntent({ session, channelId, change });
+      confirmed.current = false;
+      setIntent({
+        session,
+        channelId,
+        change,
+        scrollTop: scrollport.current?.scrollTop ?? 0,
+      });
     },
     [session, channelId],
   );
-  const previousSelection = useRef(selection);
+  const lastShown = useRef(shownIntent);
+  // Before paint: the returning list keeps its offset and focuses the
+  // member's Actions. An addition's person has no member row, so it returns
+  // to Search, as does another session's or channel's list.
   useLayoutEffect(() => {
-    if (selection !== previousSelection.current)
-      (selection ? cancel.current : input.current)?.focus();
-    previousSelection.current = selection;
-  }, [selection]);
-  const scrollport = useRef<HTMLElement>(null);
+    const previous = lastShown.current;
+    if (shownIntent === previous) return;
+    lastShown.current = shownIntent;
+    if (shownIntent) {
+      // Enter confirms reversible changes; removal starts on Cancel.
+      (shownIntent.change.role !== "remove" && !apply.current?.disabled
+        ? apply.current
+        : cancel.current
+      )?.focus();
+      return;
+    }
+    const list = scrollport.current;
+    if (
+      !list ||
+      previous?.session !== session ||
+      previous.channelId !== channelId
+    ) {
+      input.current?.focus();
+      return;
+    }
+    list.scrollTop = previous.scrollTop;
+    const actions = [...list.querySelectorAll<HTMLElement>("[data-member]")];
+    const at = actions.findIndex(
+      (item) => item.dataset.member === previous.change.pubkey,
+    );
+    const button = actions[at];
+    (button ?? input.current)?.focus();
+    if (button && confirmed.current) {
+      const order = listedMembers.current;
+      const index = order.indexOf(previous.change.pubkey);
+      handOff.current = {
+        button,
+        at,
+        next: index < 0 ? undefined : order[index + 1],
+        before: index < 0 ? undefined : order[index - 1],
+      };
+      keepInView.current = { button, scrollTop: list.scrollTop };
+    }
+  }, [shownIntent, session, channelId]);
+  // A removed row takes its focused Actions with it. Hand off to the member
+  // after it, the one before, or Search. Neighbours are found by identity, so
+  // a removal that empties the last page lands on the previous page's last
+  // member rather than its first; index is the fallback for unlisted rows.
+  useLayoutEffect(() => {
+    const previous = handOff.current;
+    if (!previous || previous.button.isConnected) return;
+    handOff.current = undefined;
+    if (!lostFocus(previous.button)) return;
+    const actions = [
+      ...(scrollport.current?.querySelectorAll<HTMLElement>("[data-member]") ??
+        []),
+    ];
+    const shown = (pubkey: string | undefined) =>
+      pubkey === undefined
+        ? undefined
+        : actions.find((item) => item.dataset.member === pubkey);
+    (
+      shown(previous.next) ??
+      shown(previous.before) ??
+      actions[previous.at] ??
+      actions[previous.at - 1] ??
+      input.current
+    )?.focus();
+  });
   const focusedAdd = useRef<{ key: string; button: HTMLButtonElement } | null>(
     null,
   );
@@ -591,20 +740,33 @@ export function ChannelMembersDialog({
   useLayoutEffect(() => {
     const previous = expandedFocus.current;
     expandedFocus.current = null;
-    if (
-      previous &&
-      !previous.button.isConnected &&
-      (document.activeElement === previous.button ||
-        document.activeElement === document.body)
-    )
+    if (previous && lostFocus(previous.button))
       document
         .getElementById(previous.rowId)
         ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
         ?.focus();
   });
+  // A late archive list moves archived members to the Archived group, which
+  // remounts a focused row. Its control leaves without a blur, so focus falls
+  // to the dialog or the body. Hand off to its group's heading, as a page
+  // change does, or Search, unless focus has moved on to another control.
+  const listFocus = useRef<{ control: HTMLElement; group: string }>(undefined);
+  useLayoutEffect(() => {
+    const previous = listFocus.current;
+    const list = scrollport.current;
+    if (!previous || previous.control.isConnected) return;
+    listFocus.current = undefined;
+    const active = document.activeElement;
+    if (!list || (active && !active.contains(list))) return;
+    (
+      document.getElementById(`${presenceId}-${previous.group}-page`) ??
+      input.current
+    )?.focus({ preventScroll: true });
+  });
   const lifetime = useRef<AbortController>(undefined);
   const [query, setQuery] = useState("");
-  const [selectedRole, setSelectedRole] = useState("All");
+  const [selectedIdentity, setSelectedIdentity] = useState("All");
+  const [selectedAccess, setSelectedAccess] = useState("All");
   const [soloAdditions, setSoloAdditions] = useState<
     Record<string, { pending: boolean; error?: string }>
   >({});
@@ -618,16 +780,21 @@ export function ChannelMembersDialog({
     ...additions.filter((item) => item.pending).map((item) => item.pubkey),
     ...Object.keys(soloAdditions).filter((key) => soloAdditions[key]?.pending),
   ]);
-  const errors = Object.fromEntries<string | undefined>([
-    ...additions
-      .filter((item) => item.error)
-      .map((item) => [item.pubkey, item.error] as const),
-    ...Object.entries(soloAdditions)
-      .filter(([, item]) => item.error)
-      .map(([key, item]) => [key, item.error] as const),
-  ]);
+  // One alert per reason: a refused team add names its members together.
+  // Solo agents join directly, one at a time, so each keeps its own Retry.
+  const refusals = new Map<string, { error: string; keys: string[] }>();
+  const refuse = (group: string, error: string, key: string) => {
+    const item = refusals.get(group) ?? { error, keys: [] };
+    item.keys.push(key);
+    refusals.set(group, item);
+  };
+  for (const item of additions)
+    if (item.error) refuse(item.error, item.error, item.pubkey);
+  for (const [key, item] of Object.entries(soloAdditions))
+    if (item.error) refuse(key, item.error, key);
   const [notice, setNotice] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
+  const copyFailure = copyStatus && copyStatus !== "Link copied";
   const [rosterReadError, setRosterReadError] = useState("");
   const [nameError, setNameError] = useState("");
   const [rosterReading, setRosterReading] = useState(true);
@@ -678,15 +845,17 @@ export function ChannelMembersDialog({
     session.channels.get?.(channelId);
   const solo = channel?.channelType === "solo";
   const place = solo ? "chat" : "channel";
+  const readOnlyAccess =
+    channel?.viewerRole === "guest" ||
+    (channel?.readOnly && channel.joinRole === "guest");
+  const soloSharing = solo && !channel?.readOnly && !readOnlyAccess;
   const share = useSoloShare({
     session,
     navigator,
     channelId,
-    enabled: solo,
+    enabled: soloSharing,
     signal,
     query,
-    setQuery,
-    input,
     close,
   });
   // A Solo owner adds agents directly; people join through sharing.
@@ -696,24 +865,39 @@ export function ChannelMembersDialog({
     session.channelWrites.available;
   const canAddPeople = solo ? share.eligible : canAddMembers(session, channel);
   const canAdd = canAddPeople || canAddSoloAgents;
-  const readOnlyAccess =
-    !solo &&
-    (channel?.viewerRole === "guest" ||
-      (channel?.readOnly && channel.joinRole === "guest"));
   const generalAccess =
     channel &&
-    (channel.channelType === "stream" || channel.channelType === "forum") &&
+    (solo ||
+      channel.channelType === "stream" ||
+      channel.channelType === "forum") &&
     !channel.cached &&
     !channel.archived &&
     (channel.readOnly || session.channelDetails.available);
-  // Solo access is verified by the sharing roster read; channels read 39002.
-  const rosterBusy = solo ? share.rosterState === "loading" : rosterReading;
-  const rosterError = solo
+  // Sharing verifies joined Solo rosters; read-only previews use ordinary 39002 reads.
+  const rosterBusy = soloSharing
+    ? share.rosterState === "loading"
+    : rosterReading;
+  const rosterError = soloSharing
     ? share.rosterState === "error"
       ? share.rosterError
       : ""
     : rosterReadError;
   const text = query.trim();
+  // Fold the query once per render, not once per member name.
+  const folded = [...normalizeName(query)];
+  const nameMatches = (name: string | undefined) =>
+    !!name && matchTier(name, folded) !== undefined;
+  // Npubs of this roster: every keystroke rescans each member, and a bounded
+  // shared cache would miss on every lookup once the roster outgrows it.
+  const npubs = useMemo(() => new Map<string, string>(), []);
+  const npubOf = (key: string) => {
+    let npub = npubs.get(key);
+    if (npub === undefined) {
+      npub = npubEncode(key);
+      npubs.set(key, npub);
+    }
+    return npub;
+  };
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new query or explicit refresh rereads stored choice/visit scores.
   const usage = useMemo(
     () => readSearchUsage(session.scope),
@@ -752,7 +936,7 @@ export function ChannelMembersDialog({
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh explicitly retries the roster read.
   useEffect(() => {
     void session.archives.ensure();
-    if (solo) return;
+    if (soloSharing) return;
     let current = true;
     setRosterReading(true);
     setRosterReadError("");
@@ -787,8 +971,9 @@ export function ChannelMembersDialog({
     return () => {
       current = false;
     };
-  }, [session, channelId, refresh, solo]);
+  }, [session, channelId, refresh, soloSharing]);
   const memberKey = channel?.members?.join(":") ?? "";
+  const largeRoster = (channel?.members?.length ?? 0) > MEMBER_PAGE_SIZE;
   const administration = useMemberAdministration(
     session,
     channelId,
@@ -800,30 +985,7 @@ export function ChannelMembersDialog({
     administration.operation.status === "pending"
   )
     busy.add(administration.operation.change.pubkey);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh retries missing names with the other dialog reads.
-  useEffect(() => {
-    setNameError("");
-    setNamesSettledFor(undefined);
-    if (!memberKey) {
-      setNamesSettledFor({ session, memberKey });
-      return;
-    }
-    let current = true;
-    void session.profiles
-      .ensure(memberKey.split(":"), "foreground")
-      .catch(() => {
-        if (current)
-          setNameError(
-            "Some names could not load. Public keys still identify members. Try again.",
-          );
-      })
-      .finally(() => {
-        if (current) setNamesSettledFor({ session, memberKey });
-      });
-    return () => {
-      current = false;
-    };
-  }, [session, memberKey, refresh]);
+  const profileGeneration = useProfileGeneration(session.profiles);
   const namesBusy =
     namesSettledFor?.session !== session ||
     namesSettledFor?.memberKey !== memberKey;
@@ -847,45 +1009,127 @@ export function ChannelMembersDialog({
     // The authority hook may have started a new roster's read in this effect
     // flush. Do not reveal using the previous render's settled role snapshot.
     const status = session.memberAdministration.snapshot(channelId).status;
-    if (!rosterBusy && !namesBusy && rolesSettled && status !== "loading")
+    if (
+      !rosterBusy &&
+      (!namesBusy || largeRoster) &&
+      rolesSettled &&
+      status !== "loading"
+    )
       setRevealedFor(session);
-  }, [session, channelId, rosterBusy, namesBusy, rolesSettled]);
+  }, [session, channelId, rosterBusy, namesBusy, largeRoster, rolesSettled]);
   const initialLoading = revealedFor !== session;
   const known = useMemo(
     () =>
       new Map(agentChoices.identities.map((agent) => [agent.pubkey, agent])),
     [agentChoices.identities],
   );
+  const search = useMemberSearch(
+    session,
+    query,
+    canAddPeople || (largeRoster && !solo && channel?.channelType !== "dm"),
+  );
+  // Searched people the community verified carry their verified names.
+  const searchVerified = useVerifiedNames(session, search.people, {
+    key: query,
+    settled: !search.loading,
+  });
+  const preference = useNamePreference();
+  const searchPeople = useMemo(
+    () =>
+      withVerifiedNames(search.people, searchVerified, profiles, preference),
+    [search.people, searchVerified, profiles, preference],
+  );
+  const searchProfiles = new Map(
+    searchPeople.map((person) => [person.pubkey, person]),
+  );
   const members = new Set(channel?.members ?? []);
-  const archived = new Set(archives.archived);
+  const verifiedOf = (key: string): VerifiedProfile | undefined =>
+    profiles.get(key)?.verified ?? searchVerified.get(key);
+  const pageLabel = (verified: VerifiedProfile | undefined) =>
+    verified && verifiedLabel(verified, preference);
+  const otherName = (key: string) => {
+    const verified = verifiedOf(key);
+    return (
+      verified &&
+      otherVerifiedName(verifiedLabel(verified, preference), verified)
+    );
+  };
+  const pageVerified = (key: string) =>
+    profiles.get(key)?.verified ? undefined : searchVerified.get(key);
   const label = (key: string, fallback?: string) =>
+    // A name verified for this search is the label where the shared profiles
+    // show another, so the row reads as Command-K and mentions do.
+    pageLabel(pageVerified(key)) ??
     resolveName(
       key,
       profiles.get(key)?.name ??
+        searchProfiles.get(key)?.name ??
         fallback ??
         known.get(key)?.name ??
         formatPublicKey(key) ??
         "Unknown member",
     );
-  // Filters the fully loaded member list.
+  // A whole key or npub, with or without `nostr:`, finds its owner.
+  const typedKey = typedPublicKey(text);
+  // Filters every roster identity using its currently available label.
   const matches = (key: string, name: string) =>
-    `${name} ${key} ${npubEncode(key)}`
-      .toLowerCase()
-      .includes(query.trim().toLowerCase());
-  // People to add use the shared name rule, like the relay's people page; a
-  // whole key or npub finds its owner.
-  const addable = (key: string, ...names: (string | undefined)[]) => {
-    const typed = query.trim().toLowerCase();
-    return (
-      names.some((name) => name && matchPerson(name, query)) ||
-      typed === key ||
-      typed === npubEncode(key)
-    );
-  };
-  const currentMembers = [...members].sort(
-    (a, b) => label(a).localeCompare(label(b)) || a.localeCompare(b),
+    !text ||
+    key === typedKey ||
+    [
+      searchProfiles.get(key)?.name,
+      searchProfiles.get(key)?.username,
+      verifiedOf(key)?.displayName,
+      verifiedOf(key)?.username,
+      verifiedOf(key)?.fullName,
+      ...(searchProfiles.get(key)?.profileNames ?? []),
+    ].some(nameMatches) ||
+    `${name} ${key} ${npubOf(key)}`.toLowerCase().includes(text.toLowerCase());
+  // People to add use the shared name rule, like the relay's people page.
+  const addable = (key: string, ...names: (string | undefined)[]) =>
+    key === typedKey || names.some(nameMatches);
+  // Label once per member: a fallback label bech32-encodes the key, too costly
+  // to repeat for every member of a large roster on each render.
+  const memberLabels = new Map([...members].map((key) => [key, label(key)]));
+  const memberLabel = (key: string) => memberLabels.get(key) ?? label(key);
+  // Sort again only when a member or label changes, not on every render (each
+  // filter keystroke), which would re-sort a large roster. The serialized
+  // pairs are the memo key, since they change whenever either does.
+  const labelList = JSON.stringify([...memberLabels]);
+  const currentMembers = useMemo(
+    () =>
+      (JSON.parse(labelList) as [string, string][])
+        .sort(([a, x], [b, y]) => x.localeCompare(y) || a.localeCompare(b))
+        .map(([key]) => key),
+    [labelList],
   );
-  const groups = ["People", "Agents"].map((name) => {
+  const roles = administration.authority.roles;
+  const accessOf = (key: string) => accessFilterLabel(roles[key]);
+  // Count once per roster or role change, not on every filter keystroke,
+  // which would label a large roster once per access level.
+  const accessGroups = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const key of currentMembers) {
+      const name = accessFilterLabel(roles[key]);
+      if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return accessFilterNames
+      .map((name) => ({ name, count: counts.get(name) ?? 0 }))
+      .filter((group) => group.count > 0);
+  }, [currentMembers, roles]);
+  const accessFilter =
+    query.length === 0 &&
+    (administration.status === "loading" ||
+      (accessGroups.length > 1 &&
+        accessGroups.some((group) => group.name === selectedAccess)))
+      ? selectedAccess
+      : "All";
+  if (
+    !initialLoading &&
+    administration.status !== "loading" &&
+    selectedAccess !== accessFilter
+  )
+    setSelectedAccess(accessFilter);
+  const currentGroups = ["People", "Agents"].map((name) => {
     const keys = currentMembers.filter((key) => {
       const group =
         known.has(key) || profiles.get(key)?.isAgent ? "Agents" : "People";
@@ -894,31 +1138,185 @@ export function ChannelMembersDialog({
     return {
       name,
       count: keys.length,
-      keys: keys.filter((key) => matches(key, label(key))),
+      keys,
     };
   });
+  // Optional profile updates change labels, not the identities being browsed.
+  // Reopening or refreshing takes a new paging order. Live roster changes
+  // retain surviving identities and append new members in their current order.
+  const [memberOrder, setMemberOrder] = useState({
+    session,
+    channelId,
+    memberKey,
+    refresh,
+    initialLoading,
+    groups: currentGroups,
+  });
+  const resetOrder =
+    memberOrder.session !== session ||
+    memberOrder.channelId !== channelId ||
+    memberOrder.refresh !== refresh ||
+    memberOrder.initialLoading !== initialLoading;
+  const previousMembers = new Set(
+    memberOrder.groups.flatMap((group) => group.keys),
+  );
+  const orderedGroups =
+    resetOrder || !largeRoster
+      ? currentGroups
+      : memberOrder.memberKey !== memberKey
+        ? memberOrder.groups.map((group) => {
+            const keys = [
+              ...group.keys.filter((key) => members.has(key)),
+              ...(
+                currentGroups.find((current) => current.name === group.name)
+                  ?.keys ?? []
+              ).filter((key) => !previousMembers.has(key)),
+            ];
+            return { ...group, keys, count: keys.length };
+          })
+        : memberOrder.groups;
+  if (resetOrder || memberOrder.memberKey !== memberKey)
+    setMemberOrder({
+      session,
+      channelId,
+      memberKey,
+      refresh,
+      initialLoading,
+      groups: orderedGroups,
+    });
+  // Known-archived members leave People and Agents for an Archived group
+  // after them, each keeping the order above, so archives that arrive late or
+  // members who join later still list there.
+  const isArchived = (key: string) =>
+    archiveHides(session.archives, key, session.viewer);
+  const baseGroups = largeRoster ? orderedGroups : currentGroups;
+  const groups = [
+    ...baseGroups.map((group) => ({
+      name: group.name,
+      keys: group.keys.filter((key) => !isArchived(key)),
+    })),
+    {
+      name: "Archived",
+      keys: baseGroups.flatMap((group) => group.keys.filter(isArchived)),
+    },
+  ].map((group) => ({
+    name: group.name,
+    count: group.keys.length,
+    keys: group.keys.filter(
+      (key) =>
+        matches(key, memberLabel(key)) &&
+        (accessFilter === "All" || accessOf(key) === accessFilter),
+    ),
+  }));
+  const narrowed = text.length > 0 || accessFilter !== "All";
   const presentGroups = groups.filter((group) => group.count > 0);
-  const roleFilter =
+  const identityFilter =
     query.length === 0 &&
     presentGroups.length > 1 &&
-    presentGroups.some((group) => group.name === selectedRole)
-      ? selectedRole
+    presentGroups.some((group) => group.name === selectedIdentity)
+      ? selectedIdentity
       : "All";
   if (
     !initialLoading &&
     administration.status !== "loading" &&
-    selectedRole !== roleFilter
+    selectedIdentity !== identityFilter
   )
-    setSelectedRole(roleFilter);
+    setSelectedIdentity(identityFilter);
+  const identityChoices = presentGroups.length > 1;
+  const accessChoices = rolesSettled && accessGroups.length > 1;
+  const filterSummary =
+    [identityFilter, accessFilter]
+      .filter((name) => name !== "All")
+      .join(", ") || "All";
   const filteredGroups = groups.filter(
     (group) =>
-      (roleFilter === "All" || group.name === roleFilter) &&
+      (identityFilter === "All" || group.name === identityFilter) &&
       group.keys.length > 0,
   );
-  const search = useMemberSearch(session, query, canAddPeople);
-  const relayKeys = new Set(search.people.map((person) => person.pubkey));
+  const listedOrder = filteredGroups.flatMap((group) => group.keys).join("\n");
+  useLayoutEffect(() => {
+    listedMembers.current = listedOrder ? listedOrder.split("\n") : [];
+  }, [listedOrder]);
+  const [memberPages, setMemberPages] = useState({
+    text,
+    identityFilter,
+    accessFilter,
+    pages: {} as Record<string, number>,
+  });
+  let pages =
+    memberPages.text === text &&
+    memberPages.identityFilter === identityFilter &&
+    memberPages.accessFilter === accessFilter
+      ? memberPages.pages
+      : {};
+  for (const group of groups) {
+    const lastPage = Math.max(
+      0,
+      Math.ceil(group.keys.length / MEMBER_PAGE_SIZE) - 1,
+    );
+    if ((pages[group.name] ?? 0) > lastPage)
+      pages = { ...pages, [group.name]: lastPage };
+  }
+  if (pages !== memberPages.pages)
+    setMemberPages({ text, identityFilter, accessFilter, pages });
+  const pendingMemberPage = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const group = pendingMemberPage.current;
+    pendingMemberPage.current = null;
+    if (group === null) return;
+    const heading = document.getElementById(`${presenceId}-${group}-page`);
+    heading?.focus({ preventScroll: true });
+    heading?.parentElement?.scrollIntoView({ block: "start" });
+  });
+  const changeMemberPage = (group: string, page: number) => {
+    pendingMemberPage.current = group;
+    setMemberPages({
+      text,
+      identityFilter,
+      accessFilter,
+      pages: { ...pages, [group]: page },
+    });
+  };
+  const profileKey = !largeRoster
+    ? memberKey
+    : filteredGroups
+        .flatMap((group) => {
+          const page = Math.min(
+            pages[group.name] ?? 0,
+            Math.ceil(group.keys.length / MEMBER_PAGE_SIZE) - 1,
+          );
+          return group.keys.slice(
+            page * MEMBER_PAGE_SIZE,
+            (page + 1) * MEMBER_PAGE_SIZE,
+          );
+        })
+        .join(":");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh retries missing names with the other dialog reads; a purge generation rereads.
+  useEffect(() => {
+    let current = true;
+    setNameError("");
+    setNamesSettledFor(undefined);
+    void session.profiles
+      .ensure(
+        profileKey ? profileKey.split(":") : [],
+        largeRoster ? "background" : "foreground",
+      )
+      .catch(() => {
+        if (current)
+          setNameError(
+            "Some names could not load. Public keys still identify members. Try again.",
+          );
+      })
+      .finally(() => {
+        if (current) setNamesSettledFor({ session, memberKey });
+      });
+    return () => {
+      current = false;
+    };
+  }, [session, memberKey, profileKey, refresh, largeRoster, profileGeneration]);
+  const relayKeys = new Set(searchPeople.map((person) => person.pubkey));
   const candidates = new Map(
-    search.people.map((person) => [person.pubkey, person]),
+    searchPeople.map((person) => [person.pubkey, person]),
   );
   // Default suggestions use this client's agents; searches also include the
   // viewer's non-client inventory after people and other community agents.
@@ -974,7 +1372,7 @@ export function ChannelMembersDialog({
   const available = [...candidates.values()].filter(
     (person) =>
       !members.has(person.pubkey) &&
-      !archiveHides(session.archives, person.pubkey, session.viewer) &&
+      !agentUnavailable(session, person.pubkey) &&
       // A Solo chat offers only the agents its owner can add directly.
       !(
         solo &&
@@ -989,7 +1387,7 @@ export function ChannelMembersDialog({
   const offering =
     !initialLoading &&
     canAdd &&
-    roleFilter === "All" &&
+    identityFilter === "All" &&
     (!!text ||
       (members.size === 1 &&
         members.has(session.viewer ?? "") &&
@@ -1001,7 +1399,7 @@ export function ChannelMembersDialog({
     "Your other agents",
   ].map((name, index) => {
     const people =
-      roleFilter === "All"
+      identityFilter === "All"
         ? available.filter((person) => candidateGroup(person) === index)
         : [];
     const ranked = rankPeople(
@@ -1025,8 +1423,8 @@ export function ChannelMembersDialog({
       usage,
       picked,
     ).map(({ person }) => person);
-    // Name ranking must not discard exact-key lookups or other relay matches
-    // (for example a profile's NIP-05). Keep those after the shared name matches.
+    // Name ranking lists an exact-key match first but drops other relay
+    // matches (for example a profile's NIP-05). Keep those after its rows.
     const rankedKeys = new Set(ranked.map((person) => person.pubkey));
     const ordered = [
       ...ranked,
@@ -1079,7 +1477,7 @@ export function ChannelMembersDialog({
   if (
     selection &&
     (selection.expectedRole !== "absent" ||
-      !archiveHides(session.archives, selection.pubkey, session.viewer)) &&
+      !agentUnavailable(session, selection.pubkey)) &&
     administration.status === "ready" &&
     administration.operation?.status !== "pending" &&
     administration.operation?.status !== "uncertain"
@@ -1116,10 +1514,25 @@ export function ChannelMembersDialog({
       (changeError?.session === session &&
         changeError.channelId === channelId &&
         changeError.message));
+  // A confirmed change's own error appears above the list and shortens it.
+  // When the change settles, keep its member's Actions in view, unless focus
+  // or the list has moved since the return.
+  const operationStatus = administration.operation?.status;
+  useLayoutEffect(() => {
+    const kept = keepInView.current;
+    if (!kept || operationStatus === "pending") return;
+    keepInView.current = undefined;
+    if (
+      administrationError &&
+      document.activeElement === kept.button &&
+      scrollport.current?.scrollTop === kept.scrollTop
+    )
+      kept.button.scrollIntoView({ block: "nearest" });
+  }, [administrationError, operationStatus]);
   const refreshMembers = () => {
     if (refreshing || mutationPending) return;
     setChangeError(undefined);
-    if (solo) share.reloadRoster();
+    if (soloSharing) share.reloadRoster();
     else setRosterReading(true);
     setRefresh((value) => value + 1);
     setInvitationPage({
@@ -1150,11 +1563,27 @@ export function ChannelMembersDialog({
       ? [{ team, missing }]
       : [];
   });
-  const keys = publicKeyLabels([...members, ...candidates.keys()]);
+  // Names refused people in a stable order: up to three, then a count.
+  const listNames = (keys: readonly string[]) => {
+    const names = keys
+      .map((key) => label(key, teamNames.get(key)))
+      .sort((a, b) => a.localeCompare(b));
+    const shown = names.slice(0, 3);
+    const rest = names.length - shown.length;
+    return new Intl.ListFormat(undefined, { type: "conjunction" }).format(
+      rest > 0 ? [...shown, `${rest} more`] : shown,
+    );
+  };
+  // Suffix search scans the whole roster; redo it only when the keys change.
+  const keyList = [...members, ...candidates.keys()].join(":");
+  const keys = useMemo(
+    () => publicKeyLabels(keyList ? keyList.split(":") : []),
+    [keyList],
+  );
   // A naming plugin is optional: same-named rows still need a visible difference.
   const shownNames = new Map<string, number>();
   for (const name of [
-    ...currentMembers.map((key) => label(key)),
+    ...currentMembers.map(memberLabel),
     ...visibleCandidates.map((person) => label(person.pubkey, person.name)),
   ])
     shownNames.set(name, (shownNames.get(name) ?? 0) + 1);
@@ -1210,7 +1639,8 @@ export function ChannelMembersDialog({
           if (direct) {
             setSoloAdditions((old) => ({ ...old, [key]: { pending: false } }));
             setQuery("");
-            setSelectedRole("All");
+            setSelectedIdentity("All");
+            setSelectedAccess("All");
           }
           setNotice(
             `${session.names.resolve(key, session.profiles.snapshot().get(key)?.name ?? session.agentChoices.snapshot().identities.find((agent) => agent.pubkey === key)?.name ?? formatPublicKey(key) ?? "Unknown member")}${direct ? " added." : ` is in the ${place}.`}`,
@@ -1236,17 +1666,18 @@ export function ChannelMembersDialog({
     [session, channelId, canAddSoloAgents, place],
   );
 
-  const addTeam = useCallback(
-    async (team: Team, missing: readonly string[]) => {
+  // Adds a team or retries a refused group; `done` is announced only once
+  // every addition lands. Failed members share one alert and Retry per reason.
+  const addAll = useCallback(
+    async (keys: readonly string[], done: string) => {
       const signal = lifetime.current?.signal;
       if (!signal) return;
       setNotice("");
       const added = await Promise.allSettled(
-        missing.map((key) => session.memberAdditions.add(channelId, key)),
+        keys.map((key) => session.memberAdditions.add(channelId, key)),
       );
-      // A failed member shows its own error and Retry below.
       if (!signal.aborted && added.every((item) => item.status === "fulfilled"))
-        setNotice(`${team.name} is in the channel.`);
+        setNotice(done);
     },
     [session, channelId],
   );
@@ -1377,12 +1808,13 @@ export function ChannelMembersDialog({
         place={place}
         pubkey={key}
         name={name}
+        otherName={otherName(key)}
         keyLabel={keys.get(key)}
         qualified={(shownNames.get(name) ?? 0) > 1}
         adding={adding}
         picture={picture ?? profiles.get(key)?.picture}
         isAgent={isAgent}
-        archived={archived.has(key)}
+        archived={isArchived(key)}
         roleLabel={
           isAgent && role === "bot"
             ? "member"
@@ -1407,7 +1839,6 @@ export function ChannelMembersDialog({
         }
         descriptionId={`${presenceId}-${key}`}
         input={input}
-        scrollport={scrollport}
         focusedAdd={focusedAdd}
         openProfile={openProfile}
         onSendMessage={
@@ -1455,36 +1886,41 @@ export function ChannelMembersDialog({
     selection?.expectedRole === "absent"
       ? additionRoles.find((option) => option.role === selection.role)
       : undefined;
-  /** A name in a channel share's audience; access actions stay on member rows. */
-  const audienceRow = (key: string) => (
-    <li key={key} className={styles.stagedRow}>
-      <Avatar
-        alt=""
-        fallback={share.names(key)}
-        src={avatarMedia(profiles.get(key)?.picture, session.media)}
-        size="small"
-        shape={
-          known.has(key) || profiles.get(key)?.isAgent ? "squircle" : "circle"
-        }
-      />
-      <span className={styles.stagedName}>{share.names(key)}</span>
-    </li>
-  );
-  const channelTitle = (channel: ChannelLabel, detail: string) => {
-    const Icon = channelIcon(channel);
-    return (
-      <span className={styles.choice}>
-        <Icon size={24} aria-hidden="true" />
-        <span className={styles.stagedName}>
-          <span>{channelText(channel)}</span>
-          <span className="text-body-sm text-subtle">{detail}</span>
-        </span>
-      </span>
-    );
-  };
-  const memberCount = (count: number) =>
-    `${count} member${count === 1 ? "" : "s"}`;
   const chosen = share.chosen;
+  const searchFeedback = (
+    <>
+      {search.loading && (
+        <p role="status" className="px-control-inset text-body-sm text-subtle">
+          Searching…
+        </p>
+      )}
+      {search.error && (
+        <p role="alert" className="px-control-inset text-body-sm text-danger">
+          {search.error}
+        </p>
+      )}
+      {search.more && (
+        <div className="flex justify-center border-t border-standard pt-4">
+          <Button
+            variant="subtle"
+            size="sm"
+            onClick={() => {
+              setInvitationPage((old) => ({
+                ...old,
+                revealRelay: true,
+              }));
+              search.next();
+            }}
+            disabled={search.loading}
+          >
+            Find more matches
+          </Button>
+        </div>
+      )}
+    </>
+  );
+  const shareAction = useRef<HTMLButtonElement>(null);
+  const cancelShare = useRef<HTMLButtonElement>(null);
   const copyAction = (
     <Tooltip
       content="Copying a link does not grant access."
@@ -1501,7 +1937,6 @@ export function ChannelMembersDialog({
     <div className={styles.memberSearch}>
       <SearchField
         inputRef={input}
-        aria-describedby={solo ? `${presenceId}-solo-help` : undefined}
         label={
           solo
             ? canAddSoloAgents
@@ -1525,44 +1960,85 @@ export function ChannelMembersDialog({
         disabled={solo && share.busy}
         onValueChange={(value) => {
           setQuery(value);
-          if (value.length > 0) setSelectedRole("All");
+          if (value.length > 0) {
+            setSelectedIdentity("All");
+            setSelectedAccess("All");
+          }
         }}
         onKeyDown={(event) => {
           highlight.keyDown(event);
         }}
         trailing={
-          !initialLoading && presentGroups.length > 1 && query.length === 0 ? (
+          !initialLoading &&
+          query.length === 0 &&
+          (identityChoices || accessChoices) ? (
             <MenuRoot>
               <MenuTrigger
                 render={
                   <IconButton
-                    aria-label={`Filter people and agents: ${roleFilter}`}
-                    title={`Filter people and agents: ${roleFilter}`}
-                    variant={roleFilter === "All" ? "ghost" : "prominent"}
+                    aria-label={`Filter members: ${filterSummary}`}
+                    title={`Filter members: ${filterSummary}`}
+                    variant={filterSummary === "All" ? "ghost" : "prominent"}
                     icon={<Filter2Icon size={16} aria-hidden="true" />}
                   />
                 }
               />
               <MenuPopup align="end">
-                <MenuRadioGroup
-                  value={roleFilter}
-                  onValueChange={(value) => {
-                    setSelectedRole(value);
-                    if (scrollport.current) scrollport.current.scrollTop = 0;
-                  }}
-                >
-                  {[{ name: "All", count: members.size }, ...presentGroups].map(
-                    (group) => (
-                      <MenuRadioItem
-                        key={group.name}
-                        value={group.name}
-                        closeOnClick
-                      >
-                        {`${group.name} · ${group.count}`}
-                      </MenuRadioItem>
-                    ),
-                  )}
-                </MenuRadioGroup>
+                {identityChoices && (
+                  <MenuGroup>
+                    <MenuGroupLabel>People and agents</MenuGroupLabel>
+                    <MenuRadioGroup
+                      value={identityFilter}
+                      onValueChange={(value) => {
+                        setSelectedIdentity(value);
+                        if (scrollport.current)
+                          scrollport.current.scrollTop = 0;
+                      }}
+                    >
+                      {[
+                        { name: "All", count: members.size },
+                        ...presentGroups,
+                      ].map((group) => (
+                        <MenuRadioItem
+                          key={group.name}
+                          value={group.name}
+                          closeOnClick
+                        >
+                          {`${group.name} · ${group.count}`}
+                        </MenuRadioItem>
+                      ))}
+                    </MenuRadioGroup>
+                  </MenuGroup>
+                )}
+                {identityChoices && accessChoices && <MenuSeparator />}
+                {accessChoices && (
+                  <MenuGroup>
+                    <MenuGroupLabel>Access</MenuGroupLabel>
+                    <MenuRadioGroup
+                      value={accessFilter}
+                      onValueChange={(value) => {
+                        setSelectedAccess(value);
+                        if (scrollport.current)
+                          scrollport.current.scrollTop = 0;
+                      }}
+                    >
+                      {[
+                        { name: "All", count: members.size },
+                        ...accessGroups,
+                      ].map((group) => (
+                        <MenuRadioItem
+                          key={group.name}
+                          value={group.name}
+                          closeOnClick
+                        >
+                          {group.name === "All"
+                            ? `Any access · ${group.count}`
+                            : `${group.name} · ${group.count}`}
+                        </MenuRadioItem>
+                      ))}
+                    </MenuRadioGroup>
+                  </MenuGroup>
+                )}
               </MenuPopup>
             </MenuRoot>
           ) : undefined
@@ -1583,11 +2059,17 @@ export function ChannelMembersDialog({
       recovery={session.recovery}
       channelId={channelId}
       channel={channel}
+      mayHaveGuestMembers={
+        administration.status !== "ready" ||
+        Object.values(administration.authority.roles).includes("guest")
+      }
     />
   ) : null;
   const dialog = (
     <Dialog
       open
+      // Its confirmation step is a nested surface, not part of the visit.
+      visit={visit && !selection}
       dismissOnOutsideClick
       preventClose={share.busy}
       step={
@@ -1608,12 +2090,7 @@ export function ChannelMembersDialog({
             : selection.expectedRole === "absent"
               ? "Add member?"
               : `Change access to ${memberAccessLabel(selection.role)}?`
-          : (title ??
-            (solo
-              ? "Share access"
-              : readOnlyAccess
-                ? "Channel access"
-                : "Manage members"))
+          : (title ?? memberAccess(channel).title)
       }
       height={selection ? "content" : generalAccess ? "stable-tall" : "stable"}
       bodyLayout={selection ? "flow" : "flex"}
@@ -1652,12 +2129,14 @@ export function ChannelMembersDialog({
               Cancel
             </Button>
             <Button
+              ref={apply}
               variant={
                 selection.role === "remove" ? "destructive" : "prominent"
               }
               disabled={!changePermitted}
               onClick={() => {
                 if (!changePermitted) return;
+                confirmed.current = true;
                 setIntent(undefined);
                 void session.memberAdministration
                   .run(channelId, selection)
@@ -1680,26 +2159,8 @@ export function ChannelMembersDialog({
                     : `Set to ${memberAccessLabel(selection.role).toLowerCase()}`}
             </Button>
           </>
-        ) : solo ? (
-          <Button
-            variant="prominent"
-            title={
-              share.destination
-                ? "Sharing grants access and posts a link in the selected channel."
-                : undefined
-            }
-            loading={share.busy}
-            disabled={!share.eligible && !!share.destination}
-            onClick={() => void share.submit()}
-          >
-            {share.destination
-              ? share.failed
-                ? "Retry share"
-                : "Share"
-              : "Done"}
-          </Button>
         ) : (
-          <Button variant="prominent" onClick={close}>
+          <Button variant="prominent" disabled={share.busy} onClick={close}>
             Done
           </Button>
         )
@@ -1717,16 +2178,6 @@ export function ChannelMembersDialog({
       ) : (
         <div className={styles.layout}>
           <div className={styles.searchControls}>{searchField}</div>
-          {solo && (
-            <p
-              id={`${presenceId}-solo-help`}
-              className="shrink-0 text-body-sm text-subtle"
-            >
-              {canAddSoloAgents
-                ? "People and agents with access can read the full history and participate in new messages. Adding an agent won’t start a run."
-                : "People with access can read the full history and participate in new messages."}
-            </p>
-          )}
           {(administrationError ||
             rosterError ||
             nameError ||
@@ -1755,8 +2206,57 @@ export function ChannelMembersDialog({
               {administrationError}
             </p>
           )}
-          <section
-            ref={scrollport}
+          {(refusals.size > 0 ||
+            openingMessage ||
+            messageError ||
+            copyFailure) && (
+            <div className={styles.feedback}>
+              {[...refusals].map(([group, { error, keys }]) => {
+                const names = listNames(keys);
+                return (
+                  <p
+                    role="alert"
+                    key={group}
+                    className="text-body-sm text-danger"
+                  >
+                    {names}: {error}{" "}
+                    <Button
+                      variant="outline"
+                      aria-label={`Retry adding ${names}`}
+                      disabled={!canAdd}
+                      onClick={() => {
+                        // Land where Add does, so the next step is the search.
+                        input.current?.focus();
+                        const [only] = keys;
+                        void (only && keys.length === 1
+                          ? add(only)
+                          : addAll(keys, `${names} are in the ${place}.`));
+                      }}
+                    >
+                      Retry
+                    </Button>
+                  </p>
+                );
+              })}
+              {openingMessage && (
+                <p role="status" className="text-body-sm text-subtle">
+                  Opening conversation…
+                </p>
+              )}
+              {messageError && (
+                <p role="alert" className="text-body-sm text-danger">
+                  {messageError}
+                </p>
+              )}
+              {copyFailure && (
+                <p role="alert" className="text-body-sm text-subtle">
+                  {copyStatus}
+                </p>
+              )}
+            </div>
+          )}
+          <MemberMenus
+            scrollport={scrollport}
             className={`${styles.memberList} buzz-thin-scrollbar`}
             aria-label="Member list"
             data-refreshing={refreshing}
@@ -1783,60 +2283,6 @@ export function ChannelMembersDialog({
                 {rosterError}
               </p>
             )}
-            {chosen && (
-              <section
-                aria-label="Selected channel"
-                className={styles.stagedRow}
-              >
-                <div className={styles.stagedName}>
-                  <Accordion
-                    key={chosen.id}
-                    variant="form"
-                    onValueChange={(value) =>
-                      share.setExpandedChannel(value.length ? chosen.id : "")
-                    }
-                    items={[
-                      {
-                        value: "channel-participants",
-                        title: channelTitle(
-                          chosen,
-                          share.destinationMembers
-                            ? memberCount(share.destinationMembers.length)
-                            : share.destinationRoster?.id !== chosen.id ||
-                                share.destinationRoster.status === "loading"
-                              ? "Loading participants…"
-                              : "Participants unavailable",
-                        ),
-                        content: share.destinationMembers ? (
-                          <ul>{share.destinationMembers.map(audienceRow)}</ul>
-                        ) : (
-                          <div>
-                            <p role="status">
-                              {share.destinationRoster?.id !== chosen.id ||
-                              share.destinationRoster.status === "loading"
-                                ? "Loading participants…"
-                                : "Current participants are unavailable."}
-                            </p>
-                            {share.destinationRoster?.id === chosen.id &&
-                              share.destinationRoster.status === "error" && (
-                                <Button onClick={share.retryDestination}>
-                                  Retry participants
-                                </Button>
-                              )}
-                          </div>
-                        ),
-                      },
-                    ]}
-                  />
-                </div>
-                <IconButton
-                  aria-label={`Remove ${channelText(chosen)}`}
-                  disabled={share.busy}
-                  icon={<XIcon size={16} />}
-                  onClick={share.removeDestination}
-                />
-              </section>
-            )}
             {initialLoading ? (
               !rosterError && (
                 <div
@@ -1854,25 +2300,93 @@ export function ChannelMembersDialog({
               )
             ) : (
               <>
-                {filteredGroups.map((group) => (
-                  <section key={group.name} aria-label={group.name}>
-                    <h3
-                      className={`${styles.groupHeading} pb-2 text-caption text-subtle`}
-                    >
-                      {group.name} · {text ? group.keys.length : group.count}
-                    </h3>
-                    <ul aria-busy={refreshing}>
-                      {group.keys.map((key) => row(key, label(key), false))}
-                    </ul>
-                  </section>
-                ))}
-                {!filteredGroups.length && !rosterBusy && !offering && (
-                  <p className="px-control-inset text-body-sm text-subtle">
-                    {query
-                      ? "No members match your search."
-                      : "No members to show."}
-                  </p>
-                )}
+                {filteredGroups.map((group) => {
+                  const pageCount = Math.ceil(
+                    group.keys.length / MEMBER_PAGE_SIZE,
+                  );
+                  const page = Math.min(pages[group.name] ?? 0, pageCount - 1);
+                  return (
+                    <section key={group.name} aria-label={group.name}>
+                      <h3
+                        id={`${presenceId}-${group.name}-page`}
+                        tabIndex={-1}
+                        className={`${styles.groupHeading} pb-2 text-caption text-subtle`}
+                      >
+                        {group.name} ·{" "}
+                        {narrowed ? group.keys.length : group.count}
+                      </h3>
+                      <ul
+                        aria-busy={refreshing}
+                        onFocus={(event) => {
+                          // Portaled menus bubble here too; keep only rows.
+                          if (
+                            event.currentTarget.contains(event.target) &&
+                            event.target instanceof HTMLElement
+                          )
+                            listFocus.current = {
+                              control: event.target,
+                              group: group.name,
+                            };
+                        }}
+                      >
+                        {group.keys
+                          .slice(
+                            page * MEMBER_PAGE_SIZE,
+                            (page + 1) * MEMBER_PAGE_SIZE,
+                          )
+                          .map((key) => row(key, memberLabel(key), false))}
+                      </ul>
+                      {pageCount > 1 && (
+                        <nav
+                          aria-label={`${group.name} member pages`}
+                          className="flex items-center justify-between gap-2 px-control-inset"
+                        >
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={page === 0}
+                            onClick={() =>
+                              changeMemberPage(group.name, page - 1)
+                            }
+                          >
+                            Previous
+                          </Button>
+                          <span
+                            className="text-caption text-subtle"
+                            aria-live="polite"
+                          >
+                            <span className="sr-only">Page </span>
+                            {page + 1} of {pageCount}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={page + 1 === pageCount}
+                            onClick={() =>
+                              changeMemberPage(group.name, page + 1)
+                            }
+                          >
+                            Next
+                          </Button>
+                        </nav>
+                      )}
+                    </section>
+                  );
+                })}
+                {!filteredGroups.length &&
+                  !rosterBusy &&
+                  !offering &&
+                  !search.loading &&
+                  !search.error &&
+                  !search.more && (
+                    <p className="px-control-inset text-body-sm text-subtle">
+                      {query
+                        ? "No members match your search."
+                        : accessFilter !== "All"
+                          ? "No members match this filter."
+                          : "No members to show."}
+                    </p>
+                  )}
               </>
             )}
             {offering && (
@@ -1895,7 +2409,12 @@ export function ChannelMembersDialog({
                         )}
                         busy={missing.some((key) => busy.has(key))}
                         disabled={rosterBusy || !!rosterError}
-                        onAdd={() => void addTeam(team, missing)}
+                        onAdd={() =>
+                          void addAll(
+                            missing,
+                            `${team.name} is in the channel.`,
+                          )
+                        }
                       />
                     ))}
                   </ul>
@@ -1996,23 +2515,17 @@ export function ChannelMembersDialog({
                     </section>
                   ) : null,
                 )}
-                {search.loading && (
-                  <p
-                    role="status"
-                    className="px-control-inset text-body-sm text-subtle"
-                  >
-                    Searching…
-                  </p>
-                )}
                 {!search.loading && !search.error && !available.length && (
                   <p className="px-control-inset text-body-sm text-subtle">
-                    {!solo
-                      ? "No other matching people or agents."
-                      : !canAddSoloAgents
-                        ? "No other matching people."
-                        : agentChoices.pending
-                          ? "Loading agents…"
-                          : "No other matching people or agents."}
+                    {solo && canAddSoloAgents && agentChoices.pending
+                      ? "Loading agents…"
+                      : search.tooShort
+                        ? `Type at least ${SEARCH_MIN_CHARS} characters to search people.`
+                        : !solo
+                          ? "No other matching people or agents."
+                          : !canAddSoloAgents
+                            ? "No other matching people."
+                            : "No other matching people or agents."}
                   </p>
                 )}
                 {agentsByMention && (
@@ -2020,34 +2533,10 @@ export function ChannelMembersDialog({
                     To add an agent, mention it in the chat.
                   </p>
                 )}
-                {search.error && (
-                  <p
-                    role="alert"
-                    className="px-control-inset text-body-sm text-danger"
-                  >
-                    {search.error}
-                  </p>
-                )}
-                {search.more && (
-                  <div className="flex justify-center border-t border-standard pt-4">
-                    <Button
-                      variant="subtle"
-                      size="sm"
-                      onClick={() => {
-                        setInvitationPage((old) => ({
-                          ...old,
-                          revealRelay: true,
-                        }));
-                        search.next();
-                      }}
-                      disabled={search.loading}
-                    >
-                      Find more matches
-                    </Button>
-                  </div>
-                )}
+                {searchFeedback}
               </section>
             )}
+            {!initialLoading && !offering && searchFeedback}
             {shareChannels.length > 0 && (
               <section className={styles.memberGroup} aria-label="Channels">
                 <h3
@@ -2058,6 +2547,13 @@ export function ChannelMembersDialog({
                 <ul aria-busy={refreshing}>
                   {shareChannels.map((item) => {
                     const Icon = channelIcon(item);
+                    const active = share.destination === item.id;
+                    const action =
+                      active && share.checkRequired
+                        ? "Check access and share"
+                        : active && share.failed
+                          ? "Retry share"
+                          : "Share";
                     return (
                       <li key={item.id} className={styles.member}>
                         <div className={styles.profileContent}>
@@ -2072,11 +2568,15 @@ export function ChannelMembersDialog({
                           <Button
                             variant="prominent"
                             size="xs"
-                            aria-label={`Select ${channelText(item)}`}
-                            disabled={share.busy}
-                            onClick={() => share.choose(item)}
+                            aria-label={`${action} ${channelText(item)}`}
+                            loading={share.busy && active}
+                            disabled={share.busy || !share.eligible}
+                            onClick={(event) => {
+                              shareAction.current = event.currentTarget;
+                              void share.submit(item.id);
+                            }}
                           >
-                            Select
+                            {action}
                           </Button>
                         </span>
                       </li>
@@ -2105,36 +2605,9 @@ export function ChannelMembersDialog({
                 Archived identities could not be checked.
               </p>
             )}
-            {Object.entries(errors).map(([key, error]) => (
-              <p role="alert" key={key} className="text-body-sm text-danger">
-                {label(key)}: {error}{" "}
-                <Button
-                  variant="outline"
-                  disabled={busy.has(key) || !canAdd}
-                  onClick={() => void add(key)}
-                >
-                  {busy.has(key) ? "Retrying…" : "Retry"}
-                </Button>
-              </p>
-            ))}
-            {openingMessage && (
-              <p role="status" className="text-body-sm text-subtle">
-                Opening conversation…
-              </p>
-            )}
-            {messageError && (
-              <p role="alert" className="text-body-sm text-danger">
-                {messageError}
-              </p>
-            )}
             {notice && (
               <p role="status" className="sr-only">
                 {notice}
-              </p>
-            )}
-            {copyStatus && copyStatus !== "Link copied" && (
-              <p role="alert" className="text-body-sm text-subtle">
-                {copyStatus}
               </p>
             )}
             {solo &&
@@ -2150,8 +2623,47 @@ export function ChannelMembersDialog({
                   {share.progress}
                 </p>
               ) : null)}
-          </section>
+          </MemberMenus>
         </div>
+      )}
+      {share.confirmation && chosen && (
+        <AlertDialog
+          title="Share this chat?"
+          description={
+            <>
+              {share.confirmation.visibility === "public"
+                ? `This chat is already View only. Its link will be posted in ${channelText(chosen)}. `
+                : `This changes the chat from Private to View only and posts its link in ${channelText(chosen)}. `}
+              <span className="mt-3 block">{soloShareDisclosure()}</span>
+            </>
+          }
+          pending={share.busy}
+          onClose={share.cancelConfirmation}
+          initialFocus={cancelShare}
+          finalFocus={() =>
+            shareAction.current?.isConnected
+              ? shareAction.current
+              : input.current
+          }
+          actions={
+            <>
+              <Button
+                ref={cancelShare}
+                disabled={share.busy}
+                onClick={share.cancelConfirmation}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="prominent"
+                loading={share.busy}
+                onClick={() => void share.confirm()}
+              >
+                Share
+              </Button>
+            </>
+          }
+        />
       )}
     </Dialog>
   );

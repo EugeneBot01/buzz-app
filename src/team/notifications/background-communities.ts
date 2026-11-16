@@ -49,7 +49,7 @@ export function bindBackgroundCommunityAlerts(
     if (!waiting) return;
     bindings.set(
       waiting.id,
-      bindMessageNotifications(notifications, communities, {
+      bindMessageNotifications(notifications, communities, undefined, {
         id: waiting.id,
         name: name(waiting.id),
       }),

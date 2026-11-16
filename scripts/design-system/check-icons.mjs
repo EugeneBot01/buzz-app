@@ -17,9 +17,11 @@ const nonIconDependencies = new Set([
   "@earendil-works/chord", // The Pi host's packages, which pi.sh installs.
   "@earendil-works/pi-ai",
   "@earendil-works/pi-durable",
+  "@earendil-works/pi-schema",
   "@emoji-mart/data",
   "@fontsource-variable/inter",
   "@fontsource/jetbrains-mono",
+  "@hypothesi/tauri-mcp-server", // Native MCP client (docs/native-mcp.md).
   "@jsquash/webp", // Lossless media encoder, not an icon catalog.
   "@modelcontextprotocol/server", // The standalone Buzz MCP server.
   "@noble/curves",
@@ -35,6 +37,7 @@ const nonIconDependencies = new Set([
   "@testing-library/react",
   "@testing-library/user-event",
   "@types/d3-scale",
+  "@types/hast", // Type-only module for highlighted code trees.
   "@types/mdast",
   "@types/node",
   "@types/react",
@@ -45,10 +48,16 @@ const nonIconDependencies = new Set([
   "blurhash",
   "consola", // Runtime logging, not an icon catalog.
   "d3-scale", // Chart scales and ticks; marks are Buzz-rendered SVG.
+  "diff", // Text line diffs for Canvas history, not an icon library.
   "dockview-react",
+  "echarts", // Chart marks; not an icon library.
   "emoji-mart",
   "flexlayout-react",
+  "github-slugger", // Heading IDs; not an icon library.
+  "hast", // Type-only module supplied by @types/hast.
+  "highlight.js", // Code highlighting grammars; not an icon library.
   "jsdom",
+  "lowlight", // Code highlighting into HTML trees; not an icon library.
   "mdast", // Type-only module supplied by @types/mdast.
   "mdast-util-from-markdown",
   "mdast-util-gfm-strikethrough",
@@ -56,8 +65,10 @@ const nonIconDependencies = new Set([
   "mdast-util-to-markdown",
   "micromark-extension-gfm-strikethrough",
   "micromark-extension-gfm-table",
+  "micromark-util-decode-string", // Markdown string decoding; not an icon library.
   "motion",
   "nostr-tools",
+  "pdfjs-dist", // PDF page rendering; not an icon library.
   "pele",
   "postcss",
   "proper-lockfile", // The Pi host's lock on each agent's storage.
@@ -74,14 +85,18 @@ const nonIconDependencies = new Set([
   "react-markdown",
   "remark-breaks",
   "remark-gfm",
+  "remark-parse", // Markdown parsing; not an icon library.
+  "remark-rehype", // Test-only Markdown to HTML trees; not an icon library.
   "rolldown",
   "sonner", // Headless toast behavior; Buzz supplies controls and Tabler icons.
   "tailwindcss",
   "typescript",
   "undici",
+  "unified", // Markdown processing pipeline; not an icon library.
   "virtua",
   "vite",
   "vitest",
+  "ws", // The native MCP client's loopback relay.
   "yaml",
 ]);
 const allowedDependencies = new Set([...approved, ...nonIconDependencies]);

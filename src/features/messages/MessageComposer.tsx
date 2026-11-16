@@ -1,3 +1,11 @@
+import { draftEditorId, traceDraft } from "../../shared/draft-diagnostics";
+import {
+  soloModelPicksKey,
+  parseSoloModelPicks,
+  readSoloModelPicks,
+  updateSoloModelPicks,
+} from "./solo-model-picks";
+import { subscribeModelPicks } from "./solo-model-picks-storage";
 import { useChatLinkSharing } from "./useChatLinkSharing";
 import {
   draftGif,
@@ -5,13 +13,16 @@ import {
 } from "../../bundled/emoji/GifDraftPreview";
 import { accentButtonStyle } from "../../shared/theme/accent";
 import { stageChatCards } from "./composer-chat-cards";
+import { pastedFiles } from "./composer-clipboard";
 import { chatCardIds } from "./chat-cards";
 import { ComposerChatCards } from "./ComposerChatCards";
 import { useConversationPresentation } from "../conversation/ConversationPresentation";
 import { TypingPresentation } from "../conversation/typing-presentation";
 import { useTypingBroadcast } from "./useTypingBroadcast";
+import { TypingIndicator } from "./TypingIndicator";
 import { useEffectEvent } from "react";
 import { useMessageEditScope } from "./MessageEditScope";
+import { selectNewestMessage } from "./message-selection";
 import { useMessageDeletion } from "./MessageManagement";
 import { animate, useReducedMotion } from "motion/react";
 import {
@@ -19,16 +30,19 @@ import {
   useToastNotification,
 } from "../../shared/design-system/ui/Toast";
 import { writeClipboardText } from "../../shared/clipboard";
-import { SelectedMentionContext } from "./selected-mention-context";
+import {
+  AddressedAgentsContext,
+  SelectedMentionContext,
+} from "./selected-mention-context";
 import { DraftMentionRoster } from "./draft-mention-roster";
 import {
   allowsOutsideMentions,
-  archivedMention,
   mentionAdmission,
   pastedMentionRecipient,
 } from "./mention-admission";
 import { rememberMention } from "./mention-history";
 import {
+  composerChips,
   readComposerSnapshot,
   composerMarkdownContext,
   markdownRanges,
@@ -40,6 +54,8 @@ import { useListedChannel } from "../relay/listed-channel";
 import { FileDropOverlay } from "./FileDropOverlay";
 import { useFileDrop } from "./use-file-drop";
 import { Button } from "../../shared/design-system/ui/Button";
+import { useToastClearance } from "../../shared/design-system/ui/Toast";
+import { LoadingRegion } from "../../shared/design-system/ui/LoadingRegion";
 import { IconButton } from "../../shared/design-system/ui/IconButton";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
 import { useBringAgents } from "./useBringAgents";
@@ -55,22 +71,29 @@ import {
   seedMentions,
 } from "./remembered-mentions";
 import { rememberAgentsPreference } from "./mention-preferences";
+import { useSendWithModEnterPreference } from "./send-key-preference";
+import { useEditWithUpArrowPreference } from "./edit-key-preference";
+import { matches } from "../shortcuts/bindings";
+import { isApplePlatform } from "../shortcuts/format";
 import { useChosenAgent } from "../solo/default-agent";
+import { agentUnavailable } from "../agents/choices";
 import { useAgentChoices } from "../agents/use-choices";
-import { ownSolo } from "../solo/labels";
 import {
   soloAgentsOnly,
   soloHasPeople,
   soloRoster,
   useSoloMembers,
 } from "../solo/people";
-import { TypingIndicator } from "./TypingIndicator";
 import {
   ArrowUpIcon,
+  ChatCircleIcon,
+  LockIcon,
   PaperclipIcon,
   PencilSimpleIcon,
   XIcon,
 } from "../../shared/design-system/icons/index";
+import { channelIcon } from "../channels/channel-icon";
+import { channelIconClass } from "../../shared/inline-reference";
 import { useVoiceCapture } from "./useVoiceCapture";
 import { ComposerAttachments } from "./ComposerAttachments";
 import {
@@ -98,6 +121,11 @@ import {
   type RefObject,
 } from "react";
 import { fullSession, type ComposerSession } from "./composer-session";
+import {
+  draftTokens,
+  messageTokenTags,
+  signMessageTokens,
+} from "./message-tokens";
 import type { RelaySession } from "../relay/session";
 import {
   readView,
@@ -118,6 +146,7 @@ import {
   type MentionDraft,
   type MentionRecipient,
 } from "./mention-draft";
+import { useShowingDraft } from "./draft-places";
 import { normalizeName } from "../search/person-match";
 import { ComposerAccessories } from "../conversation/ComposerAccessories";
 import { ComposerTools } from "../conversation/ComposerTools";
@@ -128,7 +157,6 @@ import { ComposerModels, type DraftPicks } from "./ComposerModels";
 import type { MentionPicks } from "../relay/messages";
 import type {
   ConversationExtensions,
-  CompletionEdit,
   CompletionPending,
   CompletionQuery,
   CompletionResolution,
@@ -136,8 +164,19 @@ import type {
   ComposerResource,
 } from "../conversation/contracts";
 import { ComposerCompletions } from "../conversation/ComposerCompletions";
-import { MENTION_RESOLVE_TIMEOUT_MS } from "../conversation/completion";
+import {
+  chosenWorkspace,
+  WorkspaceCompletion,
+  type WorkspaceCompletionTarget,
+} from "../conversation/workspace-completion";
+import {
+  MENTION_RESOLVE_TIMEOUT_MS,
+  type HostCompletionEdit,
+} from "../conversation/completion";
 import { useCompletionEditor } from "../conversation/useCompletionEditor";
+import { ComposerAnnotators } from "../conversation/ComposerAnnotators";
+import { AnnotationMenu } from "./AnnotationMenu";
+import type { AnnotationMenuRequest } from "./composer-dom";
 import { formatMediaTime, mediaTimeReply } from "./media-timecode";
 import { RichComposerInput } from "./RichComposerInput";
 import type { MessageLinkOrigin } from "./MessageRow";
@@ -148,9 +187,11 @@ import type {
   ComposerFormat,
 } from "./composer-dom";
 import { TargetOpenerProvider } from "../conversation/opener";
+import { channelText } from "../channels/channel-icon";
 import { avatarMedia } from "../../shared/avatar-source";
 import { followUpBehaviorPreference } from "./follow-up-preference";
 import { followUpQueue } from "./follow-up-queue";
+import { followUpMessage } from "./follow-up-message";
 import { QueuedFollowUps } from "./QueuedFollowUps";
 import {
   disarmDraft,
@@ -172,6 +213,7 @@ const noChannels: ReturnType<ComposerSession["channels"]["list"]> = {
   channels: [],
 };
 const noSubscription = () => () => {};
+const noAgents: readonly string[] = [];
 
 type AcceptedDraft = {
   next: MentionDraft;
@@ -288,7 +330,7 @@ export type MessageComposerProps = {
   placeholder?: string | undefined;
   soloConversation?: boolean | undefined;
   ownSoloConversation?: boolean | undefined;
-  /** Seeds an empty new-chat draft; follow-ups use remembered mentions. */
+  /** Seeds an empty draft, or an unaddressed submission that requires a recipient. */
   defaultMention?: MentionRecipient | undefined;
   /** Whether a retained tab shows this composer, apart from its read policy.
    * A composer shown again may reseed its remembered agents (see seedMentions). */
@@ -296,10 +338,18 @@ export type MessageComposerProps = {
   /** Sending needs at least one tagged recipient. */
   requireMention?: boolean | undefined;
   chatPresentation?: boolean | undefined;
-  activityClickOpensPanel?: boolean | undefined;
   trailingTool?: ReactNode;
+  /** Only while the chat is new: `#` then offers its workspaces first. */
+  workspace?: WorkspaceCompletionTarget | undefined;
   inviteAgents?: boolean | undefined;
+  /** Narrows a submission's agents to those its owner accepts. */
+  agentFilter?: ((pubkey: string) => boolean) | undefined;
   onSend?: (id: string) => void;
+  /** A plain slash command with no recipients or attachments may be consumed by
+   * its conversation owner. Return false to send it as an ordinary message. */
+  onCommand?:
+    | ((command: string, signal: AbortSignal) => boolean | Promise<boolean>)
+    | undefined;
   /** Inbox may retire only after saving the replacement or confirming no draft remains. */
   onDraftSaved?: (() => void) | undefined;
   /** Before a focused form detaches, its host can hand focus to retained content. */
@@ -315,6 +365,8 @@ export type MessageComposerProps = {
    * seedMentions); other composers read their own channel window. */
   threadSeed?: Pick<ChannelMessage, "id" | "mentions"> | undefined;
   replyParentId?: string | undefined;
+  /** Bind a timecoded reply to the selected gallery attachment. */
+  mediaTargetUrl?: string | undefined;
   replyContext?: ReactNode;
   mediaTimeSeconds?: number;
   clearMediaTime?(): void;
@@ -335,11 +387,21 @@ export type MessageComposerProps = {
     attachments?: boolean;
     /** DMs can start with files alone; named Solo chats still require text. */
     allowAttachmentOnly?: boolean;
+    /** New Solo chats keep their picks on the stable draft until creation. */
+    modelPicksKey?: string;
+    /** Told after each save whether the editor holds a draft it could not
+     * save, which view state then misses. */
+    unsaved?: ((held: boolean) => void) | undefined;
+    /** Hears each edit, whether or not saving it succeeded. */
+    onDraftChange?: ((draft: MentionDraft) => void) | undefined;
     /** `addressed`: the toolbar's agents, when they are held apart from the text. */
     submit: (
       draft: MentionDraft,
       attachments: AttachmentDraft,
       addressed?: readonly MentionRecipient[],
+      picks?: MentionPicks,
+      draftPicks?: DraftPicks,
+      draftPicksRevision?: string | null,
     ) => void;
   };
 };
@@ -366,7 +428,7 @@ export function MessageComposer(props: MessageComposerProps) {
 }
 
 function PersonalComposer(props: MessageComposerProps) {
-  const { session, channelId, submission } = props;
+  const { session, channelId, submission, agentFilter } = props;
   const choices = useAgentChoices(session, true, true);
   const profiles = useSyncExternalStore(
     session.profiles.subscribe,
@@ -383,7 +445,9 @@ function PersonalComposer(props: MessageComposerProps) {
   const roster = useMemo(
     () =>
       submission
-        ? choices.selectable
+        ? agentFilter
+          ? choices.selectable.filter((agent) => agentFilter(agent.pubkey))
+          : choices.selectable
         : soloRoster(
             members,
             session.viewer,
@@ -393,6 +457,7 @@ function PersonalComposer(props: MessageComposerProps) {
           ),
     [
       submission,
+      agentFilter,
       choices.selectable,
       members,
       agentPubkeys,
@@ -430,14 +495,6 @@ function PersonalComposer(props: MessageComposerProps) {
   return (
     <DraftMentionRoster.Provider value={value}>
       <Composer {...props} />
-      {choices.error && (
-        <p role="alert">
-          {choices.error}{" "}
-          <Button onClick={() => void props.session.agentChoices.refresh()}>
-            Retry agents
-          </Button>
-        </p>
-      )}
     </DraftMentionRoster.Provider>
   );
 }
@@ -454,6 +511,13 @@ function untouchedDraft(draft: MentionDraft) {
     !draft.chatCards?.length &&
     !draft.gifs?.length
   );
+}
+
+/** The link that opens a conversation, or a thread in it. */
+function conversationLink(channelId: string, threadRootId?: string) {
+  return threadRootId
+    ? `buzz://message?${new URLSearchParams({ channel: channelId, id: threadRootId, thread: threadRootId })}`
+    : `buzz://channel/${encodeURIComponent(channelId)}`;
 }
 
 function sameAttachmentSelection(
@@ -475,6 +539,7 @@ function Composer({
   label: customLabel,
   placeholder,
   onSend,
+  onCommand,
   onDraftSaved,
   onFocusedRemoval,
   editMessages,
@@ -483,6 +548,7 @@ function Composer({
   threadRootId,
   threadSeed,
   replyParentId,
+  mediaTargetUrl,
   replyContext,
   mediaTimeSeconds,
   clearMediaTime,
@@ -497,9 +563,9 @@ function Composer({
   shown = true,
   requireMention = false,
   chatPresentation = false,
-  activityClickOpensPanel = false,
   inviteAgents = false,
   trailingTool,
+  workspace,
 }: MessageComposerProps) {
   const active = useConversationPresentation();
   // Previews replace the list on every message; subscribe to this channel's facts.
@@ -525,7 +591,10 @@ function Composer({
     if (disabled || !active) sendAttempt.current?.abort();
   }, [disabled, active]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retargeting invalidates an in-flight send, not the root-keyed draft.
-  useLayoutEffect(() => () => sendAttempt.current?.abort(), [replyParentId]);
+  useLayoutEffect(
+    () => () => sendAttempt.current?.abort(),
+    [replyParentId, mediaTargetUrl],
+  );
   const inputId = useId();
   const draftKey =
     submission?.draftKey ??
@@ -582,6 +651,23 @@ function Composer({
     return pending;
   });
   const revision = useRef(viewRevision(scope, draftKey));
+  const [diagnosticEditor] = useState(draftEditorId);
+  function diagnose(
+    operation: Parameters<typeof traceDraft>[2],
+    expected: string | null | undefined,
+    current: string | null | undefined,
+    next = JSON.stringify(valueRef.current),
+  ) {
+    traceDraft(scope, draftKey, operation, diagnosticEditor, {
+      expected,
+      current,
+      next,
+      flags:
+        Number(dirty.current) |
+        (Number(writing.current) << 1) |
+        (Number(!!sendAttempt.current) << 2),
+    });
+  }
   // Whether this mount seeded the shortcut's initial text, rather than
   // restoring a saved draft that may already have had its tag removed.
   const [seededKey] = useState(() =>
@@ -673,6 +759,7 @@ function Composer({
   // subscribe only while they could seed. Nothing is loaded here: the host
   // owns the window.
   const presented = active && shown;
+  useShowingDraft(scope, draftKey, presented);
   const seeking =
     seedsFromWindow &&
     presented &&
@@ -707,8 +794,140 @@ function Composer({
     session.agentChoices.snapshot,
     session.agentChoices.snapshot,
   );
-  // Model and effort picked for mentioned agents' next run; cleared by each send.
-  const [picks, setPicks] = useState<DraftPicks>({});
+  // A Solo chat keeps its explicit model/effort picks across turns and mounts.
+  const stickyPicks = !!ownSoloConversation;
+  const stickyPicksKey =
+    submission?.modelPicksKey ?? soloModelPicksKey(channelId);
+  const [picksSnapshot, setPicksSnapshot] = useState<{
+    picks: DraftPicks;
+    revision: string | null | undefined;
+  }>({ picks: {}, revision: stickyPicks ? undefined : null });
+  const [pickReadFailed, setPickReadFailed] = useState(false);
+  const [picksLoaded, setPicksLoaded] = useState(!stickyPicks);
+  const [pickReadPending, setPickReadPending] = useState(stickyPicks);
+  const committedPicks = useRef(picksSnapshot);
+  const awaitingPickCommit = useRef<typeof picksSnapshot | undefined>(
+    undefined,
+  );
+  useLayoutEffect(() => {
+    committedPicks.current = picksSnapshot;
+    if (awaitingPickCommit.current === picksSnapshot)
+      awaitingPickCommit.current = undefined;
+  }, [picksSnapshot]);
+  const { picks } = picksSnapshot;
+  const picksRevision = useRef(picksSnapshot.revision);
+  const setPicks = useCallback((next: DraftPicks, acknowledgeSave = false) => {
+    const snapshot = { picks: next, revision: picksRevision.current };
+    if (acknowledgeSave || awaitingPickCommit.current)
+      awaitingPickCommit.current = snapshot;
+    setPicksSnapshot(snapshot);
+  }, []);
+  const unsavedDraft = useRef(false);
+  const unsavedPicks = useRef(
+    new Map<
+      string,
+      { pick: DraftPicks[string] | undefined; pending: boolean }
+    >(),
+  );
+  const pendingPickSaves = useRef(0);
+  const [pickStorageFailed, setPickStorageFailed] = useState(false);
+  const pickReadRequest = useRef(0);
+  const refreshPicks = useCallback(async () => {
+    const request = ++pickReadRequest.current;
+    picksRevision.current = undefined;
+    setPickReadPending(true);
+    try {
+      const { revision, version } = await readSoloModelPicks(
+        scope,
+        stickyPicksKey,
+      );
+      if (!live.current || request !== pickReadRequest.current) return;
+      picksRevision.current = version;
+      const merged = { ...parseSoloModelPicks(revision) };
+      for (const [pubkey, { pick }] of unsavedPicks.current) {
+        if (pick) merged[pubkey] = pick;
+        else delete merged[pubkey];
+      }
+      setPicks(merged, true);
+      setPickReadFailed(false);
+      setPicksLoaded(true);
+      setPickReadPending(false);
+      setPickStorageFailed(
+        [...unsavedPicks.current.values()].some((intent) => !intent.pending),
+      );
+    } catch {
+      if (live.current && request === pickReadRequest.current) {
+        setPickReadFailed(true);
+        setPickReadPending(false);
+      }
+    }
+  }, [scope, stickyPicksKey, setPicks]);
+  useEffect(() => {
+    if (!stickyPicks) return;
+    const stop = subscribeModelPicks(scope, () => void refreshPicks());
+    void refreshPicks();
+    return () => {
+      stop();
+      pickReadRequest.current++;
+    };
+  }, [scope, stickyPicks, refreshPicks]);
+  const changePicks = (
+    next: DraftPicks,
+    resetPubkeys: readonly string[] = [],
+  ) => {
+    const before = picks;
+    const changedKeys = new Set([...Object.keys(before), ...Object.keys(next)]);
+    for (const pubkey of [...changedKeys])
+      if (JSON.stringify(before[pubkey]) === JSON.stringify(next[pubkey]))
+        changedKeys.delete(pubkey);
+    for (const pubkey of resetPubkeys) changedKeys.add(pubkey);
+    if (!stickyPicks) {
+      setPicks(next);
+      return;
+    }
+    // Each queued action owns only its mutations, plus previously failed edits.
+    // Replaying another pending action here could undo a later cross-window edit.
+    const edits = new Map(
+      [...unsavedPicks.current].filter(([, intent]) => !intent.pending),
+    );
+    for (const pubkey of changedKeys) {
+      const intent = { pick: next[pubkey], pending: true };
+      unsavedPicks.current.set(pubkey, intent);
+      edits.set(pubkey, intent);
+    }
+    for (const intent of edits.values()) intent.pending = true;
+    setPicks(next);
+    submission?.unsaved?.(true);
+    pendingPickSaves.current++;
+    void updateSoloModelPicks(
+      scope,
+      stickyPicksKey,
+      new Map([...edits].map(([pubkey, { pick }]) => [pubkey, pick])),
+    )
+      .then(async () => {
+        for (const [pubkey, intent] of edits)
+          if (unsavedPicks.current.get(pubkey) === intent)
+            unsavedPicks.current.delete(pubkey);
+        // Reread after commit: a peer may already have committed another edit.
+        await refreshPicks();
+      })
+      .catch(() => {
+        for (const intent of edits.values()) intent.pending = false;
+      })
+      .finally(() => {
+        pendingPickSaves.current--;
+        if (live.current) {
+          setPickStorageFailed(
+            [...unsavedPicks.current.values()].some(
+              (intent) => !intent.pending,
+            ),
+          );
+          submission?.unsaved?.(
+            unsavedDraft.current || unsavedPicks.current.size > 0,
+          );
+        }
+      });
+  };
   // Solo, alone with agents: the toolbar holds who hears the message when its
   // text mentions no one, and always keeps at least one agent.
   const [routed, setRouted] = useState<readonly MentionRecipient[]>([]);
@@ -717,7 +936,15 @@ function Composer({
   const [replacedKey, setReplacedKey] = useState<string>();
   const replaced = replacedKey === draftKey;
   const mentionCount = useRef(0);
-  const resolvedPicks = useRef<MentionPicks>({});
+  const resolvedPicks = useRef<
+    | {
+        source: typeof picksSnapshot;
+        pubkeys: readonly string[];
+        value: MentionPicks | null;
+        error: string | undefined;
+      }
+    | undefined
+  >(undefined);
   const agents = useContext(AgentsContext);
   /** Who a draft may address here now, the owner's agents from their other
    * communities included. */
@@ -887,6 +1114,8 @@ function Composer({
   const [activeFormats, setActiveFormats] = useState<readonly ComposerFormat[]>(
     [],
   );
+  const sendWithModEnter = useSendWithModEnterPreference();
+  const editWithUpArrow = useEditWithUpArrowPreference();
   const saveDraft = (next: MentionDraft, save = true) => {
     next = stageChatCards(
       {
@@ -906,8 +1135,14 @@ function Composer({
     valueRef.current = next;
     updateDraft(next);
     if (save && !editing.target) {
-      if (submission) writeView(scope, draftKey, next);
-      else {
+      if (submission) {
+        const saved = writeView(scope, draftKey, next);
+        unsavedDraft.current = !saved;
+        submission.unsaved?.(
+          unsavedDraft.current || unsavedPicks.current.size > 0,
+        );
+        submission.onDraftChange?.(next);
+      } else {
         dirty.current = true;
         if (!conflict && !accepted) persist(next);
       }
@@ -916,20 +1151,31 @@ function Composer({
   };
   function persist(next: MentionDraft, expected = revision.current) {
     writing.current = true;
+    const current = viewRevision(scope, draftKey);
+    const serialized = JSON.stringify(next);
+    diagnose("persist", expected, current, serialized);
     // A value already saved by another writer, as the Huddle owner saves the
     // stub after a companion send, is this save's outcome, not a conflict.
     const result =
-      viewRevision(scope, draftKey) === JSON.stringify(next)
+      current === serialized
         ? "saved"
         : replaceView(scope, draftKey, expected, next);
     writing.current = false;
-    if (result === "saved") revision.current = JSON.stringify(next);
+    const saved = viewRevision(scope, draftKey);
+    const nextRevision = JSON.stringify(next);
+    diagnose(result, expected, saved, nextRevision);
+    if (result === "saved") revision.current = nextRevision;
     setConflict(result === "changed");
     setStorageFailed(result === "failed");
     return result;
   }
   const [error, setError] = useState<string>();
-  const [attachmentError, setAttachmentError] = useState<string>();
+  const [pasteTooLong, setPasteTooLong] = useState(false);
+  const [attachmentError, setAttachmentError] =
+    useState<Readonly<{ title: string; description: string }>>();
+  /** Nothing was attached, for this one reason. */
+  const refuseAttachment = (description: string) =>
+    setAttachmentError({ title: "Could not attach file", description });
   const focusRestoredDraft = useRef(false);
   const beforeEdit = useRef<
     { value: MentionDraft; restore(): void } | undefined
@@ -947,6 +1193,13 @@ function Composer({
     setLinkEdit(null);
     completion.invalidate();
   });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A changed draft or edit target retires feedback about the previous paste.
+  useEffect(() => {
+    // Clear only shown feedback. Even an unchanged value schedules a render
+    // here, inside each keystroke's commit, so fast typing would never let
+    // React's nested-update count reset (React error #185).
+    if (pasteTooLong) setPasteTooLong(false);
+  }, [draft, editing.target]);
   const editScope = useMessageEditScope();
   const editableRows = () =>
     editMessages ??
@@ -966,12 +1219,12 @@ function Composer({
   const addressedKeys = sessionTargets(addressed.map((item) => item.pubkey));
   const sessionState = useSessionState(agents, addressedKeys, sessionPlace);
   const compacting = sessionState === "compacting";
-  // In a saved chat, the viewer's own pick outlives a remount until the next
-  // send, which the chat's history then seeds from. A new chat always starts
-  // from the main agent.
-  const pillKey = submission ? undefined : `${draftKey}:agents`;
+  // An explicit pick stays with its draft across remounts. Saved chats clear
+  // it on send and then seed from history; SoloDraft consumes it when a new
+  // chat starts.
+  const pillKey = `${draftKey}:agents`;
   const keepPick = (people: readonly MentionRecipient[] | null) => {
-    if (pillKey) writeView(scope, pillKey, people?.length ? people : null);
+    writeView(scope, pillKey, people?.length ? people : null);
   };
   const choose = (people: readonly MentionRecipient[]) => {
     seededRoute.current = undefined;
@@ -1037,7 +1290,7 @@ function Composer({
     if (automaticTag.current === JSON.stringify(valueRef.current)) return;
     setReplacedKey(draftKey);
     setRouted([]);
-    if (pillKey) writeView(scope, pillKey, null);
+    writeView(scope, pillKey, null);
   }, [routing, recipients.length, draftKey, scope, pillKey]);
   const editLocked = useListedChannel(
     listed,
@@ -1045,6 +1298,10 @@ function Composer({
     (channel) => !!channel?.archived || !!channel?.readOnly,
   );
   const editDisabled = disabled || editLocked;
+  const chips = useMemo(
+    () => composerChips(readComposerSnapshot(value.document)),
+    [value.document],
+  );
   const editingDisabled =
     disabled ||
     admitting ||
@@ -1059,10 +1316,18 @@ function Composer({
     threadRootId,
     active && !editingDisabled && !editing.target && !submission && !cached,
   );
-  const label = editing.target
-    ? "Edit message"
-    : (customLabel ??
-      (threadRootId ? "Reply to thread" : `Message #${channelName}`));
+  // The editor's placeholder is text, so a channel's own placeholder is drawn
+  // over it with its sidebar icon; DMs, threads and edits keep their text.
+  const ChannelIcon = useListedChannel(listed, channelId, channelIcon);
+  const channelLabel =
+    !editing.target && customLabel === undefined && !threadRootId;
+  const iconPlaceholder =
+    channelLabel && placeholder === undefined && ChannelIcon !== ChatCircleIcon;
+  const label = channelLabel
+    ? `Message ${ChannelIcon === LockIcon ? "" : "#"}${channelName}`
+    : editing.target
+      ? "Edit message"
+      : (customLabel ?? "Reply to thread");
   const gifPreview = useGifDraftPreview(extensions?.tools);
   const attachments = useAttachmentDraft(
     session,
@@ -1075,6 +1340,8 @@ function Composer({
     { ids: readonly string[]; owner: Element | null } | undefined
   >(undefined);
   const form = useRef<HTMLFormElement>(null);
+  // Notices float above the composer, not over Send.
+  useToastClearance(form);
   const notify = useToastNotification();
   const handOffFocus = useEffectEvent(() => {
     if (!form.current?.contains(document.activeElement)) return;
@@ -1139,13 +1406,13 @@ function Composer({
       .then((sealed) => {
         if (!live.current) return;
         attachments.store.add(sealed);
-        setAttachmentError(
+        refuseAttachment(
           "먼저 첨부한 파일을 잠근 파일로 바꿨어요. 원본은 잠그기 전에 서버에 한 번 올라갔을 수 있어요. 민감한 파일은 🔒를 먼저 누르고 첨부해 주세요.",
         );
       })
       .catch((reason: unknown) => {
         if (live.current)
-          setAttachmentError(
+          refuseAttachment(
             reason instanceof Error ? reason.message : "Could not lock files.",
           );
       });
@@ -1160,7 +1427,7 @@ function Composer({
       !!editing.target ||
       !canAttach ||
       sealedThread,
-    setAttachmentError,
+    refuseAttachment,
   );
   useEffect(() => {
     if (disabled) attachments.store.cancel();
@@ -1212,11 +1479,11 @@ function Composer({
     )
       return;
     if (editing.target) {
-      setAttachmentError("Finish editing before attaching new files.");
+      refuseAttachment("Finish editing before attaching new files.");
       return;
     }
     if (!canAttach) {
-      setAttachmentError(
+      refuseAttachment(
         submission
           ? "Create this conversation before attaching files."
           : "Uploads are unavailable on this connection.",
@@ -1234,7 +1501,7 @@ function Composer({
         })
         .catch((reason: unknown) => {
           if (live.current)
-            setAttachmentError(
+            refuseAttachment(
               reason instanceof Error
                 ? reason.message
                 : "Could not attach files.",
@@ -1253,7 +1520,7 @@ function Composer({
         })
         .catch((reason: unknown) => {
           if (live.current)
-            setAttachmentError(
+            refuseAttachment(
               reason instanceof Error
                 ? reason.message
                 : "Could not attach files.",
@@ -1262,14 +1529,26 @@ function Composer({
       return;
     }
     try {
-      attachments.store.add(files);
-      setAttachmentError(undefined);
-      return attachments.store
+      const before = attachments.store.snapshot().length;
+      const left = attachments.store.add(files);
+      const added = attachments.store
         .snapshot()
-        .slice(-files.length)
+        .slice(before)
         .map((item) => item.id);
-    } catch (reason) {
+      const refused = files.length - added.length;
       setAttachmentError(
+        left.length
+          ? {
+              title: added.length
+                ? `Could not attach ${refused} of ${files.length} files`
+                : `Could not attach ${refused} files`,
+              description: left.join(" "),
+            }
+          : undefined,
+      );
+      return added;
+    } catch (reason) {
+      refuseAttachment(
         reason instanceof Error ? reason.message : "Could not attach files.",
       );
     }
@@ -1288,7 +1567,13 @@ function Composer({
     input,
     active && !editingDisabled && !!outbox?.supports(9),
   );
+  const [annotationMenu, setAnnotationMenu] = useState<AnnotationMenuRequest>();
+  const closeAnnotationMenu = useCallback(
+    () => setAnnotationMenu(undefined),
+    [],
+  );
   function loadSaved(raw: string | null) {
+    diagnose("load", revision.current, raw);
     let next: MentionDraft;
     try {
       next = stageChatCards(
@@ -1310,10 +1595,11 @@ function Composer({
     setConflict(false);
     setStorageFailed(false);
   }
-  // Picks belong to the recovered revision alone. They return whenever the
-  // composer holds it unedited, never to a later edit that keeps a conflict.
+  // Message-local picks return with their recovered draft. Solo preferences
+  // remain the chat's current choices, including edits made during an upload.
   const reconcileDraft = useEffectEvent(
     (restored?: MentionDraft, recoveredPicks?: DraftPicks) => {
+      traceDraft(scope, draftKey, "reconcile", diagnosticEditor);
       if (submission || editing.target || writing.current) return;
       if (accepted) {
         // The recovered revision can precede attachment adoption. The explicit
@@ -1323,18 +1609,20 @@ function Composer({
         if (current !== undefined) {
           setAccepted(undefined);
           loadSaved(current);
-          if (restored && current === JSON.stringify(restored))
+          if (!stickyPicks && restored && current === JSON.stringify(restored))
             setPicks(recoveredPicks ?? {});
         }
         return;
       }
       const current = viewRevision(scope, draftKey);
       if (current === undefined) return;
+      diagnose("reconcile", revision.current, current);
       const recovering = !!restored && current === JSON.stringify(restored);
       if (current === revision.current) {
         // The storage listener usually loads the recovered revision before
         // its notification arrives.
-        if (recovering && !dirty.current) setPicks(recoveredPicks ?? {});
+        if (!stickyPicks && recovering && !dirty.current)
+          setPicks(recoveredPicks ?? {});
         return;
       }
       // An explicit successful recovery may replace only the cleared follow-up,
@@ -1349,10 +1637,11 @@ function Composer({
       )
         loadSaved(current);
       else if (dirty.current || sendAttempt.current) {
+        diagnose("changed", revision.current, current);
         setConflict(true);
         return;
       } else loadSaved(current);
-      if (recovering) setPicks(recoveredPicks ?? {});
+      if (!stickyPicks && recovering) setPicks(recoveredPicks ?? {});
     },
   );
   const editingDraft = !!editing.target;
@@ -1397,6 +1686,7 @@ function Composer({
   }, [session, recoveryKey, scope, draftKey]);
   function resolveDraft(keep: boolean) {
     const current = viewRevision(scope, draftKey);
+    diagnose(keep ? "keep" : "use-saved", revision.current, current);
     if (current === undefined) {
       setStorageFailed(true);
       return;
@@ -1492,6 +1782,50 @@ function Composer({
     caret.current = next.text.length;
     setError(undefined);
   });
+  const startQueuedEdit = (id: string) => {
+    if (
+      !host ||
+      !permitted.current ||
+      editingDisabled ||
+      submission ||
+      !input.current
+    )
+      return;
+    if (editing.target) {
+      setError("Finish or cancel your current edit first.");
+      input.current.focus();
+      return;
+    }
+    try {
+      const queue = followUpQueue(host);
+      const entry = queue
+        .snapshot()
+        .find((entry) => entry.id === id && entry.channelId === channelId);
+      if (!entry?.message)
+        throw new Error("This queued message is no longer available to edit.");
+      const lease = queue.edit(id);
+      completion.invalidate();
+      beforeEdit.current = {
+        value: valueRef.current,
+        restore: input.current.checkpoint(),
+      };
+      const body = editing.startDraft({
+        id,
+        content: entry.text,
+        saveDraft: lease.save,
+        cancelDraft: lease.cancel,
+      });
+      const next = stageChatCards(mentionDraft(body), channels());
+      valueRef.current = next;
+      updateDraft(next);
+      input.current.reset(next);
+      setLinkEdit(null);
+      caret.current = next.text.length;
+      setError(undefined);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
   useEffect(() => {
     if (!editScope) return;
     const start = (row: ChannelMessage) => startEdit(row);
@@ -1517,15 +1851,18 @@ function Composer({
     text: string,
     recipient?: MentionRecipient,
     range?: CompletionQuery,
-    terminator?: ":",
+    /** The typed key that ended the query: a closing emoji colon, or the key
+     * that follows a mention in place of its space. */
+    terminator?: string,
     focus = true,
   ) {
     const field = input.current;
     if (!editable() || !field || typeof text !== "string") return false;
     // Edits replace prose; they do not change the original notification recipients.
     if (editing.target && recipient) {
-      text = editMentionText(recipient);
+      text = editMentionText(recipient, terminator);
       recipient = undefined;
+      terminator = undefined;
     }
     if (recipient && !admits()(recipient.pubkey)) {
       setError(
@@ -1545,6 +1882,35 @@ function Composer({
     if (recipient) rememberMention(session, channelId, recipient.pubkey);
     setError(undefined);
     return true;
+  }
+  /** Completed and picked emoji are followed by a space, so typing continues
+   * as a new word. A space or tab already at `at` is reused: the caret moves
+   * past it instead of doubling it. */
+  function insertEmoji(
+    text: string,
+    at: number,
+    range?: CompletionQuery,
+    terminator?: string,
+  ) {
+    const separated = /^[ \t]/.test(valueRef.current.text.slice(at));
+    if (!insert(separated ? text : `${text} `, undefined, range, terminator))
+      return false;
+    const field = input.current;
+    const end = field?.selectionEnd ?? 0;
+    // A typed colon can land without conversion at the length limit; the
+    // caret then stays after the literal colon.
+    if (separated && field?.value.slice(end - text.length, end) === text)
+      field.setSelectionRange(end + 1, end + 1);
+    return true;
+  }
+  function insertToolText(text: string) {
+    const end = input.current?.selectionEnd;
+    return (
+      attachGif(text) ??
+      (end !== undefined && isEmojiOnly(text, emojiCatalog.entries)
+        ? insertEmoji(text, end)
+        : insert(text))
+    );
   }
   /** A tool's lone GIF joins the attachment row, sent after the caption like
    * the row's other media, rather than sitting in prose at the caret. An edit
@@ -1832,7 +2198,11 @@ function Composer({
       return false;
     // Message edits only add references, never new notification intent.
     if (editing.target)
-      return insert(unique.map(editMentionText).join(""), undefined, range);
+      return insert(
+        unique.map((person) => editMentionText(person)).join(""),
+        undefined,
+        range,
+      );
     const admitted = admits();
     if (unique.some((person) => !admitted(person.pubkey))) {
       setError(
@@ -1913,7 +2283,7 @@ function Composer({
     return input.current.insertResource(resource);
   }
   function replaceCompletion(
-    edit: CompletionEdit,
+    edit: HostCompletionEdit,
     query: CompletionQuery,
     observation: ComposerObservation,
     key?: string,
@@ -1923,8 +2293,10 @@ function Composer({
       valueRef.current.text !== observation.text
     )
       return false;
-    // A typed terminator (Space, the closing emoji colon) stays literal in code.
-    if (key === " " || key === ":") {
+    // A typed terminator (Space, closing punctuation after a name, the closing
+    // emoji colon) stays literal in code. Tab, Enter and a click are not typed.
+    const typed = key?.length === 1 ? key : undefined;
+    if (typed) {
       const doc = readComposerSnapshot(valueRef.current.document);
       const context = doc
         ? composerMarkdownContext(doc)
@@ -1936,13 +2308,21 @@ function Composer({
       )
         return false;
     }
+    const chosen = chosenWorkspace(edit);
+    if (chosen !== undefined) {
+      // The chat's workspace leaves no text behind; the control shows it.
+      if (!workspace || editing.target || !insert("", undefined, query))
+        return false;
+      workspace.choose(chosen);
+      return true;
+    }
     if ("pending" in edit && edit.pending) {
       // Edits replace prose and add no recipients, so a chip that may become
-      // one has no place there: the typed Space stays literal.
+      // one has no place there: the typed key stays literal.
       const field = input.current;
       if (editing.target || !editable() || !field) return false;
       completion.invalidate();
-      const id = field.insertPendingMention(edit.pending.name, query);
+      const id = field.insertPendingMention(edit.pending.name, query, typed);
       if (!id) return false;
       pendingMentions.current.set(id, { resolve: edit.pending.resolve });
       setError(undefined);
@@ -1951,16 +2331,17 @@ function Composer({
     if ("mentions" in edit && edit.mentions)
       return insertMentions(edit.mentions, query);
     if ("mention" in edit && edit.mention)
-      return insert(`@${edit.mention.name} `, edit.mention, query);
-    return (
-      typeof edit.text === "string" &&
-      insert(
-        `${edit.text}${isEmojiOnly(edit.text, emojiCatalog.entries) ? "" : " "}`,
-        undefined,
-        query,
-        key === ":" ? key : undefined,
-      )
-    );
+      return insert(`@${edit.mention.name} `, edit.mention, query, typed);
+    if ("token" in edit && edit.token) {
+      if (editing.target) return false;
+      completion.invalidate();
+      return input.current?.insertToken(edit.token, query) ?? false;
+    }
+    if (typeof edit.text !== "string") return false;
+    const terminator = key === ":" ? key : undefined;
+    return isEmojiOnly(edit.text, emojiCatalog.entries)
+      ? insertEmoji(edit.text, query.end, query, terminator)
+      : insert(`${edit.text} `, undefined, query, terminator);
   }
   const currentAdmission = () =>
     live.current &&
@@ -2075,7 +2456,7 @@ function Composer({
       if (routed.length || recipients.length) return;
       // A saved pick is restored whole, however discovery stands; the send
       // checks each agent and asks the viewer about any it can't reach.
-      const chosen = pillKey ? readView<unknown>(scope, pillKey, null) : null;
+      const chosen = readView<unknown>(scope, pillKey, null);
       const kept = Array.isArray(chosen)
         ? chosen
             .filter(wellFormedRecipient)
@@ -2104,14 +2485,16 @@ function Composer({
         autoTagged.current = draftKey;
       return;
     }
-    // A shortcut may seed an ordinary editable link. Still add the default
-    // agent once while that freshly seeded text is untouched; a restored draft
-    // keeps its recipients as saved, so a removed tag never returns.
+    // Required submissions can restore prose or receive a default after typing.
+    // Other drafts keep their saved recipients, including an absent tag.
     const untouchedInitial =
       seededKey === draftKey &&
       typeof submission?.initialDraft === "string" &&
       draft === submission.initialDraft;
-    if (value.recipients.length || (draft.trim() && !untouchedInitial)) {
+    if (
+      value.recipients.length ||
+      (draft.trim() && !untouchedInitial && !(submission && requireMention))
+    ) {
       autoTagged.current = draftKey;
       return;
     }
@@ -2290,6 +2673,10 @@ function Composer({
     if (!permitted.current || voice.isCapturing()) return;
     if (editing.target) {
       if (editDisabled || editing.locked) return;
+      if ("saveDraft" in editing.target) {
+        editing.save(composerMarkdown(valueRef.current), undefined);
+        return;
+      }
       if (
         !valueRef.current.text.trim() &&
         !valueRef.current.chatCards?.length
@@ -2450,8 +2837,43 @@ function Composer({
       input.current?.reset(recovering.next);
       return;
     }
-    if (!submission && viewRevision(scope, draftKey) !== revision.current) {
-      setConflict(true);
+    if (!submission) {
+      const current = viewRevision(scope, draftKey);
+      diagnose("send-start", revision.current, current);
+      if (current !== revision.current) {
+        diagnose("send-start-conflict", revision.current, current);
+        setConflict(true);
+        return;
+      }
+    }
+    const choicesNow = resolvedPicks.current;
+    const picksNow = choicesNow?.source ?? committedPicks.current;
+    if (pickReadFailed) return;
+    if (pendingPickSaves.current || awaitingPickCommit.current) {
+      setError(
+        "Model and effort choices are still saving. Try sending again shortly.",
+      );
+      return;
+    }
+    // A failed save acknowledgement revokes Send before its error render commits.
+    if (stickyPicks && picksRevision.current === undefined) return;
+    if (
+      stickyPicks &&
+      (choicesNow?.value === null ||
+        sessionTargets(recipientsNow.map((item) => item.pubkey)).some(
+          (pubkey) => {
+            const saved = picksNow.picks[pubkey];
+            return (
+              (saved?.model || saved?.effort) &&
+              !choicesNow?.pubkeys.includes(pubkey)
+            );
+          },
+        ))
+    ) {
+      setError(
+        choicesNow?.error ??
+          "Saved model and effort choices are still loading. Try sending again shortly.",
+      );
       return;
     }
     const savedRevision = revision.current;
@@ -2460,8 +2882,23 @@ function Composer({
     const captured = valueRef.current;
     const capturedRecipients = routing ? recipientsNow : captured.recipients;
     const capturedAttachments = attachments.store.snapshot();
-    const capturedPicks = picks;
-    const capturedRunPicks = { ...picks, ...resolvedPicks.current };
+    // Mention resolution can update recipients before their picker commits.
+    // Capture only a snapshot validated for the saved choices being sent.
+    const capturedPicks = picksNow.picks;
+    const capturedPicksRevision = picksNow.revision;
+    const capturedRunPicks = stickyPicks
+      ? { ...(choicesNow?.value ?? {}) }
+      : { ...capturedPicks, ...(choicesNow?.value ?? {}) };
+    const command =
+      onCommand &&
+      !captured.recipients.length &&
+      !captured.pending?.length &&
+      !captured.chatCards?.length &&
+      !captured.gifs?.length &&
+      !capturedAttachments.length &&
+      captured.text.trim().startsWith("/")
+        ? captured.text.trim()
+        : undefined;
     // A send is an agent follow-up unless it addresses a confirmed person
     // (a loaded, non-agent profile). Those, and untagged conversation in a
     // shared chat, go out now; recipients still being classified keep the
@@ -2484,18 +2921,46 @@ function Composer({
         agentKeys,
       );
     try {
+      const tokens = draftTokens(captured);
+      messageTokenTags(tokens);
+      if (command && onCommand) {
+        const handled = onCommand(command, attempt.signal);
+        if (handled !== false) {
+          setSending(true);
+          if (await handled) {
+            attempt.signal.throwIfAborted();
+            if (valueRef.current !== captured) return;
+            const current = viewRevision(scope, draftKey);
+            if (current !== savedRevision) {
+              diagnose("send-upload-conflict", savedRevision, current);
+              setConflict(true);
+              return;
+            }
+            const next = mentionDraft("");
+            saveDraft(next);
+            completion.invalidate();
+            caret.current = undefined;
+            input.current?.reset(next);
+            input.current?.focus();
+            setError(undefined);
+            automaticTag.current = undefined;
+            seedClosed.current = false;
+            return;
+          }
+        }
+      }
       const bringable = new Set(
         (agents?.joinable() ?? []).map((agent) => agent.pubkey),
       );
       if (
-        capturedRecipients.some(
-          (p) => archivedMention(session, p.pubkey) && !bringable.has(p.pubkey),
+        capturedRecipients.some((p) =>
+          agentUnavailable(session, p.pubkey, bringable),
         )
       )
         throw new Error(
           routing && !captured.recipients.length
-            ? "An agent you're sending to is archived. Choose another agent to send."
-            : "A selected recipient is archived. Remove it before sending.",
+            ? "An agent you're sending to is archived or being deleted. Choose another agent to send."
+            : "A selected recipient is archived or being deleted. Remove it before sending.",
         );
       if (
         ownSoloConversation &&
@@ -2511,10 +2976,14 @@ function Composer({
           "Only your available agents can be mentioned in Solo chats. Remove the unavailable recipient and retry.",
         );
       if (submission) {
+        // SoloDraft filters the captured choices against its final recipient set.
         submission.submit(
           captured,
           attachments.store,
           routing ? capturedRecipients : undefined,
+          ownSoloConversation ? capturedRunPicks : undefined,
+          ownSoloConversation ? capturedPicks : undefined,
+          ownSoloConversation ? capturedPicksRevision : undefined,
         );
         return;
       }
@@ -2617,7 +3086,9 @@ function Composer({
         )
       )
         return;
-      if (viewRevision(scope, draftKey) !== savedRevision) {
+      const preparedRevision = viewRevision(scope, draftKey);
+      if (preparedRevision !== savedRevision) {
+        diagnose("send-prepare-conflict", savedRevision, preparedRevision);
         setConflict(true);
         return;
       }
@@ -2676,7 +3147,9 @@ function Composer({
         if (!(await linkSharing.prepare(linkedChats, attempt.signal, current)))
           return;
         attempt.signal.throwIfAborted();
-        if (viewRevision(scope, draftKey) !== savedRevision) {
+        const publishRevision = viewRevision(scope, draftKey);
+        if (publishRevision !== savedRevision) {
+          diagnose("send-publish-conflict", savedRevision, publishRevision);
           setConflict(true);
           return;
         }
@@ -2699,28 +3172,16 @@ function Composer({
       ) {
         if (compactingNow(recipients))
           throw new Error("Wait for compaction to finish, or interrupt it.");
-        const destination = session.channels
-          .list()
-          .channels.find((channel) => channel.id === channelId);
-        if (
-          queueFollowUp &&
-          (!destination || destination.archived || destination.readOnly)
-        )
-          throw new Error("This chat is no longer available for sending.");
-        if (
-          queueFollowUp &&
-          (!ownSolo(destination, session.viewer) ||
-            recipients.some(
-              (key) =>
-                archivedMention(session, key) ||
-                !session.agentChoices
-                  .snapshot()
-                  .selectable.some((agent) => agent.pubkey === key),
-            ))
-        )
-          throw new Error(
-            "This Solo chat or its recipients are no longer available.",
-          );
+        if (!tokens.length) return publishMessage(uploaded, sender);
+        // A detached window's relay connection would drop the chips.
+        const main = fullSession(sender);
+        if (!main) throw new Error("Send chips from the main window.");
+        return signMessageTokens(tokens, () => publishMessage(uploaded, main));
+      }
+      function publishMessage(
+        uploaded: readonly UploadedAttachment[],
+        sender: ComposerSession,
+      ) {
         return threadRootId
           ? sender.messages.reply(
               channelId,
@@ -2728,11 +3189,14 @@ function Composer({
               content,
               recipients,
               uploaded,
-              ...(replyParentId || references.length || tuned
+              ...(replyParentId || references.length || tuned || mediaTargetUrl
                 ? [replyParentId]
                 : []),
-              ...(references.length || tuned ? [references] : []),
-              ...(tuned ? [sentPicks] : []),
+              ...(references.length || tuned || mediaTargetUrl
+                ? [references]
+                : []),
+              ...(tuned || mediaTargetUrl ? [sentPicks] : []),
+              ...(mediaTargetUrl ? [mediaTargetUrl] : []),
             )
           : references.length || tuned
             ? sender.messages.send(
@@ -2752,28 +3216,36 @@ function Composer({
       ) => {
         if (compactingNow(recipients))
           throw new Error("Wait for compaction to finish, or interrupt it.");
-        return queueFollowUp && host
-          ? followUpQueue(host).submit(
-              {
-                channelId,
-                text: content,
-                recipients,
-                beforeRelease: async () => {
-                  const channel =
-                    await session.channelWrites.refreshMembership(channelId);
-                  if (recipients.some((key) => !channel.members?.includes(key)))
-                    throw new Error(
-                      "A queued recipient is no longer a member of this chat.",
-                    );
-                },
-                publish: () => publishNow(uploaded, host),
-                onSend: (id) => {
-                  if (live.current) onSend?.(id);
-                },
-              },
-              validated,
-            )
-          : publishNow(uploaded, session);
+        if (!queueFollowUp || !host) return publishNow(uploaded, session);
+        const message = {
+          channelId,
+          text: content,
+          recipients,
+          attachments: uploaded,
+          references,
+          picks: sentPicks,
+          ...(tokens.length ? { tokens } : {}),
+        };
+        const send = followUpMessage(host, message);
+        return followUpQueue(host).submit(
+          {
+            ...message,
+            message,
+            beforeRelease: send.beforeRelease,
+            ready: send.ready,
+            publish: (recovery) => {
+              if (compactingNow(recipients))
+                throw new Error(
+                  "Wait for compaction to finish, or interrupt it.",
+                );
+              return send.publish(recovery);
+            },
+            onSend: (id) => {
+              if (live.current) onSend?.(id);
+            },
+          },
+          validated,
+        );
       };
       let id: string | undefined;
       if (capturedAttachments.length && !fullSession(session)) {
@@ -2784,10 +3256,20 @@ function Composer({
       } else if (capturedAttachments.length) {
         // The revision acceptance saves; remembered agents are not a draft.
         const followup = JSON.stringify(mentionDraft(""));
+        // Name it as the sidebar does; a thread link opens the thread.
+        const listed = channels().find((channel) => channel.id === channelId);
+        const name = channelText({ ...listed, name: channelName });
         sendInBackground(
           session,
           recoveryKey,
           channelId,
+          {
+            name: threadRootId ? `thread in ${name}` : name,
+            // A huddle opens from its entry point, never by its room's link.
+            ...(listed?.huddle
+              ? {}
+              : { link: conversationLink(channelId, threadRootId) }),
+          },
           capturedAttachments,
           async (uploaded) => {
             const sent = await publish(uploaded);
@@ -2891,7 +3373,7 @@ function Composer({
         setReplacedKey(undefined);
         keepPick(null);
       }
-      setPicks({});
+      if (!stickyPicks) setPicks({});
       // An unchanged prefill may not render. Do not leave a caret command for
       // the next keystroke to consume after inserting its first character.
       caret.current = changed ? followUp.text.length : undefined;
@@ -2946,12 +3428,10 @@ function Composer({
     <div className={styles.composerContext}>
       {!cached && !submission && (
         <TypingIndicator
-          clickOpensPanel={activityClickOpensPanel}
+          audience="humans"
           session={session}
           channelId={channelId}
           threadRootId={threadRootId}
-          canOpenActivity={canOpenLink}
-          openActivity={onOpenLink}
         />
       )}
       {host && extensions?.accessories && (
@@ -3055,7 +3535,8 @@ function Composer({
         <QueuedFollowUps
           session={host}
           channelId={channelId}
-          disabled={disabled || !active}
+          disabled={disabled || !active || !!editing.target}
+          onEdit={startQueuedEdit}
           focusComposer={() => input.current?.focus()}
         />
       )}
@@ -3089,10 +3570,7 @@ function Composer({
           }
         }}
         onPasteCapture={(event) => {
-          const files = Array.from(event.clipboardData.items)
-            .filter((item) => item.kind === "file")
-            .map((item) => item.getAsFile())
-            .filter((file): file is File => file !== null);
+          const files = pastedFiles(event.clipboardData);
           if (!files.length) return;
           event.preventDefault();
           event.stopPropagation();
@@ -3114,25 +3592,68 @@ function Composer({
           {label}
         </label>
         {active && extensions?.completions && (
-          <ComposerCompletions
-            registry={extensions.completions}
-            editor={completion}
+          <WorkspaceCompletion.Provider
+            value={editing.target ? undefined : workspace}
+          >
+            <AddressedAgentsContext.Provider
+              value={editing.target ? noAgents : addressedKeys}
+            >
+              <ComposerCompletions
+                registry={extensions.completions}
+                identityMarks={extensions.identityMarks}
+                editor={completion}
+                input={input}
+                session={session}
+                scope={scope}
+                channelId={channelId}
+                threadRootId={threadRootId}
+                inviteAgents={agentChoices && !editing.target}
+                replace={replaceCompletion}
+                resolved={chips.length ? { ...value, tokens: chips } : value}
+              />
+            </AddressedAgentsContext.Provider>
+          </WorkspaceCompletion.Provider>
+        )}
+        {extensions?.annotators && (
+          // Annotators see exactly what completion providers may observe.
+          <ComposerAnnotators
+            registry={extensions.annotators}
             input={input}
+            enabled={active && !editingDisabled && !!outbox?.supports(9)}
+            epoch={[
+              scope,
+              channelId,
+              threadRootId ?? "",
+              editing.target?.id ?? "",
+            ].join("\n")}
             session={session}
             scope={scope}
             channelId={channelId}
             threadRootId={threadRootId}
             inviteAgents={agentChoices && !editing.target}
-            replace={replaceCompletion}
-            resolved={value}
           />
         )}
-        <BackgroundUploadStatus session={session} focusTarget={input} />
+        {annotationMenu && (
+          <AnnotationMenu
+            key={`${annotationMenu.revision}:${annotationMenu.mark.start}`}
+            request={annotationMenu}
+            input={input}
+            onClose={closeAnnotationMenu}
+          />
+        )}
+        <BackgroundUploadStatus
+          session={session}
+          focusTarget={input}
+          here={
+            presented ? conversationLink(channelId, threadRootId) : undefined
+          }
+          onOpenLink={onOpenLink}
+        />
         {dragging && <FileDropOverlay composer={form} />}
         {attachmentError && (
           <ToastNotice
-            title="Could not attach file"
-            description={attachmentError}
+            title={attachmentError.title}
+            description={attachmentError.description}
             onDismiss={() => setAttachmentError(undefined)}
           />
         )}
@@ -3185,6 +3706,7 @@ function Composer({
                 attachments.store.remove(id);
                 if (item?.status === "error" && item.error === error)
                   setError(undefined);
+                input.current?.focus();
               }}
               retry={(id) => {
                 const item = attachments.items.find(
@@ -3225,7 +3747,12 @@ function Composer({
               channelId={channelId}
               extensions={extensions}
               emoji={emojiCatalog.entries}
+              onPasteTooLong={() => setPasteTooLong(true)}
+              aria-describedby={
+                pasteTooLong ? `${inputId}-paste-error` : undefined
+              }
               onDraftChange={(next) => {
+                setPasteTooLong(false);
                 const textChanged = next.text !== valueRef.current.text;
                 // The default tag's prefill shows without being saved.
                 if (seeding.current) {
@@ -3246,6 +3773,9 @@ function Composer({
               }}
               onFormatsChange={setActiveFormats}
               onEditLink={setLinkEdit}
+              onAnnotationMenu={
+                extensions?.annotators ? setAnnotationMenu : undefined
+              }
               // Pasted identity links notify admitted recipients under their
               // current names; edits never add recipients. Send still asks
               // before adding someone outside the channel.
@@ -3322,14 +3852,25 @@ function Composer({
                   !editDisabled &&
                   !submission &&
                   !editing.target &&
-                  ((event.currentTarget.value === "" &&
-                    !valueRef.current.recipients.length) ||
+                  ((valueRef.current.text === "" &&
+                    !valueRef.current.recipients.length &&
+                    composerMarkdown(valueRef.current) === "") ||
                     automaticTag.current ===
                       JSON.stringify(valueRef.current)) &&
                   !valueRef.current.chatCards?.length &&
                   !valueRef.current.gifs?.length &&
                   !attachments.items.length
                 ) {
+                  // The default selects the newest message; the preference
+                  // and ⌘↑ edit using the same conversation-scoped lookup.
+                  if (
+                    !event.metaKey &&
+                    !editWithUpArrow &&
+                    selectNewestMessage(editScope?.list.current)
+                  ) {
+                    event.preventDefault();
+                    return;
+                  }
                   const target = lastEditableMessage(session, editableRows());
                   if (target) {
                     event.preventDefault();
@@ -3337,7 +3878,21 @@ function Composer({
                   }
                   return;
                 }
+                // With ⌘/Ctrl+Enter chosen, plain Enter falls through to the editor's line break.
                 if (
+                  sendWithModEnter &&
+                  matches(
+                    [{ key: "Enter", mod: true }],
+                    event.nativeEvent,
+                    isApplePlatform(navigator.platform),
+                  )
+                ) {
+                  event.preventDefault();
+                  if (!event.repeat) send();
+                  return;
+                }
+                if (
+                  !sendWithModEnter &&
                   event.key === "Enter" &&
                   !event.shiftKey &&
                   !event.altKey &&
@@ -3358,6 +3913,18 @@ function Composer({
                 }
               }}
             />
+            {iconPlaceholder && (
+              // Its words are drawn by CSS, like the editor's own placeholder,
+              // so find-in-page and copying skip them.
+              <span
+                className={styles.channelPlaceholder}
+                aria-hidden="true"
+                data-lead="Message"
+                data-name={channelName}
+              >
+                <ChannelIcon className={channelIconClass(ChannelIcon)} />
+              </span>
+            )}
           </div>
         </div>
         {!editing.target &&
@@ -3406,7 +3973,7 @@ function Composer({
                     inviteAgents={agentChoices && !editing.target}
                     recipients={recipients}
                     audience={audience}
-                    insertText={(text) => attachGif(text) ?? insert(text)}
+                    insertText={insertToolText}
                     insertMention={insertMention}
                     insertMentions={insertMentions}
                     replaceRecipients={replaceRecipients}
@@ -3421,18 +3988,30 @@ function Composer({
             )}
             {active &&
               !editing.target &&
-              !submission &&
+              (!submission || ownSoloConversation) &&
               !!addressedKeys.length && (
                 <ComposerModels
                   profiles={session.profiles}
                   media={session.media}
                   pubkeys={addressedKeys}
                   value={picks}
-                  disabled={editingDisabled}
-                  onChange={setPicks}
-                  onResolved={(next) => {
-                    resolvedPicks.current = next;
+                  disabled={editingDisabled || pickReadFailed || !picksLoaded}
+                  resettable={stickyPicks}
+                  explicitOnly={!!submission && stickyPicks}
+                  onChange={changePicks}
+                  focusAfterPickerRemoval={() => input.current?.focus()}
+                  onResolved={(next, error) => {
+                    resolvedPicks.current =
+                      next === undefined
+                        ? undefined
+                        : {
+                            source: picksSnapshot,
+                            pubkeys: addressedKeys,
+                            value: next,
+                            error,
+                          };
                   }}
+                  onRetryInventory={() => void session.agentChoices.refresh()}
                   startsThread={startsThread}
                   place={sessionPlace}
                 />
@@ -3464,6 +4043,9 @@ function Composer({
               }
               disabled={
                 disabled ||
+                (!editing.target &&
+                  stickyPicks &&
+                  (pickReadPending || pickReadFailed)) ||
                 untagged ||
                 (!editing.target && compacting) ||
                 (!editing.target && (!!accepted || conflict || sendPending)) ||
@@ -3491,8 +4073,50 @@ function Composer({
             Compacting session…
           </p>
         )}
+        {pasteTooLong && (
+          <p id={`${inputId}-paste-error`} role="alert">
+            This paste would make your message too long.{" "}
+            {canAttach && !editing.target
+              ? "Shorten it or attach the text as a file."
+              : "Shorten the text and try again."}
+          </p>
+        )}
         {(error || editing.error) && (
           <p role="alert">{error ?? editing.error}</p>
+        )}
+        {stickyPicks && (pickReadPending || pickReadFailed) && (
+          <div className={pickReadFailed ? undefined : "sr-only"}>
+            <LoadingRegion
+              pending={pickReadPending}
+              label="Loading saved model and effort…"
+              statusVisibility="screen-reader"
+              feedback={
+                pickReadFailed ? (
+                  <div>
+                    <p role="alert">
+                      Could not read saved model and effort for this chat on
+                      this device. Retry before sending.
+                    </p>
+                    <Button
+                      type="button"
+                      disabled={pickReadPending}
+                      onClick={() => void refreshPicks()}
+                    >
+                      Retry saved choices
+                    </Button>
+                  </div>
+                ) : undefined
+              }
+            >
+              {null}
+            </LoadingRegion>
+          </div>
+        )}
+        {pickStorageFailed && (
+          <p role="alert">
+            Could not save model and effort for this chat on this device. The
+            current choices remain until this composer closes.
+          </p>
         )}
         {!editing.target &&
           !submission &&

@@ -24,9 +24,15 @@ import type { ChannelMessage, ChannelWindow } from "../relay/contracts";
 // metrics reproduce the event ordering measured separately in Chromium/WebKit.
 // Reading geometry/dwell has its own real-hook boundary suite. This fixture
 // deliberately supplies only the DOM shape needed for positioning.
+// Activity rendering/subscriptions have their own mounted integration suite.
+vi.mock("./TypingIndicator", () => ({
+  TypingIndicator: () => null,
+  useLiveConversationAgents: () => [],
+}));
 vi.mock("./use-reading", () => ({
   useReading: vi.fn(),
   readingPositioned: vi.fn(),
+  readingDocumentActive: () => true,
 }));
 const hooks = vi.hoisted(() => ({
   refs: [] as { current: unknown }[],
@@ -98,6 +104,8 @@ vi.mock("react", async (original) => ({
   },
   useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) =>
     snapshot(),
+  // Rendered outside a provider, as the timeline's direct calls are.
+  useContext: () => undefined,
 }));
 vi.mock("../relay/react", () => ({
   useRowProfiles: () => new Map(),
@@ -122,11 +130,13 @@ function setup({
   status = "ready" as ChannelWindow["status"],
   blocked = undefined as boolean | undefined,
   session = undefined as RelaySession | undefined,
+  continuityKey = undefined as string | undefined,
   historyControl = "button" as "button" | "scroll",
   hasMore = false,
   loadingOlder = false,
   historyLimited = false,
   error = undefined as string | undefined,
+  recovering = false,
   initial = undefined as unknown,
   mounted = [] as { id: string; y: number }[],
   initialRows = undefined as ChannelMessage[] | undefined,
@@ -179,12 +189,15 @@ function setup({
     for (const [callback, targets] of observers)
       if (targets.has(target)) callback();
   };
-  const mutations = new Map<() => void, Map<unknown, MutationObserverInit>>();
+  const mutations = new Map<
+    (records: MutationRecord[]) => void,
+    Map<unknown, MutationObserverInit>
+  >();
   vi.stubGlobal(
     "MutationObserver",
     class {
       targets = new Map<unknown, MutationObserverInit>();
-      constructor(callback: () => void) {
+      constructor(callback: (records: MutationRecord[]) => void) {
         mutations.set(callback, this.targets);
       }
       observe(target: unknown, options: MutationObserverInit) {
@@ -200,7 +213,9 @@ function setup({
     for (const [callback, targets] of mutations) {
       const options = targets.get(list);
       if (options?.attributes && options.attributeFilter?.includes("style"))
-        callback();
+        callback([
+          { type: "attributes", attributeName: "style" } as MutationRecord,
+        ]);
     }
   };
   const element = {
@@ -208,6 +223,9 @@ function setup({
     clientHeight: 668,
     scrollHeight: 3706,
     scrollTop: 2388,
+    ownerDocument: Object.assign(new EventTarget(), {
+      defaultView: new EventTarget(),
+    }),
     focus: vi.fn(),
     getBoundingClientRect: () => ({ top: 0 }),
     querySelector: () => list,
@@ -249,7 +267,7 @@ function setup({
       olderReads();
     }
   });
-  const queries =
+  let queries =
     session ??
     ({
       channels: { loadOlder, window: snapshot },
@@ -258,6 +276,15 @@ function setup({
       // Geometry fixtures are read-only; reading behavior has its own boundary tests.
       unread: { sync: () => ({ capability: "unsupported" }) },
       media: () => undefined,
+      recovery: {
+        snapshot: () => ({
+          recovering,
+          attempt: 0,
+          shown: false,
+          reauthorized: 0,
+        }),
+        subscribe: () => () => {},
+      },
     } as unknown as RelaySession);
   let rows = initialRows ?? [timelineMessage("first"), timelineMessage("last")];
   type Section = ReactElement<{
@@ -265,6 +292,7 @@ function setup({
     "data-jump-visible": true | undefined;
     children: unknown[];
     onScroll: (event: unknown) => void;
+    onScrollEnd: (event: unknown) => void;
     onPointerDown: () => void;
     onPointerUp: () => void;
     onWheel: (event: { deltaY: number; ctrlKey: boolean }) => void;
@@ -288,6 +316,7 @@ function setup({
       historyControl,
       scope: "scope",
       queries,
+      continuityKey,
       window: session?.channels.window(channelId) ?? {
         channelId,
         status,
@@ -312,10 +341,22 @@ function setup({
       });
     }
     key = scoped.key;
-    section = (scoped.type as (props: typeof scoped.props) => Section)(
-      scoped.props,
-    );
+    // The feed renders inside the list's message context menu host.
+    section = (
+      scoped.type as (
+        props: typeof scoped.props,
+      ) => ReactElement<{ children: Section }>
+    )(scoped.props).props.children;
     section.props.ref.current = element;
+    const edge = section.props.children[0] as ReactElement<{
+      ref: { current: unknown };
+    }>;
+    edge.props.ref.current = {
+      get clientWidth() {
+        return element.clientWidth;
+      },
+      getBoundingClientRect: () => ({ height: 0 }),
+    };
     const virtualizer = section.props.children.find(
       (child) =>
         !!child &&
@@ -388,6 +429,38 @@ function setup({
       }>;
       return edge.props.children.some((child) => child?.type === Button);
     },
+    /** The edge's alert text, if any. */
+    alert() {
+      const edge = section.props.children[0] as ReactElement<{
+        children: ReactElement<{ role?: string; children: unknown }>[];
+      }>;
+      return edge.props.children.find(
+        (child) => child?.type === "span" && child.props.role === "alert",
+      )?.props.children;
+    },
+    /** The edge's history button label, if any. */
+    historyButton() {
+      const edge = section.props.children[0] as ReactElement<{
+        children: ReactElement<{ children: unknown }>[];
+      }>;
+      return edge.props.children.find((child) => child?.type === Button)?.props
+        .children;
+    },
+    /** The edge's plain caption text, if any (not its alert or status). */
+    caption() {
+      const edge = section.props.children[0] as ReactElement<{
+        children: ReactElement<{ role?: string; children: unknown }>[];
+      }>;
+      return edge.props.children.find(
+        (child) => child?.type === "span" && !child.props.role,
+      )?.props.children;
+    },
+    /** Replaces the session, as reconnecting does under a stable continuityKey. */
+    swap(next: RelaySession) {
+      session = next;
+      queries = next;
+      render();
+    },
     retry() {
       const edge = section.props.children[0] as ReactElement<{
         children: ReactElement[];
@@ -417,6 +490,9 @@ function setup({
     },
     dispatchScroll() {
       section.props.onScroll({ currentTarget: element });
+    },
+    scrollEnd() {
+      section.props.onScrollEnd({ currentTarget: element });
     },
     scroll(user = true) {
       resized(element);
@@ -503,7 +579,7 @@ it("persists the event target's reading position at real component cleanup, not 
   const h = setup();
   h.scroll();
   h.unmount();
-  expect(h.saved()).toEqual({ offset: 2388, bottom: false });
+  expect(h.saved()).toEqual({ bottom: false });
 });
 it("a bottom-position event persists bottom intent even when the virtualizer still reports zero", () => {
   const h = setup();
@@ -511,7 +587,54 @@ it("a bottom-position event persists bottom intent even when the virtualizer sti
   h.handle.scrollOffset = 0;
   h.scroll(false);
   h.unmount();
-  expect(h.saved()).toEqual({ offset: 3038, bottom: true });
+  expect(h.saved()).toEqual({ bottom: true });
+});
+// A following reader's place is written once: the row under their viewport
+// changes with every live message, but a bottom place restores without it.
+it("writes a following reader's place once across live messages, and again when their place changes", () => {
+  const mounted = [{ id: "last", y: 42 }];
+  const h = setup({ mounted });
+  const setItem = vi.spyOn(localStorage, "setItem");
+  h.element.scrollTop = 3038;
+  h.scroll(false);
+  h.scrollEnd();
+  expect(setItem).toHaveBeenCalledTimes(1);
+  expect(h.saved()).toEqual({ bottom: true });
+  for (const y of [60, 75]) {
+    h.append();
+    mounted.splice(0, 1, { id: "appended", y });
+    h.element.scrollHeight += 100;
+    h.element.scrollTop += 100;
+    h.dispatchScroll();
+    h.scrollEnd();
+  }
+  expect(setItem).toHaveBeenCalledTimes(1);
+  // Reading back up is a new place.
+  h.element.scrollTop = 2388;
+  h.scroll();
+  h.scrollEnd();
+  expect(setItem).toHaveBeenCalledTimes(2);
+  expect(h.saved()).toMatchObject({
+    bottom: false,
+    anchor: { id: "appended" },
+  });
+  h.unmount();
+  expect(setItem).toHaveBeenCalledTimes(2);
+});
+it("retries a place whose write failed", () => {
+  const h = setup();
+  const setItem = vi
+    .spyOn(localStorage, "setItem")
+    .mockImplementationOnce(() => {
+      throw new Error("quota");
+    });
+  h.element.scrollTop = 3038;
+  h.scroll(false);
+  h.scrollEnd();
+  expect(h.saved()).toBeUndefined();
+  h.unmount();
+  expect(setItem).toHaveBeenCalledTimes(2);
+  expect(h.saved()).toEqual({ bottom: true });
 });
 it("an append follows the actual bottom position, not stale virtualizer position", () => {
   const h = setup();
@@ -608,7 +731,7 @@ it.each([
     h.element.scrollTop = h.element.scrollHeight - h.element.clientHeight - gap;
     h.scroll();
     h.unmount();
-    expect(h.saved()).toEqual({ offset: h.element.scrollTop, bottom });
+    expect(h.saved()).toEqual({ bottom });
   },
 );
 it.each([
@@ -660,17 +783,88 @@ it("a restoration scroll through unmeasured rows does not become bottom follow",
     anchor: { id: "last" },
   });
 });
-it.each([
-  { offset: 1234, bottom: false },
-  { offset: 1234, bottom: false, anchor: { id: "missing", y: 42 } },
-])(
-  "keeps an offset fallback for legacy positions and an anchor outside retained history: %j",
-  (initial) => {
-    const h = setup({ initial });
-    expect(h.handle.scrollTo).toHaveBeenCalledWith(1234);
+it("opens a legacy position without an anchor at the latest message, not a pixel offset", () => {
+  const h = setup({ initial: { offset: 1234, bottom: false } });
+  expect(h.handle.scrollToIndex).toHaveBeenLastCalledWith(1, { align: "end" });
+  expect(h.handle.scrollTo).not.toHaveBeenCalled();
+  h.unmount();
+  expect(h.saved()).toEqual({ bottom: true });
+});
+// On reload the saved IndexedDB head mounts first; the network head and notice
+// rows that may hold the saved row arrive in later rows.
+it("follows the latest message while a saved row is still loading, then restores it when it arrives", () => {
+  const h = setup({
+    initialRows: [timelineMessage("old")],
+    initial: { bottom: false, anchor: { id: "anchor", y: 42 } },
+  });
+  expect(h.handle.scrollToIndex).toHaveBeenLastCalledWith(0, { align: "end" });
+  expect(h.handle.scrollTo).not.toHaveBeenCalled();
+  // The timeline's own end scroll must not replace the pending place.
+  h.scroll(false);
+  expect(h.handle.scrollToIndex).toHaveBeenLastCalledWith(0, { align: "end" });
+  h.setRows([
+    timelineMessage("old"),
+    timelineMessage("anchor"),
+    timelineMessage("new"),
+  ]);
+  expect(h.handle.scrollToIndex).toHaveBeenLastCalledWith(1, {
+    align: "start",
+    offset: -42,
+  });
+  h.unmount();
+  expect(h.saved()).toMatchObject({
+    bottom: false,
+    anchor: { id: "anchor", y: 42 },
+  });
+});
+// Notice rows fill in after each head, above the messages already shown.
+it("restores a saved row on the render that inserts it above the loaded rows", () => {
+  const h = setup({
+    initialRows: [timelineMessage("old")],
+    initial: { bottom: false, anchor: { id: "anchor", y: 42 } },
+  });
+  h.scroll(false);
+  h.handle.scrollToIndex.mockClear();
+  h.setRows([timelineMessage("anchor"), timelineMessage("old")]);
+  expect(h.handle.scrollToIndex).toHaveBeenCalledWith(0, {
+    align: "start",
+    offset: -42,
+  });
+  h.unmount();
+  expect(h.saved()).toMatchObject({
+    bottom: false,
+    anchor: { id: "anchor", y: 42 },
+  });
+});
+it.each(["wheel", "pointer"])(
+  "%s reader input while a saved row is loading retires it, so its arrival does not move the reader",
+  (input) => {
+    const h = setup({
+      initialRows: [timelineMessage("old")],
+      initial: { bottom: false, anchor: { id: "anchor", y: 42 } },
+    });
+    h.scroll(false);
+    h.gesture(input === "wheel");
+    h.handle.scrollToIndex.mockClear();
+    h.setRows([timelineMessage("old"), timelineMessage("anchor")]);
+    expect(h.handle.scrollToIndex).not.toHaveBeenCalledWith(1, {
+      align: "start",
+      offset: -42,
+    });
     h.unmount();
+    expect(h.saved()).not.toMatchObject({ anchor: { id: "anchor" } });
   },
 );
+it("keeps a placed reader in place when a resize finds their saved row gone", () => {
+  const h = setup({ mounted: [{ id: "last", y: 42 }] });
+  h.scroll();
+  h.setRows([timelineMessage("first")]);
+  h.handle.scrollToIndex.mockClear();
+  h.element.clientWidth = 650;
+  h.resize();
+  expect(h.handle.scrollToIndex).not.toHaveBeenCalled();
+  expect(h.handle.scrollTo).not.toHaveBeenCalled();
+});
 it("captures the mounted message at cleanup and restores that anchor after resize", () => {
   const h = setup({ mounted: [{ id: "last", y: 42 }] });
   h.scroll();
@@ -683,7 +877,6 @@ it("captures the mounted message at cleanup and restores that anchor after resiz
   });
   h.unmount();
   expect(h.saved()).toEqual({
-    offset: 2388,
     bottom: false,
     anchor: { id: "last", y: 42 },
   });
@@ -728,9 +921,11 @@ it("local-send navigation releases the restored anchor", () => {
   h.resize();
   mounted.unshift({ id: "first", y: 0 });
   h.reveal("first");
+  // At the bottom, a retained anchor would still hold the place above it.
+  h.element.scrollTop = 3038;
   h.scroll(false);
   h.unmount();
-  expect(h.saved().anchor).toEqual({ id: "first", y: 0 });
+  expect(h.saved()).toEqual({ bottom: true });
 });
 it.each([-200, 800])(
   "a restored row outside the viewport (%s) is not preferred",
@@ -1261,6 +1456,117 @@ it.each(["held head", "live handoff", "disconnected"])(
   },
 );
 
+it("offline top-edge input reads nothing, and the connected session pages once it verifies", async () => {
+  const relay = keypair(),
+    viewer = keypair();
+  const event = message(viewer, "channel", "saved", 20);
+  const head = [
+    event,
+    bounds(relay, "channel", "head", {
+      has_more: true,
+      next_cursor: { created_at: 20, id: event.id },
+    }),
+  ];
+  const saved = {
+    read: async () => [
+      { channelId: "channel", savedAt: Date.now(), events: head, profiles: [] },
+    ],
+    write: async () => {},
+    retain: async () => {},
+    remove: async () => {},
+    clear: async () => {},
+    close: () => {},
+  };
+  // Both sessions share one transport, so every older read is counted here.
+  const scripted = scriptedTransport(viewer.pubkey, relay.pubkey);
+  const older = () =>
+    scripted.pending.filter((read) => read.filters[0]?.until !== undefined);
+  const offline = createRelaySession(scripted.transport, {
+    prepared: true,
+    cachedOnly: true,
+    persistence: {
+      ...saved,
+      readStartup: async () => ({
+        discovery: {
+          savedAt: Date.now(),
+          relayAuthor: relay.pubkey,
+          events: [
+            roster(relay, "channel", [viewer.pubkey]),
+            metadata(relay, "channel", "Channel"),
+          ],
+        },
+      }),
+    },
+  });
+  let online: ReturnType<typeof createRelaySession> | undefined;
+  await offline.restore();
+  offline.session.channels.ensure("channel");
+  await vi.waitFor(() =>
+    expect(offline.session.channels.window("channel")).toMatchObject({
+      status: "ready",
+      freshness: "cached",
+      hasMore: true,
+    }),
+  );
+  const h = setup({
+    session: offline.session,
+    continuityKey: "relay:1",
+    historyControl: "scroll",
+    initial: { offset: 0, bottom: false },
+  });
+  h.element.scrollTop = 0;
+  try {
+    h.gesture();
+    h.render();
+    expect(h.caption()).toBe(
+      "You can load older messages once Buzz reconnects.",
+    );
+    await flush();
+    expect(older()).toHaveLength(0);
+    online = createRelaySession(
+      {
+        ...scripted.transport,
+        subscribe: () => ({ update() {}, retry() {}, dispose() {} }),
+      },
+      { prepared: true, persistence: saved },
+    );
+    const channels = online.session.channels;
+    channels.ensureList();
+    scripted
+      .next()
+      .respond([
+        roster(relay, "channel", [viewer.pubkey]),
+        metadata(relay, "channel", "Channel"),
+      ]);
+    await flush();
+    channels.ensure("channel");
+    await vi.waitFor(() =>
+      expect(channels.window("channel").freshness).toBe("cached"),
+    );
+    const held = scripted.next();
+    // A handoff to a cached head is not verification: the gesture waits.
+    h.swap(online.session);
+    expect(h.caption()).toBeUndefined();
+    expect(older()).toHaveLength(0);
+    held.respond(head);
+    await vi.waitFor(() =>
+      expect(channels.window("channel").freshness).toBe("verified"),
+    );
+    h.render();
+    await vi.waitFor(() => expect(older()).toHaveLength(1));
+    expect(older()[0]?.filters[0]).toMatchObject({
+      until: 20,
+      before_id: event.id,
+    });
+    h.render();
+    expect(older()).toHaveLength(1);
+  } finally {
+    h.unmount();
+    offline.dispose();
+    online?.dispose();
+  }
+});
+
 it("cached rerenders do not reissue a blocked attempt", () => {
   const h = setup({ hasMore: true, freshness: "cached" });
   h.element.scrollTop = 0;
@@ -1570,7 +1876,7 @@ it("cancelled resize settles before later reader scroll/save", () => {
   h.element.scrollTop = 1900;
   h.dispatchScroll();
   h.unmount();
-  expect(h.saved()).toEqual({ offset: 1900, bottom: false });
+  expect(h.saved()).toEqual({ bottom: false });
 });
 
 it("list shrinkage clamps the offset without revoking bottom follow", () => {
@@ -1641,7 +1947,7 @@ it("input saves pending DOM movement even if navigation precedes its scroll even
   h.element.scrollTop = 2000;
   h.gesture();
   h.unmount();
-  expect(h.saved()).toEqual({ offset: 2000, bottom: false });
+  expect(h.saved()).toEqual({ bottom: false });
 });
 
 it("growth before a no-scroll click does not revoke the existing bottom intent", () => {
@@ -1759,6 +2065,31 @@ it.each([false, true])(
         offset: -42,
       });
     h.unmount();
+  },
+);
+
+it.each(["button", "scroll"] as const)(
+  "leaves a failed read's reason to the recovery notice but keeps its retry (%s)",
+  (historyControl) => {
+    const failed = setup({
+      hasMore: true,
+      historyControl,
+      error: "Read failed",
+    });
+    expect(failed.alert()).toBe("Read failed");
+    expect(failed.historyButton()).toBe("Retry older messages");
+    failed.unmount();
+    // Recovery does not retry older history, and paging stops on a failed
+    // read, so hiding Retry would strand paging until recovery settles.
+    const recovering = setup({
+      hasMore: true,
+      historyControl,
+      error: "Read failed",
+      recovering: true,
+    });
+    expect(recovering.alert()).toBeUndefined();
+    expect(recovering.historyButton()).toBe("Retry older messages");
+    recovering.unmount();
   },
 );
 
