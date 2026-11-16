@@ -14,6 +14,17 @@ import {
 
 const noAgentNames: ReadonlyMap<string, string> = new Map();
 const PAGE_SIZE = 20;
+/** Team build: recent messages scanned for in-word Korean matches. */
+const LOCAL_SCAN_SIZE = 500;
+
+/** Team build: markdown images read as 📷 and links as their text. */
+export function readablePreview(text: string) {
+  return text
+    .replace(/!\[[^\]]*\]\(<?[^)>]*>?\)/g, "📷")
+    .replace(/\[([^\]]*)\]\(<?[^)>]*>?\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 export type SearchSort = "relevance" | "newest";
 
@@ -87,7 +98,8 @@ async function readPage(
         authorId: event.pubkey,
         workflowOwnerId: workflowOwner(event, session.workflowAuthority),
         createdAt: event.created_at,
-        preview: text.replace(/\s+/g, " ").trim().slice(0, 240) || "Attachment",
+        // Team build: show "📷" instead of a raw markdown image address.
+        preview: readablePreview(text).slice(0, 240) || "Attachment",
       },
     ];
   });
@@ -286,6 +298,39 @@ export function useSearchMessages(
           1,
           controller.signal,
         );
+        // Team build: the relay matches whole Korean words only, so "작업"
+        // missed "작업중". In one conversation, also scan its recent
+        // messages for the text anywhere and add what the relay missed.
+        if (
+          channelId &&
+          parsed.text &&
+          !author &&
+          page.messages.length < PAGE_SIZE
+        ) {
+          const needle = parsed.text.trim().toLowerCase();
+          const recent = await readPage(
+            session,
+            channelId,
+            {
+              kinds: [9, 40002, 40008],
+              limit: LOCAL_SCAN_SIZE,
+              "#h": [channelId],
+              ...(parsed.since !== null ? { since: parsed.since } : {}),
+              ...(parsed.until !== null ? { until: parsed.until } : {}),
+            },
+            1,
+            controller.signal,
+          ).catch(() => ({ messages: [] as SearchMessage[], more: false }));
+          const seen = new Set(page.messages.map(({ id }) => id));
+          const extra = recent.messages
+            .filter(
+              (message) =>
+                !seen.has(message.id) &&
+                message.preview.toLowerCase().includes(needle),
+            )
+            .sort((a, b) => b.createdAt - a.createdAt);
+          if (extra.length) return { messages: [...page.messages, ...extra] };
+        }
         return {
           messages: page.messages,
           ...(page.more ? { next: { filter, page: 2 } } : {}),

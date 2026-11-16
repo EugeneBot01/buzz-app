@@ -133,6 +133,37 @@ export function PageSearch({
     services?.shortcutBindings.subscribe ?? noSubscribe,
     services?.shortcutBindings.snapshot ?? noOverrides,
   );
+  // Team build: with a Korean (or other non-Latin) input source the key
+  // reads "ㄹ"/"ㅏ", so ⌘F and ⌘K never matched. Fall back to the physical
+  // key for the default bindings only; a rebind keeps its own matching.
+  useEffect(() => {
+    if (!services) return;
+    const keydown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        !event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey
+      )
+        return;
+      const letter =
+        event.code === "KeyF" ? "f" : event.code === "KeyK" ? "k" : null;
+      if (!letter || event.key.toLowerCase() === letter) return;
+      if (letter === "f") {
+        if (overrides[CONVERSATION_SEARCH_ID]) return;
+        if (currentTarget?.kind !== "conversation") return;
+        event.preventDefault();
+        beginScoped();
+      } else {
+        if (overrides[SEARCH_ID]) return;
+        event.preventDefault();
+        begin();
+      }
+    };
+    window.addEventListener("keydown", keydown, true);
+    return () => window.removeEventListener("keydown", keydown, true);
+  }, [services, overrides, currentTarget, begin, beginScoped]);
   // Every search surface reads pages from here, so rank and underline them
   // here too: the disconnected and personal-space views show this list as is.
   const needle = query.trim().toLowerCase();
