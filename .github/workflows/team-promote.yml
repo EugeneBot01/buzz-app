@@ -132,8 +132,8 @@ jobs:
           fi
           curl -fsS --max-time 20 -X POST "$HOOK_URL" \
             -H "X-Webhook-Secret: ${HOOK_SECRET}" \
-            -H "Content-Type: text/plain; charset=utf-8" \
-            --data-raw "${VERSION}" > /dev/null
+            -H "Content-Type: application/json" \
+            --data-raw "$(jq -cn --arg v "$VERSION" '{version: $v}')" > /dev/null
           echo "Buzz update notice sent for v${VERSION}"
 
       - name: Dry run summary
