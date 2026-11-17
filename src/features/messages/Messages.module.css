@@ -1304,6 +1304,56 @@ html[data-keyboard-navigation] .fileAttachment:focus-visible {
 .fileGroup .filePreviewAttachment {
   margin-top: 0;
 }
+/* Team: an open-book button inside the file card, left of the download icon.
+   Card and button share one grid cell; the slot in the card keeps the name
+   clear of the button. */
+.teamFileCard {
+  display: inline-grid;
+  max-width: 100%;
+}
+.teamFileCard > * {
+  grid-area: 1 / 1;
+}
+.teamFileOpenSlot {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+}
+.teamFileOpen {
+  justify-self: end;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  /* Same top margin as the card, so both centre on the same line. */
+  margin-top: var(--space-2);
+  /* Card padding + download icon (20px) + the card's gap. */
+  margin-inline-end: calc(
+    var(--space-5) / 2 + 1px + 20px + var(--space-5) / 2 + var(--space-1)
+  );
+  border: 0;
+  border-radius: var(--radius-icon-button);
+  background: transparent;
+  color: var(--text-standard);
+  cursor: pointer;
+}
+.teamFileOpen:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+.teamFileOpen[data-state="failed"] {
+  color: var(--text-danger, currentColor);
+}
+@media (hover: hover) and (pointer: fine) {
+  .teamFileOpen:hover:not(:disabled) {
+    background: var(--surface-hover);
+  }
+}
+.fileGroup .teamFileOpen {
+  margin-top: 0;
+}
 .audioAttachment {
   flex-wrap: wrap;
   position: relative;
