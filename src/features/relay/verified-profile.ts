@@ -1,13 +1,22 @@
+import { PROFILE_CACHE_MAX } from "./budget.ts";
 import { hasEventProof, type RelayEvent } from "./events.ts";
 
 export const VERIFIED_PROFILE_KIND = 30382;
 export const VERIFIED_PROFILE_BATCH = 128;
+/** Live verified-profile syncs one connection admits: enough batches for the
+ * largest profile directory, in their own pool so artifact syncs keep theirs. */
+export const VERIFIED_PROFILE_MAX_SYNCS = Math.ceil(
+  PROFILE_CACHE_MAX / VERIFIED_PROFILE_BATCH,
+);
 const key = /^[0-9a-f]{64}$/;
 
 /** Explicit NIP-11 capability, bound to this community's stable signing key. */
 export type VerifiedProfileAuthority = Readonly<{
   pubkey: string;
   multipleIssuers: boolean;
+  /** People search also returns each found person's head (NIP-11
+   * `public_profile.searchable`), so a missing one means there is none. */
+  searchable?: true;
 }>;
 
 export type VerifiedProfile = Readonly<{
@@ -54,6 +63,29 @@ export function verifiedProfileDiscovery(
   return Object.freeze({
     pubkey: info.self,
     multipleIssuers: fields.multiple_issuers,
+    ...(fields.searchable === true ? { searchable: true as const } : {}),
+  });
+}
+
+/** An authority this device saved from an earlier discovery, or undefined. */
+export function savedVerifiedProfileAuthority(
+  value: unknown,
+): VerifiedProfileAuthority | undefined {
+  if (!value || typeof value !== "object") return;
+  const { pubkey, multipleIssuers, searchable } = value as Record<
+    string,
+    unknown
+  >;
+  if (
+    typeof pubkey !== "string" ||
+    !key.test(pubkey) ||
+    typeof multipleIssuers !== "boolean"
+  )
+    return;
+  return Object.freeze({
+    pubkey,
+    multipleIssuers,
+    ...(searchable === true ? { searchable: true as const } : {}),
   });
 }
 
@@ -142,23 +174,29 @@ export type VerifiedProfileFilter = Readonly<{
   authors: readonly [string];
   "#d": readonly string[];
   limit: number;
+  /** A resume: only heads changed since a cursor. Absence means unchanged. */
+  since?: number;
 }>;
 export type VerifiedProfileSink = {
   event(event: RelayEvent): void;
   eose(): void;
-  closed(reason: string): void;
+  /** `resume` comes only with `disconnected:` for a sync that reached EOSE:
+   * a replacement from `since` misses no head this sync would have sent. */
+  closed(reason: string, resume?: Readonly<{ since: number }>): void;
 };
 
 export function verifiedProfileFilter(
   authority: string,
   subjects: readonly string[],
+  since?: number,
 ): VerifiedProfileFilter {
   const unique = [...new Set(subjects)];
   if (
     !key.test(authority) ||
     !unique.length ||
     unique.length > VERIFIED_PROFILE_BATCH ||
-    unique.some((id) => !key.test(id))
+    unique.some((id) => !key.test(id)) ||
+    (since !== undefined && !(Number.isSafeInteger(since) && since >= 0))
   )
     throw new Error("Invalid verified-profile subscription");
   return {
@@ -166,5 +204,6 @@ export function verifiedProfileFilter(
     authors: [authority],
     "#d": unique,
     limit: unique.length,
+    ...(since !== undefined ? { since } : {}),
   };
 }

@@ -1,4 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
+import {
+  promptMessage,
+  promptSections,
+} from "../../features/agents/activity-transcript";
 import type { AddedTool } from "../../buzz-mcp/session-tools";
 import { pubkeyOf } from "../../features/agents/membership";
 import { ownerReads } from "../../features/agents/reads";
@@ -10,6 +14,8 @@ import type {
   StandaloneTurn,
 } from "../../features/agents/service";
 import type { EventData, RelayEvent } from "../../features/relay/events";
+import { eventDto } from "../../features/relay/events";
+import { keypair, signed } from "../../features/relay/testing";
 import type { RelayData } from "../../features/relay/service";
 import { deferred, fakeHost, type Handler } from "./pi-testing";
 import { type Config, DEFAULT_CONFIG, PiRuntime } from "./runtime";
@@ -71,6 +77,7 @@ function setup(
   /** Channels that are the owner's own Solo chats; the owner is the viewer. */
   const solo = new Set<string>();
   const session = {
+    workflowAuthority: undefined as string | undefined,
     read: vi.fn(async () => [root]),
     agentMemories: {
       read: vi.fn(async () => ({
@@ -120,8 +127,9 @@ function setup(
   const core = vi.fn(async () => null as string | null | undefined);
   /** Whether `Agents.handle` gives the agent outside a run. */
   const connection = { live: true };
+  const desktop = { spawn: host.spawn };
   const runtime = new PiRuntime(
-    { spawn: host.spawn },
+    desktop,
     (key) => ownerReads(relay, pubkeyOf(key)),
     core,
     () => added,
@@ -202,6 +210,7 @@ function setup(
   return {
     runtime,
     host,
+    desktop,
     deliver,
     runOnce,
     settled,
@@ -213,6 +222,119 @@ function setup(
     core,
   };
 }
+
+it("contains delegated file reads with the current Pi handle's policy", async () => {
+  const f = setup();
+  const spawn = f.desktop.spawn;
+  const read = vi.fn(
+    async (
+      _id: string,
+      options: import("../../features/host/service").HostProcessOptions = {},
+    ) => {
+      options.onStdout?.(btoa("reviewed Pi file"));
+      return {
+        write: vi.fn(),
+        end: vi.fn(),
+        kill: vi.fn(),
+        exited: Promise.resolve(0),
+      };
+    },
+  );
+  f.desktop.spawn = (id, options) =>
+    id === "read-protected" ? read(id, options) : spawn(id, options);
+  try {
+    await f.deliver({ type: "mention", event: reply("2", "@Pi look") }).run;
+    const processProtection = {
+      readOnlyPaths: ["/controls"],
+      hiddenPaths: ["/approval"],
+    };
+    Object.assign(f.agent, {
+      protection: {
+        processProtection,
+        assertAvailable() {},
+        check: async () => {},
+      },
+    });
+    const result = await f.runtime.tool({
+      agent: self,
+      conversation: CONVERSATION,
+      context: { channel, root: root.id },
+      name: "send",
+      arguments: { path: "report.md", audience: "everyone" },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(read).toHaveBeenCalledExactlyOnceWith(
+      "read-protected",
+      expect.objectContaining({
+        args: ["report.md"],
+        cwd: DEFAULT_CONFIG.workspace,
+        protection: processProtection,
+      }),
+    );
+    expect(f.published.at(-1)?.content).toBe("reviewed Pi file");
+  } finally {
+    await f.runtime.dispose();
+  }
+});
+
+it("stops a protected file read when its tool call is aborted", async () => {
+  const f = setup();
+  const spawn = f.desktop.spawn;
+  const started = deferred();
+  const exit = deferred<number>();
+  const kill = vi.fn(async () => exit.resolve(143));
+  f.desktop.spawn = async (id, options) => {
+    if (id !== "read-protected") return spawn(id, options);
+    started.resolve();
+    return { write: vi.fn(), end: vi.fn(), kill, exited: exit.promise };
+  };
+  try {
+    await f.deliver({ type: "mention", event: reply("2", "@Pi look") }).run;
+    Object.assign(f.agent, {
+      protection: {
+        processProtection: { readOnlyPaths: [], hiddenPaths: [] },
+        assertAvailable() {},
+        check: async () => {},
+      },
+    });
+    const stop = new AbortController();
+    const result = f.runtime.tool(
+      {
+        agent: self,
+        conversation: CONVERSATION,
+        context: { channel, root: root.id },
+        name: "send",
+        arguments: { path: "report.md", audience: "everyone" },
+      },
+      stop.signal,
+    );
+    await started.promise;
+    expect(kill).not.toHaveBeenCalled();
+    stop.abort();
+    expect((await result).isError).toBe(true);
+    expect(kill).toHaveBeenCalled();
+  } finally {
+    exit.resolve(0);
+    await f.runtime.dispose();
+  }
+});
+
+it("never opens a protected agent's storage in the shared host before its handle arrives", async () => {
+  const { host, runtime } = setup();
+  runtime.sync([
+    {
+      key: self,
+      pubkey: self,
+      config: DEFAULT_CONFIG,
+      protection: { provider: "test", policy: {} },
+    },
+  ] as unknown as Agent[]);
+  await expect(runtime.places(self)).rejects.toThrow(
+    "The agent isn't connected yet",
+  );
+  expect(host.requests("places")).toEqual([]);
+  expect(host.processes).toEqual([]);
+});
 
 it("hands an owner's mention to its thread's Pi conversation", async () => {
   const { host, deliver, published } = setup();
@@ -247,9 +369,11 @@ it("hands an owner's mention to its thread's Pi conversation", async () => {
   });
   const text = String(delivered?.params.text);
   expect(text).toContain(`Thread root: ${root.id}`);
-  expect(text).toContain(`Alice (${alice})`);
+  expect(text).toMatch(/^<thread-context>\n/);
+  expect(text).toContain(`"pubkey":"${alice}"`);
   expect(text).toContain("Build is red");
-  expect(text).toContain("Content: @Pi can you look?");
+  expect(text).toContain('Request: "@Pi can you look?"');
+  expect(promptMessage(promptSections(text)).text).toBe("@Pi can you look?");
   expect(String(delivered?.params.steer)).toContain("@Pi can you look?");
   expect(String(delivered?.params.instructions)).toContain(self);
   expect(turn.workingUntil).toHaveBeenCalledTimes(1);
@@ -314,10 +438,24 @@ it("hands Pi the core memory apart from the instructions, and none it could not 
   // note that there is none.
   expect(read.core).toEqual({
     text: "<core-memory>\nRemember the build\n</core-memory>",
-    placeholder: expect.stringContaining("No core memory found"),
   });
   expect(String(read.instructions)).not.toContain("core-memory");
   expect(await turn(undefined)).not.toHaveProperty("core");
+});
+
+it("ends a turn's prompt with its conversation's instructions", async () => {
+  const { host, deliver, agent } = setup();
+  const conversationInstructions = vi.fn(() => ({
+    plugin: "acme.tasks",
+    text: "Review only.",
+  }));
+  Object.assign(agent, { conversationInstructions });
+  await deliver({ type: "mention", event: reply("2", "@Pi look") }).run;
+  expect(String(host.requests("deliver")[0]?.params.text)).toMatch(
+    /<owner-instructions source="acme\.tasks">\n[\s\S]*\n\nReview only\.\n<\/owner-instructions>/,
+  );
+  // Keyed as its session is: the reply's thread.
+  expect(conversationInstructions).toHaveBeenCalledWith(channel, root.id);
 });
 
 it("shows a conversation only the messages it was not shown, nor its own replies", async () => {
@@ -336,6 +474,30 @@ it("shows a conversation only the messages it was not shown, nor its own replies
   expect(text).toContain("Bob checked it");
   expect(text).not.toContain("Build is red");
   expect(text).not.toContain("Earlier from Pi");
+});
+
+it("gives the workflow reason for its owner's workflow mention that doesn't name it", async () => {
+  const { host, deliver, session } = setup();
+  const relay = keypair();
+  session.workflowAuthority = relay.pubkey;
+  const turn = deliver({
+    type: "mention",
+    event: eventDto(
+      signed(relay, {
+        kind: 9,
+        content: "@Agent workflow",
+        tags: [
+          ["h", channel],
+          ["p", self],
+          ["buzz:workflow", "true"],
+          ["buzz:workflow-owner", alice],
+        ],
+      }),
+    ),
+  });
+  await turn.run;
+  expect(turn.ignored).toHaveBeenCalledExactlyOnceWith("workflow");
+  expect(host.processes).toEqual([]);
 });
 
 it("ignores a mention from someone who is not the owner", async () => {
@@ -508,7 +670,9 @@ it("hands off from Pi to another of its conversations", async () => {
       arguments: { channel: "chan-2", thread: thread.id, text: "carry on" },
     })
   )?.result;
-  expect(JSON.stringify(result)).toContain(`Handed off to thread ${thread.id}`);
+  expect(JSON.stringify(result)).toContain(
+    `Queued self-handoff to chan-2, thread ${thread.id}`,
+  );
   expect(agent.handoff).toHaveBeenCalledWith({
     channel: "chan-2",
     root: thread.id,
@@ -2340,3 +2504,52 @@ it("lets go of whichever channel-list listener it holds when Activity unsubscrib
   relay.connect();
   expect(changed).toHaveBeenCalledTimes(1);
 });
+
+it.each(["stop", "retire"])(
+  "keeps a protected final answer local after %s",
+  async (mode) => {
+    const answered = deferred<unknown>();
+    const check = vi.fn(async () => {});
+    const f = setup({
+      wait: () => answered.promise,
+      abort: () => ({}),
+      runtime: () => ({
+        file: "/runtime/host.mjs",
+        node: "/node/bin/node",
+        codeRoot: "/runtime",
+        nodeRoot: "/node",
+        data: "/data",
+        auth: "/auth",
+      }),
+    });
+    let stop!: () => Promise<void>;
+    const turn = f.deliver(
+      { type: "mention", event: reply("2", "@Pi look") },
+      {
+        interruptible: (fn) => {
+          stop = fn;
+        },
+      },
+    );
+    await turn.run;
+    Object.assign(f.agent, {
+      protection: {
+        key: "test",
+        stateKey: "test",
+        processProtection: { readOnlyPaths: [], hiddenPaths: [] },
+        assertAvailable() {},
+        check,
+      },
+    });
+    if (mode === "stop") await stop();
+    else await f.runtime.retire(self);
+    answered.resolve({
+      status: "done",
+      answer: 5,
+      text: "The build is green.",
+    });
+    await f.settled(turn);
+    expect(f.published).toEqual([]);
+    expect(check).not.toHaveBeenCalled();
+  },
+);

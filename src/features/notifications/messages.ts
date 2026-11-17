@@ -1,7 +1,12 @@
+import {
+  REPLY_CORRELATION_MS,
+  type LocalAgentSource,
+} from "../agents/local-activity";
 import type { Communities } from "../communities/service";
 import { communityDestination } from "../communities/destination";
 import type { OpenTarget } from "../navigation/targets";
 import type { IncomingListener } from "../relay/incoming";
+import { relayPartition } from "../relay/partition";
 import type { RelaySession } from "../relay/session";
 import type { NotificationsService } from "./service";
 import { messageNotificationText } from "./content";
@@ -13,6 +18,42 @@ const labels = {
   thread: "Thread replies",
   channel: "Channel messages",
 };
+/** A local Solo run owns its completion feedback; its reply is not a mention alert. */
+export function localSoloAgentReply(
+  activity: LocalAgentSource | undefined,
+  message: {
+    channelId: string;
+    messageId: string;
+    authorId: string;
+    workflowOwnerId?: string | undefined;
+    createdAt: number;
+  },
+  scope?: string,
+): "reply" | "pending" | undefined {
+  const author = message.workflowOwnerId ?? message.authorId;
+  const candidates =
+    activity
+      ?.work()
+      .filter(
+        (item) =>
+          item.soloChat &&
+          (!scope || item.scope === scope) &&
+          item.channelId === message.channelId &&
+          item.agent === author,
+      ) ?? [];
+  const now = Date.now();
+  if (
+    candidates.some((item) =>
+      item.replyMessages?.some(
+        (reply) =>
+          reply.id === message.messageId &&
+          now - reply.acknowledgedAt <= REPLY_CORRELATION_MS,
+      ),
+    )
+  )
+    return "reply";
+  if (candidates.some((item) => item.publishing)) return "pending";
+}
 /** No new subscriptions: this first adapter covers only the selected community. */
 export function notificationAuthorized(
   communities: Communities,
@@ -60,6 +101,7 @@ export function notificationAuthorized(
 export function bindMessageNotifications(
   notifications: NotificationsService,
   communities: Communities,
+  localActivity?: LocalAgentSource,
   /** Team: a joined community watched in the background (not the selected
    * one). Quiet while it is selected; the selected binding covers it. */
   background?: Readonly<{ id: string; name: () => string }>,
@@ -74,6 +116,7 @@ export function bindMessageNotifications(
   let stopAccess = () => {};
   let stopSync = () => {};
   let stopPreferences = () => {};
+  let stopActivity = () => {};
   const update = () => {
     const client = communities.snapshot();
     if (!background) void notifications.selectViewer(client.viewer);
@@ -92,6 +135,7 @@ export function bindMessageNotifications(
     stopAccess();
     stopSync();
     stopPreferences();
+    stopActivity();
     notifications.revalidate();
     session = relay.session;
     identity = next;
@@ -131,11 +175,20 @@ export function bindMessageNotifications(
             : allMessages(message.channelId, attention)
               ? "channel"
               : undefined);
+        const soloReply =
+          category === "mention"
+            ? localSoloAgentReply(
+                localActivity,
+                message,
+                relayPartition(origin, viewer),
+              )
+            : undefined;
         if (
           !category ||
           (attention.status !== "eligible" &&
             !attention.pending &&
-            category !== "channel")
+            category !== "channel") ||
+          soloReply === "reply"
         )
           continue;
         void notifications.admit(
@@ -156,6 +209,15 @@ export function bindMessageNotifications(
           () => {
             if (!valid() || Date.now() - message.createdAt * 1000 > 120000)
               return false;
+            if (category === "mention") {
+              const current = localSoloAgentReply(
+                localActivity,
+                message,
+                relayPartition(origin, viewer),
+              );
+              if (current === "reply") return false;
+              if (current === "pending") return "wait";
+            }
             const attention = owned.unread.attention(
               message.channelId,
               message.messageId,
@@ -164,10 +226,13 @@ export function bindMessageNotifications(
             // Explicit mentions bypass channel mute, as in the legacy policy —
             // including p-tagged messages in DM channels, whose category is
             // "direct". Unknown preferences must not briefly release ordinary
-            // alerts at startup.
+            // alerts at startup; a display-only saved copy cannot cancel them.
             if (!attention.mentioned) {
               const preferences = owned.sidebarPreferences.snapshot();
-              if (preferences.data?.muted.includes(message.channelId))
+              if (
+                !preferences.cached &&
+                preferences.data?.muted.includes(message.channelId)
+              )
                 return false;
               if (
                 preferences.status !== "ready" &&
@@ -251,6 +316,9 @@ export function bindMessageNotifications(
     stopIncoming = owned.subscribeIncoming(receive);
     // Only reconsider retained live candidates; readiness is not an event source.
     stopSync = owned.unread.subscribeSync(() => notifications.revalidate());
+    stopActivity =
+      localActivity?.subscribeWork(() => notifications.revalidate()) ??
+      (() => {});
     const preferencesChanged = () => {
       notifications.revalidate();
       if (owned.sidebarPreferences.snapshot().status === "idle")
@@ -284,6 +352,7 @@ export function bindMessageNotifications(
     stopAccess();
     stopSync();
     stopPreferences();
+    stopActivity();
   };
 }
 

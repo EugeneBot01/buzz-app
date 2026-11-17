@@ -1,32 +1,43 @@
 import type { ChannelSummary } from "../../features/relay/contracts";
 import type { ComposerSession } from "../../features/messages/composer-session";
 import type { MentionRecipient } from "../../features/messages/mention-draft";
+import {
+  otherVerifiedName,
+  verifiedLabel,
+} from "../../features/profiles/name-preference";
 import { knownAgentPubkeys } from "../../features/agents/known";
 import type { Agent } from "../../features/agents/service";
 import { communityHost } from "../../features/messages/community-host";
 import {
   allowsOutsideMentions,
+  mentionChannel,
   archivedMention,
   mentionAdmission,
 } from "../../features/messages/mention-admission";
 
-/** The viewer's agents offered outside a stream or forum when the viewer can add members. */
+/** The viewer's agents offered outside a stream or forum when the viewer can
+ * add members, and outside a DM when `dms` (a DM adds no one, so they are
+ * only named there, never notified). */
 function availableMentionAgents<T extends { pubkey: string }>(
   channel: ChannelSummary | undefined,
   agents: readonly T[],
   canInvite: boolean | undefined,
+  dms = false,
 ) {
   if (
     !channel?.members ||
-    (channel.channelType !== "stream" && channel.channelType !== "forum") ||
-    !canInvite
+    !(channel.channelType === "dm"
+      ? dms
+      : (channel.channelType === "stream" || channel.channelType === "forum") &&
+        canInvite)
   )
     return [];
   const members = new Set(channel.members);
   return agents.filter((agent) => !members.has(agent.pubkey));
 }
 
-/** Row detail for an outside choice. Nobody can be added to a DM. */
+/** Row detail for an outside choice. Nobody can be added to a DM, and a Solo
+ * chat adds only the viewer's agents (outsideMentionReferences). */
 export function outsideMentionDetail(
   channel: Pick<ChannelSummary, "channelType"> | undefined,
   elsewhere?: string,
@@ -34,10 +45,39 @@ export function outsideMentionDetail(
   if (elsewhere) return `In ${elsewhere}`;
   return channel?.channelType === "dm"
     ? "Not in DM · Will not be notified"
-    : "Not in channel · Choose whether to add when you send";
+    : channel?.channelType === "solo"
+      ? "Not in chat · Will not be notified"
+      : "Not in channel";
 }
 
-type DirectoryPerson = MentionRecipient & { isAgent?: true };
+/**
+ * "Managed by" for an agent whose owner is attested (NIP-OA,
+ * `profiles.owner`), once that owner has a real name. Never the viewer.
+ */
+export function managedByDetail(
+  owner: string | undefined,
+  viewer: string | undefined,
+  profiles: ReadonlyMap<
+    string,
+    { name?: string | undefined; nameIsFallback?: true | undefined }
+  >,
+) {
+  const profile = owner && owner !== viewer ? profiles.get(owner) : undefined;
+  const name = profile && !profile.nameIsFallback && profile.name?.trim();
+  return name ? `Managed by ${name}` : undefined;
+}
+
+type DirectoryPerson = MentionRecipient & {
+  isAgent?: true;
+  /** A community-verified full name (useVerifiedNames). */
+  fullName?: string | undefined;
+  /** A community-verified username (useVerifiedNames). */
+  username?: string | undefined;
+  /** The profile name and handle a verified person was found by. */
+  profileNames?: readonly string[] | undefined;
+  /** Self-declared, for naming only; never shown as a manager. */
+  ownerPubkey?: string;
+};
 type ElsewhereAgent = Pick<Agent, "pubkey" | "name" | "relay">;
 const none: readonly never[] = [];
 // Rows change only with their sources, not with each keystroke. Snapshots are
@@ -59,6 +99,11 @@ function recent<K, V>(map: Map<K, V>, key: K, value: V, limit: number) {
 }
 export type MentionCandidate = ReturnType<typeof buildCandidates>[number];
 
+/** A compact location caption for confirmed remote agents in both @ menus. */
+export function remoteMentionDetail(execution: MentionCandidate["execution"]) {
+  return execution === "remote" ? "Remote" : undefined;
+}
+
 /** What the chooser offers. The host admits recipients itself (mention-admission). No reads or writes. */
 export function mentionCandidates(
   session: ComposerSession,
@@ -73,7 +118,7 @@ export function mentionCandidates(
   // test fails when they read one more. The viewer is fixed per session.
   const sources = [
     // Only this channel's row; activity elsewhere replaces the list, not it.
-    session.channels.list().channels.find((c) => c.id === channelId),
+    mentionChannel(session, channelId),
     session.agentChoices.snapshot(),
     session.profiles.snapshot(),
     session.archives?.snapshot(),
@@ -142,12 +187,17 @@ function buildCandidates(
   directory: readonly DirectoryPerson[],
   elsewhere: readonly ElsewhereAgent[],
 ) {
-  const channel = session.channels
-    .list()
-    .channels.find((c) => c.id === channelId);
+  const channel = mentionChannel(session, channelId);
   const members = roster?.map((p) => p.pubkey) ?? channel?.members ?? [];
   const memberKeys = new Set(members);
+  // A saved chat's roster also offers agents that are not in the chat. Its
+  // own member list says who is; a draft with no saved list has only the roster.
+  const joined =
+    roster && channel?.members?.length ? new Set(channel.members) : memberKeys;
   const agents = session.agentChoices.snapshot().identities;
+  const executions = new Map(
+    agents.map((agent) => [agent.pubkey, agent.execution]),
+  );
   const profiles = session.profiles.snapshot();
   const known = knownAgentPubkeys(profiles, {
     definitions: [],
@@ -161,9 +211,10 @@ function buildCandidates(
           channel,
           agents,
           session.outbox?.supports(9000),
+          true,
         )))
     choices.set(person.pubkey, { pubkey: person.pubkey, name: person.name });
-  if (!roster && !inviteAgents && allowsOutsideMentions(channel))
+  if (allowsOutsideMentions(channel, roster, inviteAgents))
     for (const person of directory) choices.set(person.pubkey, person);
   // Another community's agent is never a member or an agent here; it only
   // takes a row no one in this community has. Sending asks before it joins.
@@ -204,9 +255,12 @@ function buildCandidates(
   // Keyed lookups keep one pass over members linear in a large channel.
   const listed = new Map<string, string>();
   const directoryAgents = new Set<string>();
+  const verified = new Map<string, DirectoryPerson>();
   for (const person of directory) {
     if (!listed.has(person.pubkey)) listed.set(person.pubkey, person.name);
     if (person.isAgent) directoryAgents.add(person.pubkey);
+    if (person.fullName || person.profileNames)
+      verified.set(person.pubkey, person);
   }
   const rostered = new Map<string, string>();
   for (const person of roster ?? [])
@@ -220,33 +274,62 @@ function buildCandidates(
     ]);
     if (agent.managed) managed.add(agent.pubkey);
   }
+  // The viewer's saved and hosted agents, here and in their other
+  // communities. An unverified owner claim never makes an agent the viewer's;
+  // the menu adds agents whose verified owner is the viewer (README, Scope and
+  // authority).
+  const mine = (pubkey: string) =>
+    !!session.viewer && (agentNames.has(pubkey) || hosts.has(pubkey));
   return [...choices.values()]
     .filter((p) => admits(p.pubkey))
-    .map((recipient) => ({
-      recipient,
-      member: memberKeys.has(recipient.pubkey),
-      /** The host of the owner's other community this agent is in. */
-      ...(hosts.has(recipient.pubkey)
-        ? { elsewhere: hosts.get(recipient.pubkey) }
-        : {}),
-      agent:
-        hosts.has(recipient.pubkey) ||
-        known.has(recipient.pubkey) ||
-        directoryAgents.has(recipient.pubkey),
-      owned:
-        !!session.viewer &&
-        profiles.get(recipient.pubkey)?.ownerPubkey === session.viewer,
-      managed: managed.has(recipient.pubkey),
-      aliases: [
-        ...new Set(
-          [
-            profiles.get(recipient.pubkey)?.name ||
-              listed.get(recipient.pubkey) ||
-              rostered.get(recipient.pubkey),
-            ...(agentNames.get(recipient.pubkey) ?? []),
-            hosts.has(recipient.pubkey) ? recipient.name : undefined,
-          ].filter((name): name is string => !!name),
-        ),
-      ],
-    }));
+    .map((recipient) => {
+      const execution = executions.get(recipient.pubkey);
+      const shared = profiles.get(recipient.pubkey)?.verified;
+      const searched = verified.get(recipient.pubkey);
+      const fullName = shared?.fullName ?? searched?.fullName;
+      const username = shared?.username ?? searched?.username;
+      // A searched person's name already is their verified label.
+      const otherName = shared
+        ? otherVerifiedName(verifiedLabel(shared), shared)
+        : searched && otherVerifiedName(searched.name, searched);
+      return {
+        recipient,
+        ...(execution ? { execution } : {}),
+        /** The verified name the label is not, shown beside the row's detail. */
+        ...(otherName ? { otherName } : {}),
+        member: memberKeys.has(recipient.pubkey),
+        /**
+         * In a saved chat's roster but not in its member list: listed and
+         * chosen as a member, but outside the channel for Space (README
+         * section 5).
+         */
+        ...(memberKeys.has(recipient.pubkey) && !joined.has(recipient.pubkey)
+          ? { offered: true as const }
+          : {}),
+        /** The host of the owner's other community this agent is in. */
+        ...(hosts.has(recipient.pubkey)
+          ? { elsewhere: hosts.get(recipient.pubkey) }
+          : {}),
+        agent:
+          hosts.has(recipient.pubkey) ||
+          known.has(recipient.pubkey) ||
+          directoryAgents.has(recipient.pubkey),
+        owned: mine(recipient.pubkey),
+        managed: managed.has(recipient.pubkey),
+        aliases: [
+          ...new Set(
+            [
+              profiles.get(recipient.pubkey)?.name ||
+                listed.get(recipient.pubkey) ||
+                rostered.get(recipient.pubkey),
+              ...(agentNames.get(recipient.pubkey) ?? []),
+              hosts.has(recipient.pubkey) ? recipient.name : undefined,
+              fullName,
+              username,
+              ...(searched?.profileNames ?? []),
+            ].filter((name): name is string => !!name),
+          ),
+        ],
+      };
+    });
 }

@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { OpenTarget } from "../navigation/targets";
 import type { UnreadCapability } from "../relay/unread";
+import type { CommunityUnread } from "../notifications/community-unread";
 import {
   ChecksIcon,
   LinkIcon,
@@ -18,6 +19,7 @@ import {
 } from "../../shared/design-system/icons/index";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
 import { NavigationItem } from "../../shared/design-system/ui/NavigationItem";
+import { CountBadge } from "../../shared/design-system/ui/CountBadge";
 import {
   ContextMenuRoot,
   ContextMenuTrigger,
@@ -48,6 +50,18 @@ export type SelectedSession = {
 
 const noSubscription = () => () => {};
 
+/** Marks every conversation read and reports the outcome in a toast. Shared by
+ * the menu item and the Shift+Escape shortcut. */
+export function markAllRead(
+  unread: Pick<UnreadCapability, "markAllChannelsRead">,
+  notify: ReturnType<typeof useToastNotification>,
+) {
+  return unread.markAllChannelsRead().then(
+    () => notify("Marked all as read.", "success"),
+    () => notify("Couldn’t mark everything as read.", "error"),
+  );
+}
+
 /** One picker row and its context menu. Selection stays with the picker. */
 export function CommunityPickerItem({
   membership,
@@ -55,6 +69,7 @@ export function CommunityPickerItem({
   selected,
   viewer,
   session,
+  unread,
   manager,
   leaving,
   onSelect,
@@ -68,6 +83,8 @@ export function CommunityPickerItem({
   viewer: string | undefined;
   /** The selected community's session once it is ready; never another community's. */
   session: SelectedSession | undefined;
+  /** This community's unread, once known; never the selected community's. */
+  unread?: CommunityUnread | undefined;
   /** The viewer is an owner or admin of this community, and this build can mint invites. */
   manager: boolean;
   /** A leave request for this community is in flight. */
@@ -153,9 +170,10 @@ export function CommunityPickerItem({
           }}
           label={name}
           title={`${name} — ${origin}`}
-          aria-label={`Switch to ${name}`}
+          aria-label={`Switch to ${name}${unread ? unreadLabel(unread) : ""}`}
           aria-current={selected ? "true" : undefined}
           selected={selected}
+          trailing={unread && <UnreadBadge unread={unread} />}
           icon={
             <Avatar
               size="small"
@@ -239,6 +257,29 @@ export function CommunityPickerItem({
   );
 }
 
+/** The row's spoken badge; empty when nothing is unread. */
+const unreadLabel = ({ unread, attention }: CommunityUnread) =>
+  attention > 0
+    ? `, ${attention} ${attention === 1 ? "item needs" : "items need"} you`
+    : unread
+      ? ", unread"
+      : "";
+
+/** Items that need you as a count, otherwise a dot for any unread. The row's
+ * label speaks it. */
+function UnreadBadge({ unread }: { unread: CommunityUnread }) {
+  if (unread.attention > 0)
+    return (
+      <CountBadge
+        count={unread.attention}
+        label={unreadLabel(unread).slice(2)}
+      />
+    );
+  return unread.unread ? (
+    <span className={styles.unreadDot} aria-hidden="true" />
+  ) : null;
+}
+
 /** Mounted only while the menu is open, so the read-state subscription is too. */
 function MarkAllReadItem({
   name,
@@ -279,10 +320,7 @@ function MarkAllReadItem({
         aria-describedby={reason ? noteId : undefined}
         onClick={() => {
           if (!unread || reason) return;
-          void unread.markAllChannelsRead().then(
-            () => notify("Marked all as read.", "success"),
-            () => notify("Couldn’t mark everything as read.", "error"),
-          );
+          void markAllRead(unread, notify);
         }}
       >
         <MenuIcon>

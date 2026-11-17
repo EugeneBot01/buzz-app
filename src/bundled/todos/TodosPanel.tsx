@@ -1,4 +1,6 @@
+import { useProfileGeneration } from "../../features/relay/react";
 import Markdown from "react-markdown";
+import markdownStyles from "../../features/markdown/Markdown.module.css";
 import { parseBuzzLink } from "../../features/navigation/buzz-links";
 import { profileKey } from "../../features/profiles/target";
 import { safeLinkUrl } from "../../features/relay/message-content";
@@ -20,7 +22,10 @@ import type { RelaySession } from "../../features/relay/session";
 import { useIdentityNames } from "../../features/identity-names/react";
 import { Avatar } from "../../shared/design-system/ui/Avatar";
 import { TodoChoice } from "./TodoChoice";
-import type { ChannelCanvas } from "../../features/channel-templates/capability";
+import {
+  canvasReadOnly,
+  type ChannelCanvas,
+} from "../../features/channel-templates/capability";
 import type { ChannelPanelContext } from "../../features/panels/service";
 import {
   XIcon,
@@ -142,9 +147,15 @@ export function TodosPanel({
     people.profiles.subscribe,
     people.profiles.snapshot,
   );
-  const members = list.channels.find(
+  const channel = list.channels.find(
     (channel) => channel.id === context.channelId,
-  )?.members;
+  );
+  const members = channel?.members;
+  // Members are read-only until startup confirms them; never discard drafts.
+  const readOnly = canvasReadOnly(channel);
+  // save() re-checks this after its wait; capability's canWrite ignores archived.
+  const latestReadOnly = useRef(readOnly);
+  latestReadOnly.current = readOnly;
   const resolveName = (pubkey: string, fallback: string) =>
     resolveIdentity(pubkey, fallback, members ?? noMembers);
   const key = `todos-draft-v1:${context.channelId}`;
@@ -240,8 +251,6 @@ export function TodosPanel({
           setError(
             "Canvas changed elsewhere. Refresh to load the latest todos. Your changes are kept until then.",
           );
-        else if (!replace && savedDirty && !alreadySaved)
-          setError("Recovered unsaved changes. Retry to save them to Canvas.");
         if (replace) setCollapsed(new Set());
         if (replace || !savedDirty || alreadySaved)
           update({
@@ -276,7 +285,8 @@ export function TodosPanel({
       !loaded ||
       next.content === next.original ||
       conflict ||
-      !canvas.available
+      !canvas.available ||
+      latestReadOnly.current
     )
       return;
     saving.current = true;
@@ -296,11 +306,17 @@ export function TodosPanel({
         });
         cancelWait.current = undefined;
       }
-      if (!active() || generation !== operation.current) return;
+      if (
+        !active() ||
+        generation !== operation.current ||
+        latestReadOnly.current
+      )
+        return;
       const head = await canvas.save(
         context.channelId,
         next.content,
         next.base ?? undefined,
+        { preserveApproval: true },
       );
       if (!active() || generation !== operation.current) return;
       savedAt.current = head.created_at;
@@ -336,8 +352,23 @@ export function TodosPanel({
     }
   }, [draft.content]);
   const inputDisabled =
-    !loaded || busy === "load" || !canvas.available || !!parseError || conflict;
+    !loaded ||
+    busy === "load" ||
+    !canvas.available ||
+    readOnly ||
+    !!parseError ||
+    conflict;
   const disabled = inputDisabled || busy === "save";
+  const retryable = dirty && !busy && !conflict && !parseError;
+  // Only a restored draft is unsaved without an error. Derived here because
+  // read-only can end without a reload.
+  const restored = retryable && !error;
+  const message =
+    error ||
+    parseError ||
+    (restored && !readOnly
+      ? "Recovered unsaved changes. Retry to save them to Canvas."
+      : "");
   const items = parsed?.items ?? [];
   const peopleKey = [
     ...new Set([
@@ -349,8 +380,10 @@ export function TodosPanel({
     .join(":");
   const [namesError, setNamesError] = useState(false);
   const [namesRetry, setNamesRetry] = useState(0);
+  const profileGeneration = useProfileGeneration(people.profiles);
   useEffect(() => {
     void namesRetry; // Explicit user retry reruns this owned read.
+    void profileGeneration;
     let current = true;
     people.channels.ensureList();
     void people.profiles
@@ -366,7 +399,7 @@ export function TodosPanel({
     return () => {
       current = false;
     };
-  }, [people, peopleKey, active, namesRetry]);
+  }, [people, peopleKey, active, namesRetry, profileGeneration]);
   const keyLabels = publicKeyLabels(peopleKey.split(":"));
   const userLabel = (pubkey: string, fallback = "") => {
     const key = keyLabels.get(pubkey) ?? pubkey;
@@ -481,7 +514,7 @@ export function TodosPanel({
               label=""
             />
             <div
-              className={`${styles.label} text-body-sm ${item.status === "done" ? "text-secondary" : ""}`}
+              className={`${styles.label} ${markdownStyles.inline} text-body-sm ${item.status === "done" ? "text-secondary" : ""}`}
               data-completed={item.status === "done" || undefined}
             >
               <Markdown
@@ -709,9 +742,7 @@ export function TodosPanel({
               <PopoverPopup align="end">
                 <PopoverTitle>{saveStatus}</PopoverTitle>
                 <PopoverDescription>
-                  Todos are shared in this channel’s Canvas. Changes save
-                  automatically. Refresh to load others’ changes. On older
-                  relays, simultaneous saves can overwrite edits.
+                  {`Todos are shared in this channel’s Canvas. ${readOnly ? "" : "Changes save automatically. "}Refresh to load others’ changes. On older relays, simultaneous saves can overwrite edits.`}
                 </PopoverDescription>
               </PopoverPopup>
             </PopoverRoot>
@@ -793,9 +824,15 @@ export function TodosPanel({
           </form>
           {(error || parseError || (dirty && !busy)) && (
             <div className={styles.feedback}>
-              {(error || parseError) && (
+              {message && (
                 <p role="alert" className="text-body-sm text-secondary">
-                  {error || parseError}
+                  {message}
+                </p>
+              )}
+              {restored && readOnly && (
+                <p role="status" className="text-body-sm text-secondary">
+                  Showing your unsaved local draft. Refresh to see the saved
+                  list.
                 </p>
               )}
               {conflict && !busy && (
@@ -807,7 +844,7 @@ export function TodosPanel({
                   Refresh todos
                 </Button>
               )}
-              {dirty && !busy && !conflict && !parseError && (
+              {retryable && !readOnly && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -842,6 +879,11 @@ export function TodosPanel({
               This connection doesn’t support saving Canvas.
             </p>
           )}
+          {readOnly && (
+            <p role="status" className="text-body-sm text-secondary">
+              Todos are read-only.
+            </p>
+          )}
           {!loaded ? (
             <p role="status" className="text-body-sm text-secondary">
               {busy ? "Loading todos…" : "Couldn’t load todos. Try Refresh."}
@@ -853,7 +895,11 @@ export function TodosPanel({
                   <EmptyState
                     icon={<ListChecksIcon />}
                     title="No todos yet"
-                    description="Add a todo above to track work with this channel. Changes save automatically."
+                    description={
+                      readOnly
+                        ? undefined
+                        : "Add a todo above to track work with this channel. Changes save automatically."
+                    }
                   />
                 )}
                 {statuses.map(([status, title]) => {

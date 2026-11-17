@@ -1,5 +1,5 @@
-/* BlockUI neutral values (canonical text and ratified surface ladder), adapted
-   to the existing Buzz ramp. Chromatic ramps and glass remain Buzz-specific. */
+/* Neutral values (canonical text and ratified surface ladder) on the Buzz
+   ramp. Chromatic ramps and glass remain Buzz-specific. */
 /*
  * Buzz colour tokens.
  *
@@ -62,6 +62,13 @@
    step 10 and pressed: each accent's hover and press, retuned to move clearly
    off step 9 while staying clean rather than muddy. */
 :root {
+  /* Fixed palette values used by terminal status in either mode. */
+  --red-11-light: #ce2c31;
+  --neutral-status-ink: #ffffff;
+
+  /* Branded onboarding palette; dark mode adds the approved 30% black tint. */
+  --brand-chartreuse: #d7d72e;
+  --brand-chartreuse-dimmed: color-mix(in srgb, #d7d72e 70%, black);
   --magenta-1-light: #fffbfc;
   --magenta-2-light: #fff7fa;
   --magenta-3-light: #ffeef3;
@@ -467,7 +474,7 @@
   --red-8: #eb8e90;
   --red-9: #e5484d;
   --red-10: #dc3e42;
-  --red-11: #ce2c31;
+  --red-11: var(--red-11-light);
   --red-12: #641723;
 
   /* green */
@@ -777,6 +784,10 @@
   --bubble-neutral: #e9e9ea;
   --bubble-received: #f3f3f4;
   --neutral-navigation-text: #404040; /* Tailwind neutral-700. */
+  /* Designer-requested light status text: the brightest green and red, 35% of
+     the way from step 11 to step 12, that keep AA on every light surface. */
+  --green-text: #1e6a49;
+  --red-text: #a9252c;
   --neutral-navigation-unread: #262626; /* Tailwind neutral-800. */
   --neutral-navigation-quiet: #f7f7f7; /* Designer-requested gentle sidenav states. */
   --neutral-1: #ffffff; /* bg-panel, bg-float, bg-chrome-selected */
@@ -789,7 +800,7 @@
   --neutral-2: #f5f5f6; /* quiet compact controls, callouts, and grouping */
   --neutral-3: #e8e8e8; /* chrome track in light; bg-panel in dark */
   --neutral-4: #dadada; /* border-primary in light mode            */
-  --neutral-5: #cccccc; /* unused in light; float + selected, dark */
+  --neutral-5: #cccccc; /* floating control pressed, light; float + selected, dark */
   --neutral-6: #b3b3b3; /* border-primary in dark mode             */
   --neutral-7: #959595; /* no readers                              */
   --neutral-8: #808080; /* text-disabled                           */
@@ -867,6 +878,7 @@
   --blur-lg: 32px;
 
   /* --- Elevation. Controls, floating surfaces and workspace panels. --- */
+  --shadow-card: 0 16px 40px rgba(35, 30, 30, 0.06);
   --shadow-panel:
     0 0 0 1px rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06),
     0 2px 4px rgba(0, 0, 0, 0.04);
@@ -1076,6 +1088,14 @@
 
 /* Semantic colors: color / purpose / emphasis / state.
    Components consume roles; palette steps stay inside this shared layer. */
+:root {
+  /* Terminal task status keeps the same solid fills and ink in both modes. */
+  --surface-status-success: var(--citrus-9);
+  --text-on-status-success: var(--citrus-ink-light);
+  --surface-status-danger: var(--red-11-light);
+  --text-on-status: var(--neutral-status-ink);
+}
+
 .light,
 :root {
   --surface-base: var(--neutral-2);
@@ -1089,6 +1109,10 @@
   --text-on-selection: var(--neutral-1);
   --surface-text-selection-own: var(--neutral-12);
   --text-on-selection-own: var(--neutral-1);
+  /* Find on screen paints matches like a browser's find bar, dark text in both modes. */
+  --surface-find-match: var(--amber-5);
+  --surface-find-match-active: var(--orange-7);
+  --text-on-find-match: var(--neutral-12);
   --surface-message: var(--bubble-received);
   --surface-message-own: var(--bubble-neutral);
   --surface-message-hover: var(--bubble-hover);
@@ -1098,6 +1122,10 @@
   --text-message-own: var(--text-standard);
   --text-message-link-own: var(--text-link);
   --affordance-message-own-hover: var(--shade-quiet-fill);
+  /* Arriving at a message lays the regular step across its bubble, about
+     twice hover, so the cue never reads as the pointer. */
+  --affordance-message-highlight: var(--shade-fill);
+  --affordance-message-own-highlight: var(--affordance-message-highlight);
   --affordance-reaction: var(--shade-soft-fill);
   --affordance-reaction-own: var(--affordance-reaction);
   /* Mentions are people, not links. Ordinary mentions stay neutral; a mention
@@ -1120,10 +1148,10 @@
   --text-quiet-control: var(--neutral-8);
   --text-inverse: var(--neutral-1);
   --text-unavailable: var(--neutral-7);
-  --text-danger: var(--red-12);
+  --text-danger: var(--red-text);
   --text-call-leave: var(--red-10);
   --text-warning: var(--amber-12);
-  --text-success: var(--green-12);
+  --text-success: var(--green-text);
   --icon-status-progress: var(--amber-10);
   --icon-status-complete: var(--green-10);
   --icon-subtle: var(--text-subtle);
@@ -1200,13 +1228,17 @@
   --affordance-panel-hover: var(--neutral-2);
   --affordance-floating-hover: var(--neutral-2);
   --affordance-popover-selected: var(--neutral-2);
-  --affordance-floating-control: var(--affordance-subtle);
-  --affordance-floating-control-hover: var(--affordance-subtle-hover);
-  --affordance-floating-control-pressed: var(--affordance-subtle-pressed);
+  /* A control floating over a white panel needs one step more than the
+     panel's subtle fill (neutral-2), which nearly disappears on white. Each
+     state steps once more so hover and press stay distinct. */
+  --affordance-floating-control: var(--neutral-3);
+  --affordance-floating-control-hover: var(--neutral-4);
+  --affordance-floating-control-pressed: var(--neutral-5);
   --affordance-floating-selected: var(--affordance-subtle-pressed);
   --border-floating-control: var(--border-prominent);
   --affordance-selected: var(--neutral-3);
-  --affordance-disabled: var(--neutral-3);
+  --affordance-disabled: var(--neutral-4);
+  --surface-onboarding: var(--brand-chartreuse);
   --affordance-danger: var(--red-3);
   --affordance-danger-hover: var(--red-4);
   --affordance-danger-pressed: var(--red-5);
@@ -1233,6 +1265,8 @@
   --text-message-own: var(--text-standard);
   --text-message-link-own: var(--text-link);
   --affordance-message-own-hover: var(--tint-quiet-fill);
+  --affordance-message-highlight: var(--tint-fill);
+  --affordance-message-own-highlight: var(--affordance-message-highlight);
   --affordance-reaction: var(--tint-soft-fill);
   --affordance-reaction-own: var(--affordance-reaction);
   /* Ordinary mentions tint the dark fill they sit on. A mention of you takes
@@ -1246,6 +1280,7 @@
   --affordance-mention-own: var(--affordance-mention);
   --affordance-mention-own-hover: var(--affordance-mention-hover);
   --text-mention-own: var(--text-mention);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-panel: 0 0 0 1px rgba(255, 255, 255, 0.08);
   --surface-base: var(--neutral-1);
   --surface-panel: var(--neutral-3);
@@ -1258,6 +1293,9 @@
   --text-on-selection: var(--neutral-1);
   --surface-text-selection-own: var(--neutral-12);
   --text-on-selection-own: var(--neutral-1);
+  --surface-find-match: var(--amber-9);
+  --surface-find-match-active: var(--orange-11);
+  --text-on-find-match: var(--neutral-1);
   --text-navigation: var(--neutral-11);
   --text-navigation-unread: var(--neutral-12);
   --text-standard: var(--neutral-12);
@@ -1347,7 +1385,8 @@
   --affordance-floating-selected: var(--neutral-6);
   --border-floating-control: var(--neutral-9);
   --affordance-selected: var(--neutral-5);
-  --affordance-disabled: var(--neutral-3);
+  --affordance-disabled: var(--neutral-5);
+  --surface-onboarding: var(--brand-chartreuse-dimmed);
   --affordance-danger: var(--red-3);
   --affordance-danger-hover: var(--red-4);
   --affordance-danger-pressed: var(--red-5);
@@ -1460,6 +1499,7 @@
   --size-resize-seam: 0.875rem;
   --radius-panel: var(--corner-panel);
   --radius-control: var(--corner-control);
+  --radius-card: 2rem;
   --radius-container: var(--corner-container);
   --radius-row: var(--corner-row);
   /* Independent icon controls use an even contour on all four corners. */
@@ -1531,13 +1571,13 @@
   --border-control: var(--border-prominent);
   --bg-chrome-selected: var(--neutral-5);
 
-  /* BlockUI's darker secondary/tertiary grays fall below Buzz's APCA targets
-     on raised panels. Keep the BlockUI ramp, selecting its lighter steps for
+  /* Darker secondary/tertiary grays fall below Buzz's APCA targets on raised
+     panels. Keep the neutral ramp, selecting its lighter steps for
      readable text: secondary >= 60, metadata >= 45 on every opaque surface. */
   --text-secondary: var(--text-subtle);
   --text-tertiary: var(--text-metadata);
 
-  /* BlockUI subtle border: E8E8E8 in light, 232323 in dark. */
+  /* Subtle border: E8E8E8 in light, 232323 in dark. */
   --border-primary: var(--border-standard);
 
   --rim-lit: #ffffff2e;
@@ -1587,14 +1627,24 @@
   --accent-overlay-hover: var(--accent-overlay-hover-light);
   --accent-overlay-soft: var(--accent-overlay-soft-light);
   --accent-overlay-quiet: var(--accent-overlay-quiet-light);
+  --accent-overlay-highlight: var(--accent-overlay-highlight-light);
   --text-accent: var(--text-standard);
   --border-accent: var(--border-focus);
   --affordance-accent: var(--affordance-subtle);
   --affordance-accent-hover: var(--affordance-subtle-hover);
   --surface-message-highlight: var(--accent-3);
+  /* A reaction you made swaps bubble fills: your bubble's fill on a received
+     message and the panel, and the received fill inside your own bubble. */
+  --affordance-reaction-self: var(--surface-message-own);
+  --text-reaction-self: var(--text-message-own);
+  --affordance-reaction-self-own: var(--surface-message);
+  --text-reaction-self-own: var(--text-standard);
   --text-message-link: var(--accent-link);
   --surface-sidebar-selected: var(--accent-9);
   --text-sidebar-selected: var(--accent-contrast);
+  /* Corner counts keep a dark fill and readable accent ink in both modes. */
+  --surface-dock-count: var(--mono-2-dark);
+  --text-dock-count: var(--accent-link-dark);
   --text-sidebar-hover: var(--accent-12);
   --affordance-sidebar-hover: var(--accent-2);
   --affordance-accent-prominent: var(--accent-9);
@@ -1626,14 +1676,24 @@
   --accent-overlay-hover: var(--accent-overlay-hover-dark);
   --accent-overlay-soft: var(--accent-overlay-soft-dark);
   --accent-overlay-quiet: var(--accent-overlay-quiet-dark);
+  --accent-overlay-highlight: var(--accent-overlay-highlight-dark);
   --text-accent: var(--text-standard);
   --border-accent: var(--border-focus);
   --affordance-accent: var(--affordance-subtle);
   --affordance-accent-hover: var(--affordance-subtle-hover);
   --surface-message-highlight: var(--accent-3);
+  /* A reaction you made swaps bubble fills: your bubble's fill on a received
+     message and the panel, and the received fill inside your own bubble. */
+  --affordance-reaction-self: var(--surface-message-own);
+  --text-reaction-self: var(--text-message-own);
+  --affordance-reaction-self-own: var(--surface-message);
+  --text-reaction-self-own: var(--text-standard);
   --text-message-link: var(--accent-link);
   --surface-sidebar-selected: var(--accent-9);
   --text-sidebar-selected: var(--accent-contrast);
+  /* Corner counts keep a dark fill and readable accent ink in both modes. */
+  --surface-dock-count: var(--mono-2-dark);
+  --text-dock-count: var(--accent-link-dark);
   --text-sidebar-hover: var(--accent-12);
   --affordance-sidebar-hover: var(--accent-3);
   --affordance-accent-prominent: var(--accent-9);
@@ -1665,6 +1725,7 @@
   --accent-overlay-hover-light: var(--shade-strong-hover-fill);
   --accent-overlay-soft-light: var(--shade-soft-fill);
   --accent-overlay-quiet-light: var(--shade-quiet-fill);
+  --accent-overlay-highlight-light: var(--shade-fill);
   --accent-1-dark: var(--magenta-1-dark);
   --accent-2-dark: var(--magenta-2-dark);
   --accent-3-dark: var(--magenta-3-dark);
@@ -1686,6 +1747,7 @@
   --accent-overlay-hover-dark: var(--shade-strong-hover-fill);
   --accent-overlay-soft-dark: var(--shade-soft-fill);
   --accent-overlay-quiet-dark: var(--shade-quiet-fill);
+  --accent-overlay-highlight-dark: var(--shade-fill);
 }
 :root[data-accent="iris"],
 [data-accent="iris"] {
@@ -1710,6 +1772,7 @@
   --accent-overlay-hover-light: var(--shade-strong-hover-fill);
   --accent-overlay-soft-light: var(--shade-soft-fill);
   --accent-overlay-quiet-light: var(--shade-quiet-fill);
+  --accent-overlay-highlight-light: var(--shade-fill);
   --accent-1-dark: var(--iris-1-dark);
   --accent-2-dark: var(--iris-2-dark);
   --accent-3-dark: var(--iris-3-dark);
@@ -1731,6 +1794,7 @@
   --accent-overlay-hover-dark: var(--shade-strong-hover-fill);
   --accent-overlay-soft-dark: var(--shade-soft-fill);
   --accent-overlay-quiet-dark: var(--shade-quiet-fill);
+  --accent-overlay-highlight-dark: var(--shade-fill);
 }
 :root[data-accent="cobalt"],
 [data-accent="cobalt"] {
@@ -1755,6 +1819,7 @@
   --accent-overlay-hover-light: var(--shade-strong-hover-fill);
   --accent-overlay-soft-light: var(--shade-soft-fill);
   --accent-overlay-quiet-light: var(--shade-quiet-fill);
+  --accent-overlay-highlight-light: var(--shade-fill);
   --accent-1-dark: var(--cobalt-1-dark);
   --accent-2-dark: var(--cobalt-2-dark);
   --accent-3-dark: var(--cobalt-3-dark);
@@ -1776,6 +1841,7 @@
   --accent-overlay-hover-dark: var(--shade-strong-hover-fill);
   --accent-overlay-soft-dark: var(--shade-soft-fill);
   --accent-overlay-quiet-dark: var(--shade-quiet-fill);
+  --accent-overlay-highlight-dark: var(--shade-fill);
 }
 :root[data-accent="bee"],
 [data-accent="bee"] {
@@ -1800,6 +1866,7 @@
   --accent-overlay-hover-light: var(--shade-hover-fill);
   --accent-overlay-soft-light: var(--shade-soft-fill);
   --accent-overlay-quiet-light: var(--shade-quiet-fill);
+  --accent-overlay-highlight-light: var(--shade-fill);
   --accent-1-dark: var(--bee-1-dark);
   --accent-2-dark: var(--bee-2-dark);
   --accent-3-dark: var(--bee-3-dark);
@@ -1821,6 +1888,7 @@
   --accent-overlay-hover-dark: var(--shade-hover-fill);
   --accent-overlay-soft-dark: var(--shade-soft-fill);
   --accent-overlay-quiet-dark: var(--shade-quiet-fill);
+  --accent-overlay-highlight-dark: var(--shade-fill);
 }
 :root[data-accent="citrus"],
 [data-accent="citrus"],
@@ -1846,6 +1914,7 @@
   --accent-overlay-hover-light: var(--shade-hover-fill);
   --accent-overlay-soft-light: var(--shade-soft-fill);
   --accent-overlay-quiet-light: var(--shade-quiet-fill);
+  --accent-overlay-highlight-light: var(--shade-fill);
   --accent-1-dark: var(--citrus-1-dark);
   --accent-2-dark: var(--citrus-2-dark);
   --accent-3-dark: var(--citrus-3-dark);
@@ -1867,6 +1936,7 @@
   --accent-overlay-hover-dark: var(--shade-hover-fill);
   --accent-overlay-soft-dark: var(--shade-soft-fill);
   --accent-overlay-quiet-dark: var(--shade-quiet-fill);
+  --accent-overlay-highlight-dark: var(--shade-fill);
 }
 :root[data-accent="mono"],
 [data-accent="mono"] {
@@ -1891,6 +1961,7 @@
   --accent-overlay-hover-light: var(--tint-hover-fill);
   --accent-overlay-soft-light: var(--tint-soft-fill);
   --accent-overlay-quiet-light: var(--tint-quiet-fill);
+  --accent-overlay-highlight-light: var(--tint-fill);
   --accent-1-dark: var(--mono-1-dark);
   --accent-2-dark: var(--mono-2-dark);
   --accent-3-dark: var(--mono-3-dark);
@@ -1912,6 +1983,7 @@
   --accent-overlay-hover-dark: var(--shade-hover-fill);
   --accent-overlay-soft-dark: var(--shade-soft-fill);
   --accent-overlay-quiet-dark: var(--shade-quiet-fill);
+  --accent-overlay-highlight-dark: var(--shade-fill);
 }
 
 /* Vibe changes bubble contrast only. Shared controls retain their neutral roles. */
@@ -1920,6 +1992,11 @@
   --surface-message-own: var(--accent-4);
   --text-message-own: var(--accent-12);
   --text-message-link-own: var(--accent-link);
+  /* The tinted bubble is too faint for a reaction you made, so it takes the
+     solid accent as at Buzzin’, and the panel fill inside your bubble. */
+  --affordance-reaction-self: var(--accent-9);
+  --text-reaction-self: var(--accent-ink);
+  --affordance-reaction-self-own: var(--neutral-1);
 }
 
 :root[data-color-level="touch"][data-color-mode="dark"],
@@ -1927,6 +2004,11 @@
   --surface-message-own: var(--accent-4);
   --text-message-own: var(--accent-12);
   --text-message-link-own: var(--accent-link);
+  /* As in light mode; inside your bubble a lifted neutral, since the panel is
+     darker than the bubble. */
+  --affordance-reaction-self: var(--accent-9);
+  --text-reaction-self: var(--accent-ink);
+  --affordance-reaction-self-own: var(--neutral-7);
 }
 
 :root[data-color-level="high"],
@@ -1934,6 +2016,7 @@
   --affordance-mention-own: var(--accent-overlay);
   --affordance-mention-own-hover: var(--accent-overlay-hover);
   --affordance-message-own-hover: var(--accent-overlay-quiet);
+  --affordance-message-own-highlight: var(--accent-overlay-highlight);
   --affordance-reaction-own: var(--accent-overlay-soft);
   --text-mention-own: var(--text-message-own);
   --surface-message-own: var(--accent-9);
@@ -1952,6 +2035,7 @@
   --affordance-mention-own: var(--accent-overlay);
   --affordance-mention-own-hover: var(--accent-overlay-hover);
   --affordance-message-own-hover: var(--accent-overlay-quiet);
+  --affordance-message-own-highlight: var(--accent-overlay-highlight);
   --affordance-reaction-own: var(--accent-overlay-soft);
   --text-mention-own: var(--text-message-own);
   --surface-message-own: var(--accent-9);
@@ -1991,12 +2075,16 @@
   --text-color-sidebar-selected: var(--text-sidebar-selected);
   --text-color-sidebar-hover: var(--text-sidebar-hover);
   --color-surface-sidebar-selected: var(--surface-sidebar-selected);
+  --color-surface-dock-count: var(--surface-dock-count);
+  --text-color-dock-count: var(--text-dock-count);
   --color-affordance-sidebar-hover: var(--affordance-sidebar-hover);
   --text-color-message-own: var(--text-message-own);
   --text-color-message-link-own: var(--text-message-link-own);
   --text-color-mention: var(--text-mention);
   --text-color-mention-own: var(--text-mention-own);
   --text-color-mention-self: var(--text-mention-self);
+  --text-color-reaction-self: var(--text-reaction-self);
+  --text-color-reaction-self-own: var(--text-reaction-self-own);
   --text-color-navigation: var(--text-navigation);
   --text-color-navigation-unread: var(--text-navigation-unread);
   --color-affordance-link-hover: var(--affordance-link-hover);
@@ -2013,6 +2101,10 @@
   --text-color-subtle: var(--text-subtle);
   --text-color-metadata: var(--text-metadata);
   --text-color-inverse: var(--text-inverse);
+  --text-color-on-status: var(--text-on-status);
+  --text-color-on-status-success: var(--text-on-status-success);
+  --color-surface-status-success: var(--surface-status-success);
+  --color-surface-status-danger: var(--surface-status-danger);
   --text-color-unavailable: var(--text-unavailable);
   --text-color-danger: var(--text-danger);
   --text-color-call-leave: var(--text-call-leave);
@@ -2032,6 +2124,7 @@
   --text-color-on-selection: var(--text-on-selection);
   --color-surface-text-selection-own: var(--surface-text-selection-own);
   --text-color-on-selection-own: var(--text-on-selection-own);
+  --text-color-on-find-match: var(--text-on-find-match);
   --color-affordance-prominent: var(--affordance-prominent);
   --color-affordance-prominent-hover: var(--affordance-prominent-hover);
   --color-affordance-prominent-pressed: var(--affordance-prominent-pressed);

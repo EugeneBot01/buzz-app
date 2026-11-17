@@ -405,7 +405,7 @@ it.each(["reject", "commit"] as const)(
       const input = screen.getByRole<ComposerInputElement>("textbox", {
         name: "Reply to thread",
       });
-      fireEvent.keyDown(input, { key: "ArrowUp" });
+      fireEvent.keyDown(input, { key: "ArrowUp", metaKey: true });
       act(() => {
         input.value = "Keep my revision";
         input.setSelectionRange(16, 16);
@@ -447,7 +447,9 @@ it.each(["reject", "commit"] as const)(
         expect(publish.mock.calls[1]?.[0]).toEqual(publish.mock.calls[0]?.[0]);
       } else {
         expect(await result).toBeUndefined();
-        expect(input).toHaveAccessibleName("Reply to thread");
+        await waitFor(() =>
+          expect(input).toHaveAccessibleName("Reply to thread"),
+        );
         expect(outbox.snapshot()).toHaveLength(0);
         expect(publish).toHaveBeenCalledTimes(1);
       }
@@ -521,7 +523,7 @@ it.each(["thread", "exact"])(
       const input = screen.getByRole<ComposerInputElement>("textbox", {
         name: "Reply to thread",
       });
-      fireEvent.keyDown(input, { key: "ArrowUp" });
+      fireEvent.keyDown(input, { key: "ArrowUp", metaKey: true });
       expect(input).toHaveValue(edit.content);
       const content = `New caption\n\n![image](${url})`;
       act(() => {

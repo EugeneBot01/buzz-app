@@ -2,7 +2,11 @@ import {
   fullSession,
   type ComposerSession,
 } from "../../features/messages/composer-session";
-import { allowsOutsideMentions } from "../../features/messages/mention-admission";
+import {
+  allowsOutsideMentions,
+  mentionChannel,
+  outsideMentionReferences,
+} from "../../features/messages/mention-admission";
 import type { MentionRecipient } from "../../features/messages/mention-draft";
 import type { MentionRoster } from "../../features/messages/draft-mention-roster";
 import type { Agent } from "../../features/agents/service";
@@ -11,6 +15,11 @@ import { continuingNames } from "./mention-ranking";
 import { namedCandidates, spaceMention } from "./use-mention-choices";
 import { teamBlocksSpace } from "./use-team-mentions";
 import { MENTION_RESOLVE_TIMEOUT_MS } from "../../features/conversation/completion";
+import { searchable } from "../../shared/search-debounce";
+import {
+  PROFILE_CACHE_BASE,
+  profileRosterRoom,
+} from "../../features/relay/budget";
 import {
   fetchMentionDirectoryPage,
   type MentionDirectoryPage,
@@ -23,6 +32,8 @@ export type SpaceMentionScope = {
   roster?: MentionRoster | undefined;
   /** Recipients already in the draft take part in naming. */
   selected: readonly MentionRecipient[];
+  /** Current saved names, also read after asynchronous directory resolution. */
+  teamNames?: (() => readonly string[]) | undefined;
   /** The owner's agents in their other communities, as the chooser offers them. */
   elsewhere?: readonly Pick<Agent, "pubkey" | "name" | "relay">[] | undefined;
 };
@@ -86,6 +97,7 @@ async function resolve(
     roster: draft,
     selected,
     elsewhere,
+    teamNames,
   }: SpaceMentionScope,
   name: string,
   signal: AbortSignal,
@@ -103,15 +115,19 @@ async function resolve(
       signal,
     );
   }
-  const channel = session.channels
-    .list()
-    .channels.find((c) => c.id === channelId);
+  const channel = mentionChannel(session, channelId);
   const members = roster?.map((p) => p.pubkey) ?? channel?.members ?? [];
   // A member a completed read finds no profile for is known unnamed; a failed
   // read leaves its name missing, which only keeps the local step off.
   if (!roster && members.length)
     await session.profiles
-      .ensure(members.slice(0, 1024), "background")
+      .ensure(
+        members.slice(
+          0,
+          profileRosterRoom(session.profiles.limit?.() ?? PROFILE_CACHE_BASE),
+        ),
+        "background",
+      )
       .catch(() => {});
   if (invite) {
     const release = session.agentChoices.retain();
@@ -128,7 +144,8 @@ async function resolve(
     }
   }
   const kit = fullSession(session)?.channelKit;
-  if (kit && teamBlocksSpace(kit.snapshot(), name)) return null;
+  if (teamBlocksSpace(kit?.snapshot() ?? { entries: [] }, name, teamNames?.()))
+    return null;
   const local = new Set(
     mentionCandidates(
       session,
@@ -149,7 +166,10 @@ async function resolve(
     complete: boolean,
     query: string,
   ): SpaceMentionResolution => {
-    if (kit && teamBlocksSpace(kit.snapshot(), query)) return null;
+    if (
+      teamBlocksSpace(kit?.snapshot() ?? { entries: [] }, query, teamNames?.())
+    )
+      return null;
     const choices = namedCandidates(
       session,
       channelId,
@@ -166,11 +186,16 @@ async function resolve(
     });
     const choice = choices.find((c) => c.recipient.pubkey === pubkey);
     if (choice) {
-      // Nobody can be added to a DM, and the chooser row that says "Will not
-      // be notified" was never shown: a chip must not promise a notification.
+      // A DM adds nobody and a Solo chat only the viewer's agents, and the
+      // chooser row that says "Will not be notified" was never shown: a chip
+      // must not promise a notification.
       if (
-        channel?.channelType === "dm" &&
-        !members.includes(choice.recipient.pubkey)
+        !members.includes(choice.recipient.pubkey) &&
+        outsideMentionReferences(
+          channel,
+          session.agentChoices.snapshot().identities,
+          choice.recipient.pubkey,
+        )
       )
         return null;
       return choice.recipient;
@@ -193,13 +218,15 @@ async function resolve(
   // directory, as it does in the chooser.
   const direct = decide([], false, name);
   if (direct) return direct;
+  // Where outside people only become references, the directory still names
+  // namesakes of members, as the chooser shows them.
   const outside =
-    !roster &&
-    !invite &&
-    allowsOutsideMentions(channel) &&
+    allowsOutsideMentions(channel, roster, inviteAgents) &&
     !channel?.archived &&
     !channel?.readOnly;
   if (!outside) return decide([], true, name);
+  // Like the chooser, text too short to search leaves the directory unread.
+  if (!searchable(name)) return null;
   const page = await fetchMentionDirectoryPage(session, name, signal);
   // A truncated page may hide a namesake, as it does for Space in the chooser.
   if (signal.aborted || page.more) return null;

@@ -4,6 +4,7 @@ import { retryRead } from "../relay/read-retry";
 import type { RelayWriter } from "../relay/transport";
 import { newer, type RelayEvent } from "../relay/events";
 import { attestedOwner } from "../agents/owner-attestation";
+import { foldProfiles } from "../relay/profiles";
 import { PublishRejected } from "../relay/outbox";
 import { lifecycleChannelId } from "../relay/channel-lifecycle-protocol";
 import {
@@ -12,9 +13,11 @@ import {
   memberAdministrationTemplate,
   memberAuthority,
   memberChangeConfirmed,
+  transferRefusal,
   validateMemberAdministrationTemplate,
   type MemberAuthority,
   type MemberChange,
+  type MemberRole,
 } from "./administration-protocol";
 
 export type MemberAdministrationState = Readonly<{
@@ -134,7 +137,7 @@ export function createMemberAdministration({
           const unresolved = operation?.status === "uncertain";
           const confirmed =
             unresolved &&
-            memberChangeConfirmed(result.authority, operation.change);
+            memberChangeConfirmed(result.authority, viewer, operation.change);
           acceptDiscovery(result.events);
           signal.throwIfAborted();
           if (!current()) return;
@@ -194,6 +197,31 @@ export function createMemberAdministration({
         });
         try {
           let owner: string | undefined;
+          let agent: boolean | undefined;
+          // Verify provenance once per attempt, never from display/inventory hints.
+          // Every preflight reads fresh membership; the relay owns the final ACL.
+          const profile = async () => {
+            const profiles = await reader.read(
+              [
+                {
+                  kinds: [0],
+                  authors: [change.pubkey],
+                  limit: 1,
+                  consistency: "strong",
+                },
+              ],
+              { signal, fresh: true, priority: "foreground" },
+            );
+            signal.throwIfAborted();
+            assertAccess(id);
+            if (
+              profiles.some(
+                (event) => event.kind !== 0 || event.pubkey !== change.pubkey,
+              )
+            )
+              throw new Error("Unexpected profile response");
+            return profiles.reduce<RelayEvent | undefined>(newer, undefined);
+          };
           const authorize = async () => {
             const { authority } = await read(id, signal);
             if (
@@ -202,39 +230,22 @@ export function createMemberAdministration({
               !canRemoveMember(authority, viewer, change.pubkey) &&
               canRemoveMember(authority, viewer, change.pubkey, viewer)
             ) {
-              // Verify provenance once per attempt, never from display/inventory hints.
-              // Both preflights read fresh membership; the relay owns the final ACL.
-              const profiles = await reader.read(
-                [
-                  {
-                    kinds: [0],
-                    authors: [change.pubkey],
-                    limit: 1,
-                    consistency: "strong",
-                  },
-                ],
-                { signal, fresh: true, priority: "foreground" },
-              );
-              signal.throwIfAborted();
-              assertAccess(id);
-              if (
-                profiles.some(
-                  (event) => event.kind !== 0 || event.pubkey !== change.pubkey,
-                )
-              )
-                throw new Error("Unexpected agent ownership response");
-              const profile = profiles.reduce<RelayEvent | undefined>(
-                newer,
-                undefined,
-              );
-              if (profile) owner = await attestedOwner(profile);
+              const event = await profile();
+              if (event) owner = await attestedOwner(event);
               signal.throwIfAborted();
               assertAccess(id);
             }
-            authorizeMemberChange(authority, viewer, change, owner);
+            if (change.role === "owner" && agent === undefined) {
+              // Without a profile, nothing shows the heir isn't an agent.
+              const event = await profile();
+              agent =
+                !event || !!foldProfiles([event]).get(change.pubkey)?.isAgent;
+              if (agent) throw new Error(transferRefusal);
+            }
+            authorizeMemberChange(authority, viewer, change, owner, agent);
           };
           await authorize();
-          const template = memberAdministrationTemplate(id, change);
+          const template = memberAdministrationTemplate(id, viewer, change);
           validateMemberAdministrationTemplate(template, viewer);
           const signed = await writer.sign(structuredClone(template), signal);
           signal.throwIfAborted();
@@ -257,7 +268,7 @@ export function createMemberAdministration({
           // Acceptance is not proof; delayed side effects use explicit readback,
           // not a privileged outbox or an automatic retry loop.
           const result = await read(id, signal);
-          if (!memberChangeConfirmed(result.authority, change))
+          if (!memberChangeConfirmed(result.authority, viewer, change))
             throw new Error(uncertain);
           acceptDiscovery(result.events);
           signal.throwIfAborted();
@@ -328,4 +339,55 @@ export function createMemberAdministration({
       listeners.clear();
     },
   };
+}
+
+type MemberAdministration = ReturnType<
+  typeof createMemberAdministration
+>["capability"];
+
+/** A member change's outcome. `uncertain`: published, but readback could not
+ * confirm it; it is not sent again. */
+export type MemberResult = Readonly<{
+  status: "confirmed" | "failed" | "uncertain";
+  error?: string;
+}>;
+
+/** One member change through `admin`, decided from a fresh roster read:
+ * `decide` gets the key's verified role and returns the change, or nothing
+ * when the roster already shows the result. `unavailable` is the error when
+ * the roster can't be read and says no more. */
+export async function administerMember(
+  admin: Pick<MemberAdministration, "refresh" | "snapshot" | "run">,
+  channel: string,
+  pubkey: string,
+  decide: (
+    role: MemberRole | undefined,
+  ) => Omit<MemberChange, "pubkey"> | undefined,
+  unavailable = "Roles unavailable",
+): Promise<MemberResult> {
+  await admin.refresh(channel);
+  const read = admin.snapshot(channel);
+  if (read.status !== "ready")
+    return { status: "failed", error: read.error ?? unavailable };
+  const intent = decide(read.authority.roles[pubkey]);
+  if (!intent) return { status: "confirmed" };
+  const change = { pubkey, ...intent };
+  try {
+    await admin.run(channel, change);
+  } catch (error) {
+    return {
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const { operation, error } = admin.snapshot(channel);
+  if (
+    operation?.change.pubkey !== pubkey ||
+    operation.change.role !== change.role ||
+    operation.status === "pending"
+  )
+    return { status: "uncertain" };
+  return operation.status === "confirmed"
+    ? { status: "confirmed" }
+    : { status: operation.status, ...(error ? { error } : {}) };
 }

@@ -1,8 +1,14 @@
+import { eventDto } from "../../src/features/relay/events";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { bytesToHex } from "nostr-tools/utils";
 // Real ChannelsPage, thread reader, shared directory, panel registry and plugin lifecycle.
 // Only the transport is synthetic. No dev broker, saved identity or live relay.
-import { StrictMode, useLayoutEffect, useState } from "react";
+import {
+  StrictMode,
+  useLayoutEffect,
+  useState,
+  type ComponentType,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { Context } from "@deepseek-ai/cordis";
 import { createPluginManager } from "../../src/plugins/manager";
@@ -13,6 +19,7 @@ import {
   type PanelProps,
 } from "../../src/features/panels/service";
 import { PagesService } from "../../src/features/pages/service";
+import { ConversationService } from "../../src/features/conversation/service";
 import { ChannelWorkspaceFixture } from "./channel-workspace";
 import { createRelaySession } from "../../src/features/relay/session";
 import { localAgentsFixture } from "../../src/features/agents/local-testing";
@@ -31,7 +38,11 @@ import {
   signed,
   summary,
 } from "../../src/features/relay/testing";
-import { profileTarget } from "../../src/features/profiles/target";
+import {
+  profileTarget,
+  profilePanelKey,
+  profileActivityViewKey,
+} from "../../src/features/profiles/target";
 import { ToastProvider } from "../../src/shared/design-system/ui/Toast";
 import "../../src/shared/styles/globals.css";
 import { createAppearance } from "../../src/shared/theme/service";
@@ -93,7 +104,12 @@ let releaseReply = () => {};
 let replyPending = false;
 let data = [
   profile(viewer, { name: "Viewer", about: "Human profile", picture }),
-  profile(mic, { name: "Mic", about: "Mic biography" }),
+  profile(mic, {
+    name: new URLSearchParams(location.search).has("name-collision")
+      ? "Viewer "
+      : "Mic",
+    about: "Mic biography",
+  }),
   signed(pinky, {
     kind: 0,
     content: JSON.stringify({
@@ -146,10 +162,47 @@ function session() {
             },
           }
         : {}),
+      ...(new URLSearchParams(location.search).has("verified-name")
+        ? {
+            verifiedProfiles: {
+              pubkey: authority.pubkey,
+              multipleIssuers: false,
+            },
+            readVerifiedProfileAuthority: async () => null,
+          }
+        : {}),
       relayAuthor: authority.pubkey,
       subscribe(callbacks) {
         callbacks.state({ status: "connected", routes: [] });
-        return { update() {}, retry() {}, dispose() {} };
+        return {
+          update() {},
+          retry() {},
+          dispose() {},
+          syncVerifiedProfiles(_filter, sink) {
+            sink.event(
+              eventDto(
+                signed(authority, {
+                  kind: 30382,
+                  content: "",
+                  tags: [
+                    ["d", viewer.pubkey],
+                    ["p", viewer.pubkey],
+                    ["active", "true"],
+                    ["display_name", "Viewer"],
+                    ["username", "viewer"],
+                    ["issuer_label", "Example"],
+                    ["verified_at", "1000000"],
+                    ...(new URLSearchParams(location.search).has("no-full-name")
+                      ? []
+                      : [["full_name", "Viewer Example"]]),
+                  ],
+                }),
+              ),
+            );
+            sink.eose();
+            return () => {};
+          },
+        };
       },
       media: (url, size) => {
         report.media.push([url, size]);
@@ -360,14 +413,72 @@ const manager = createPluginManager(context, {
           },
         },
       ]
-    : bundledPlugins.filter(({ manifest }) => manifest.id === "buzz.profiles"),
+    : [
+        ...bundledPlugins.filter(
+          ({ manifest }) => manifest.id === "buzz.profiles",
+        ),
+        ...(new URLSearchParams(location.search).has("specialized-profile")
+          ? [
+              {
+                manifest: {
+                  id: "example.profiles",
+                  name: "Specialized profiles",
+                  apiVersion: 1,
+                },
+                module: {
+                  inject: ["panels"],
+                  apply(ctx) {
+                    ctx.panels.register({
+                      id: "enriched",
+                      title: "Profile",
+                      order: -10,
+                      matches: (target) =>
+                        !!profilePanelKey(target) ||
+                        !!profileActivityViewKey(target),
+                      component: Object.assign(
+                        (props: PanelProps) => {
+                          const Native = ctx.panels
+                            .snapshot()
+                            .find(
+                              (panel) => panel.key === "buzz.profiles/profile",
+                            )?.component as
+                            | ComponentType<
+                                PanelProps &
+                                  import("../../src/bundled/profiles/ProfilePanel").PersonProfileInfoContent
+                              >
+                            | undefined;
+                          return Native ? (
+                            <Native
+                              {...props}
+                              renderPersonInfo={(content) => (
+                                <>
+                                  <button type="button">
+                                    Extra profile action
+                                  </button>
+                                  {content}
+                                </>
+                              )}
+                            />
+                          ) : null;
+                        },
+                        { profileHistory: true },
+                      ),
+                    });
+                  },
+                },
+              },
+            ]
+          : []),
+      ],
 });
 const panels = new PanelsService(context);
 // Profiles reads Agents to choose agent tabs; this fixture has no agents.
 new AgentsService(context, relay, undefined);
 const pages = new PagesService(context);
+new ConversationService(context);
 Object.assign(window, {
   profilesFixture: {
+    panels,
     report,
     messages: { root: root.id, reply: reply.id },
     holdReply() {

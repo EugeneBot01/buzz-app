@@ -5,8 +5,22 @@ export function isChannelSectionKey(key: string) {
   return key === "channels" || key.startsWith("group:");
 }
 
-export function isChannelDropSectionKey(key: string) {
-  return key === "starred" || isChannelSectionKey(key);
+export type SidebarRowKind = "channel" | "dm";
+
+const anyRow: readonly SidebarRowKind[] = ["channel", "dm"];
+const channelRows: readonly SidebarRowKind[] = ["channel"];
+const dmRows: readonly SidebarRowKind[] = ["dm"];
+const noRows: readonly SidebarRowKind[] = [];
+
+/**
+ * Rows a pointer drop may place in a section. Starred and saved groups take
+ * channels and DMs; Channels and Direct messages each take back only their own.
+ */
+export function sidebarDropRowKinds(key: string) {
+  if (key === "starred" || key.startsWith("group:")) return anyRow;
+  if (key === "channels") return channelRows;
+  if (key === "dms") return dmRows;
+  return noRows;
 }
 
 export function contributedSidebarSectionKey(key: string) {
@@ -27,6 +41,30 @@ export function orderContributedSidebarSections<T extends { key: string }>(
         a.index - b.index,
     )
     .map(({ section }) => section);
+}
+
+function compareName(a: ChannelSummary, b: ChannelSummary) {
+  return a.name.toLowerCase() < b.name.toLowerCase()
+    ? -1
+    : a.name.toLowerCase() > b.name.toLowerCase()
+      ? 1
+      : a.id.localeCompare(b.id);
+}
+
+/** The sidebar's "recent" order: newest activity first, channels without known
+ * activity after, then by name. */
+export function compareRecent(a: ChannelSummary, b: ChannelSummary) {
+  if (
+    a.lastActivityAt !== undefined &&
+    b.lastActivityAt !== undefined &&
+    a.lastActivityAt !== b.lastActivityAt
+  )
+    return b.lastActivityAt - a.lastActivityAt;
+  if (a.lastActivityAt !== undefined && b.lastActivityAt === undefined)
+    return -1;
+  if (a.lastActivityAt === undefined && b.lastActivityAt !== undefined)
+    return 1;
+  return compareName(a, b);
 }
 
 /** Preferences only arrange the supplied authorized roster; they never add channels. */
@@ -51,28 +89,10 @@ export function sidebarSections<T extends ChannelSummary>(
   const groups = preferences?.sections ?? [];
   const ids = new Set(groups.map((group) => group.id));
   const assignment = (id: string) => preferences?.assignments[id];
-  const compareName = (a: ChannelSummary, b: ChannelSummary) =>
-    a.name.toLowerCase() < b.name.toLowerCase()
-      ? -1
-      : a.name.toLowerCase() > b.name.toLowerCase()
-        ? 1
-        : a.id.localeCompare(b.id);
   const sort = (rows: readonly ChannelSummary[], key: string) =>
-    [...rows].sort((a, b) => {
-      if (preferences?.sort?.[key] === "recent") {
-        if (
-          a.lastActivityAt !== undefined &&
-          b.lastActivityAt !== undefined &&
-          a.lastActivityAt !== b.lastActivityAt
-        )
-          return b.lastActivityAt - a.lastActivityAt;
-        if (a.lastActivityAt !== undefined && b.lastActivityAt === undefined)
-          return -1;
-        if (a.lastActivityAt === undefined && b.lastActivityAt !== undefined)
-          return 1;
-      }
-      return compareName(a, b);
-    });
+    [...rows].sort(
+      preferences?.sort?.[key] === "recent" ? compareRecent : compareName,
+    );
   return [
     {
       key: "starred",

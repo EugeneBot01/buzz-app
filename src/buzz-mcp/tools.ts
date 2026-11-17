@@ -1,8 +1,10 @@
+import { messageAuthor } from "../features/relay/fold";
 // The Buzz tools: what an agent does in Buzz, in the wire formats the `buzz`
 // CLI writes. Names, arguments and descriptions are kept short because every
 // session pays for them in context. Each tool answers in plain text.
 import { decode, npubEncode } from "nostr-tools/nip19";
 import buzzHelp from "../../docs/buzz-help.md?raw";
+import { CANVAS_HISTORY_PAGE } from "../features/channel-templates/canvas-limits";
 import {
   canonicalDetailsName,
   detailsDraftErrors,
@@ -22,13 +24,26 @@ import {
 import {
   communityEmoji,
   contentEmojiTags,
+  CUSTOM_REACTION,
   EMOJI_SET,
   EMOJI_SET_KIND,
   referencedEmoji,
 } from "../features/relay/emoji";
 import { newer } from "../features/relay/events";
+import {
+  VERIFIED_PROFILE_BATCH,
+  type VerifiedProfile,
+  verifiedProfile,
+  verifiedProfileFilter,
+  verifiedProfileSubject,
+} from "../features/relay/verified-profile";
+import { imageType } from "../features/relay/attachment-limits";
+import { LIVE_CANVAS_BYTES } from "../features/channel-templates/model";
 import { threadReference } from "../features/relay/thread-reference";
+import { parseBuzzLink } from "../features/navigation/buzz-links";
 import { soloChannelMetadata } from "../features/relay/discovery";
+import { channelLabelTags } from "../features/relay/channel-labels";
+import { SOLO_LABEL, SOLO_NAMED_LABEL } from "../features/solo/labels";
 import type { RelayEvent } from "../features/relay/events";
 import { attestedOwner } from "../features/agents/owner-attestation";
 import type {
@@ -51,6 +66,11 @@ const audience = {
   description:
     "agents: only other agents need this (delegating, asking or answering an agent)",
 } as const;
+const request = {
+  type: "string",
+  description:
+    "Id of the message that started this turn, which this post answers or works on, even when the reply targets an earlier thread root.",
+} as const;
 const final = {
   type: "boolean",
   description: "Your last message this turn; ends the turn.",
@@ -72,6 +92,7 @@ const tool = (
   description: string,
   properties: Readonly<Record<string, object>>,
   required: readonly string[] = [],
+  annotations?: Readonly<{ readOnlyHint: boolean; destructiveHint?: boolean }>,
 ) => ({
   name,
   description,
@@ -81,6 +102,7 @@ const tool = (
     ...(required.length ? { required } : {}),
     additionalProperties: false,
   },
+  ...(annotations ? { annotations } : {}),
 });
 
 export type Tool = ReturnType<typeof tool>;
@@ -92,6 +114,11 @@ export async function captureToolBody(
   name: string,
   args: Record<string, unknown>,
 ) {
+  if (
+    (name === "agent_create" || name === "agent_update") &&
+    text(args.picture)
+  )
+    throw new Error("Protected picture uploads are not supported.");
   const message = name === "send" || name === "reply_in_subthread";
   if (
     !message &&
@@ -125,19 +152,35 @@ export const TOOLS: readonly Tool[] = [
   ),
   tool(
     "agent_create",
-    "Submit an unsaved agent-creation draft for your owner to review. Nothing is created until they save it. Use a type key from agent_types.",
-    { type: str, name: str },
+    "Submit an unsaved agent-creation draft for your owner to review. Nothing is created until they save it. Use a type key from agent_types; instructions are optional; picture is a local image file for its avatar.",
+    { type: str, name: str, instructions: str, picture: str },
     ["type", "name"],
   ),
   tool(
     "agent_update",
-    "Submit an unsaved draft of changes to one of your owner's agents for them to review. agent is its pubkey or exact name; type is a key from agent_types. Nothing changes until they save it.",
-    { agent: str, name: str, type: str, instructions: str },
+    "Submit an unsaved draft of changes to one of your owner's agents, yourself included, for them to review. agent is its pubkey or exact name; type is a key from agent_types; picture is a local image file for its avatar. Nothing changes until they save it.",
+    { agent: str, name: str, type: str, instructions: str, picture: str },
     ["agent"],
   ),
   tool(
+    "agent_read",
+    "Read one of your owner's agents here, yourself included: name, type, instructions, whether they sync and their current revision; a hosted agent or one on another device says its config is unavailable when it can't be read here. agent is its pubkey or exact name; without it, lists them all.",
+    { agent: str },
+  ),
+  tool(
+    "team_read",
+    "Read one of your owner's teams here: name, instructions, members, whether it syncs and its current revision. team is its id or exact name; without it, lists them all.",
+    { team: str },
+  ),
+  tool(
+    "team_update",
+    "Submit an unsaved draft of a new name or instructions for one of your owner's teams, for them to review. team is its id or exact name. Members never change this way. Nothing changes until they save it.",
+    { team: str, name: str, instructions: str },
+    ["team"],
+  ),
+  tool(
     "send",
-    "Post a message. Without channel, replies in the current thread. A reply goes in its message's thread.",
+    "Post a message. Without channel, replies in the current thread. A reply goes in its message's thread. To wake yourself in another conversation, use self_handoff; self-mentions are refused.",
     {
       text: str,
       path: str,
@@ -146,13 +189,14 @@ export const TOOLS: readonly Tool[] = [
       files: strs,
       mentions: strs,
       audience,
+      request,
       final,
     },
     ["audience"],
   ),
   tool(
     "reply_in_subthread",
-    "Reply under a specific message, nested in a subthread below it rather than in the main thread. Use when asked to reply in a subthread, or to keep a side discussion under the message it is about. Takes send's text, path, files, mentions, audience and final; the channel is the parent's.",
+    "Reply under a specific message, nested in a subthread below it rather than in the main thread. Use when asked to reply in a subthread, or to keep a side discussion under the message it is about. Takes send's text, path, files, mentions, audience, request and final; the channel is the parent's.",
     {
       parent: { ...str, description: "Id of the message to reply under" },
       text: str,
@@ -160,17 +204,25 @@ export const TOOLS: readonly Tool[] = [
       files: strs,
       mentions: strs,
       audience,
+      request,
       final,
     },
     ["parent", "audience"],
   ),
   tool(
     "self_handoff",
-    "Hand off to yourself in another of your conversations, waking that session with text. thread: any of its messages, outside a Solo chat.",
+    "Queue work for yourself in another conversation. Use this instead of sending yourself a mention. The receipt confirms queue admission, not execution or completion. thread: any of its messages, outside a Solo chat.",
     { channel: str, thread: str, text: str },
     ["channel", "text"],
   ),
   tool("edit", "Edit your message.", { id: str, text: str }, ["id", "text"]),
+  tool(
+    "delete",
+    "Delete one of your own messages: only the message with this id, never another author's.",
+    { id: str },
+    ["id"],
+    { readOnlyHint: false, destructiveHint: true },
+  ),
   tool(
     "react",
     "React to a message.",
@@ -183,6 +235,10 @@ export const TOOLS: readonly Tool[] = [
     {
       channel: str,
       thread: str,
+      message_url: {
+        type: "string",
+        description: "Buzz message link; replaces channel and thread.",
+      },
       q: str,
       author: {
         type: "string",
@@ -204,6 +260,34 @@ export const TOOLS: readonly Tool[] = [
     },
   ),
   tool(
+    "search",
+    'Search messages you can read, best match first. The query q matches whole words only, not other forms of a word, and supports "exact phrase", -word and a or b. Without q, the newest messages matching the other fields. Each result has a link to cite it or open it with read.',
+    {
+      q: str,
+      from: { type: "string", description: "me, a name, npub or hex pubkey." },
+      in: {
+        type: "string",
+        description:
+          "A channel's name or ID, @name for your DM with someone, or a Buzz link.",
+      },
+      after: {
+        type: "string",
+        description:
+          "Only messages at or after this time: a date YYYY-MM-DD (from its start, UTC), a UTC time YYYY-MM-DDTHH:MM:SSZ, or a time back from now: 7d, 2w, 3m, 1y.",
+      },
+      before: {
+        type: "string",
+        description:
+          "Only messages before this time, not at it: a date YYYY-MM-DD (from its start, UTC, so that day is left out), a UTC time YYYY-MM-DDTHH:MM:SSZ, or a time back from now: 7d, 2w, 3m, 1y.",
+      },
+      sort: { type: "string", enum: ["relevance", "newest"] },
+      limit: { type: "integer", description: "Default 30, max 100." },
+      page: { type: "integer", description: "From a continue line." },
+    },
+    [],
+    { readOnlyHint: true },
+  ),
+  tool(
     "channel_list",
     "Channels you are in; with all, every one you can see. System channels are listed only when types has system.",
     {
@@ -221,8 +305,13 @@ export const TOOLS: readonly Tool[] = [
     channel: str,
   }),
   tool(
+    "solo_workspace_list",
+    "List your owner's personal Solo workspace IDs and names on this local host.",
+    {},
+  ),
+  tool(
     "channel_create",
-    "Create a channel. template: one of your owner's, by name.",
+    "Create a channel. template: one of your owner's, by name. solo: a private Solo chat, with members added in the create.",
     {
       name: str,
       visibility: { type: "string", enum: ["open", "private"] },
@@ -236,6 +325,13 @@ export const TOOLS: readonly Tool[] = [
       ttl,
       join_role: joinRole,
       template: str,
+      solo: { type: "boolean" },
+      members: { ...strs, description: "Solo only: pubkeys or npubs." },
+      workspace: {
+        ...str,
+        description:
+          "Solo only, local host: exact ID from solo_workspace_list. Include your owner in members. Placement only; no workspace defaults.",
+      },
     },
     ["name", "visibility"],
   ),
@@ -312,11 +408,36 @@ export const TOOLS: readonly Tool[] = [
   ),
   tool("notes_rm", "Delete your note.", { name: str }, ["name"]),
   tool("canvas_get", "Read a channel's canvas.", { channel: str }),
-  tool("canvas_set", "Replace a channel's canvas.", {
-    channel: str,
-    content: str,
-    path: str,
-  }),
+  tool(
+    "canvas_set",
+    `Replace a channel's canvas (at most ${LIVE_CANVAS_BYTES / 1024} KiB).`,
+    {
+      channel: str,
+      content: str,
+      path: str,
+    },
+  ),
+  tool(
+    "canvas_history",
+    "A channel's canvas revisions, newest first: each one's id, time, author, size and first line. The first page starts with the canvas's version.",
+    {
+      channel: str,
+      before: { type: "integer", description: "Unix seconds, at or before." },
+      before_id: {
+        type: "string",
+        description: "For paginating: with before, from a continue line.",
+      },
+    },
+    [],
+    { readOnlyHint: true },
+  ),
+  tool(
+    "canvas_restore",
+    "Republish an earlier canvas revision as the newest one; history is kept. Pass the version from the first page of your latest canvas_history as expected.",
+    { id: str, channel: str, expected: str },
+    ["id", "expected"],
+    { readOnlyHint: false, destructiveHint: true },
+  ),
   tool(
     "media_get",
     "Get a file of any type from a Buzz media URL: saves it locally and gives its path; an image is also shown.",
@@ -350,6 +471,8 @@ const SEARCH = [9, 40002, 45001, 45003];
 const HEX = /^[0-9a-f]{64}$/;
 /** A NIP-23 long-form note, as `buzz notes` writes it. */
 const NOTE = 30023;
+/** A channel ID, as Buzz links accept it. */
+const CHANNEL_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,255}$/;
 /** A repository name the community accepts. */
 const REPO = /^[a-zA-Z0-9_-][a-zA-Z0-9._-]{0,63}$/;
 /** Pages of a channel's repository announcements read before giving up. */
@@ -412,7 +535,16 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const type = text(args.type)?.trim();
     const name = text(args.name)?.trim();
     if (!type || !name) throw new Error("type and name are required");
-    return JSON.stringify(await client.createAgent({ type, name }));
+    const instructions = text(args.instructions);
+    const picture = proposedPicture(client, args.picture);
+    return JSON.stringify(
+      await client.createAgent({
+        type,
+        name,
+        ...(instructions && { instructions }),
+        ...(picture && { picture }),
+      }),
+    );
   },
   async self_handoff(tools, args) {
     const { client, context } = tools;
@@ -450,7 +582,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
         ...(fromRoot && { root: fromRoot }),
       },
     });
-    return root ? `Handed off to thread ${root}.` : `Handed off to ${channel}.`;
+    return `Queued self-handoff to ${channel}${root ? `, thread ${root}` : ""}. No message was posted. Execution has not been confirmed.`;
   },
   async agent_update({ client }, args) {
     if (!client.updateAgent)
@@ -461,17 +593,46 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const type = text(args.type);
     // Empty instructions propose clearing them.
     const { instructions } = args;
+    const picture = proposedPicture(client, args.picture);
     return JSON.stringify(
       await client.updateAgent({
         agent,
         ...(name && { name }),
         ...(type && { type }),
         ...(typeof instructions === "string" && { instructions }),
+        ...(picture && { picture }),
+      }),
+    );
+  },
+  async agent_read({ client }, args) {
+    if (!client.readAgents)
+      throw new Error("Agent reads are unavailable on this host");
+    return JSON.stringify(await client.readAgents(text(args.agent)));
+  },
+  async team_read({ client }, args) {
+    if (!client.readTeams)
+      throw new Error("Team reads are unavailable on this host");
+    return JSON.stringify(await client.readTeams(text(args.team)));
+  },
+  async team_update({ client }, args) {
+    if (!client.updateTeam)
+      throw new Error("Team changes are unavailable on this host");
+    const team = text(args.team);
+    if (!team) throw new Error("team is required");
+    const name = text(args.name);
+    // Empty instructions propose clearing them.
+    const { instructions } = args;
+    return JSON.stringify(
+      await client.updateTeam({
+        team,
+        ...(name && { name }),
+        ...(typeof instructions === "string" && { instructions }),
       }),
     );
   },
   async send(tools, args) {
     const { context } = tools;
+    args = ignoreBlankFields(args, ["channel", "reply"]);
     const reply =
       text(args.reply) ??
       (args.channel === undefined ? context.root : undefined);
@@ -487,7 +648,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       throw new Error(
         "This chat stays at the top level: send again without reply.",
       );
-    const audienceTags = audienceOf(args);
+    const audienceTags = [...audienceOf(args), ...requestOf(args)];
     const thread = reply ? await tools.threadTags(reply) : [];
     return post(tools, channel, args, thread, audienceTags);
   },
@@ -502,7 +663,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     if (!channel) throw new Error("No channel for that message.");
     if (context.topLevel && channel === context.channel)
       throw new Error("This chat stays at the top level: use send instead.");
-    const audienceTags = audienceOf(args);
+    const audienceTags = [...audienceOf(args), ...requestOf(args)];
     // As relay ingest reads it: the last valid marker, in either case.
     const root = target
       ? (threadReference(target)?.rootId ?? target.id)
@@ -527,18 +688,47 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const channel = tag(target, "h");
     if (!channel) throw new Error(`${id} is not a channel message.`);
     const content = required(args, "text");
+    if (!tools.client.effectiveEdit)
+      throw new Error("This host cannot obtain effective edit state.");
+    const effective = await tools.client.effectiveEdit(id, channel);
+    const after = (effective.created_at + 1) * 1000;
+    if (after - Date.now() > 5000)
+      throw new Error(
+        "The message was just changed; try again when the clock catches up.",
+      );
+    await waitUntil(after);
     await tools.client.publish({
       kind: 40003,
       content,
-      // An edit replaces the attachments too, so it keeps the message's.
+      // An edit replaces attachments too, including an explicitly empty set.
       tags: [
         ["h", channel],
         ["e", id],
-        ...target.tags.filter((t) => t[0] === "imeta"),
+        ...effective.tags.filter((t) => t[0] === "imeta"),
         ...(await tools.emoji(content)),
       ],
     });
     return "edited";
+  },
+
+  async delete(tools, args) {
+    const { client } = tools;
+    const id = required(args, "id");
+    const target = await tools.event(id);
+    const channel = tag(target, "h");
+    if (!channel) throw new Error(`${id} is not a channel message.`);
+    if (target.pubkey !== client.pubkey)
+      throw new Error("Only your own messages can be deleted.");
+    await client.publish({
+      kind: 5,
+      content: "",
+      tags: [
+        ["h", channel],
+        ["e", id],
+        ["k", String(target.kind)],
+      ],
+    });
+    return "deleted";
   },
 
   async react(tools, args) {
@@ -546,7 +736,28 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const id = required(args, "id");
     const emoji = required(args, "emoji");
     if (args.off !== true) {
-      await client.publish({ kind: 7, content: emoji, tags: [["e", id]] });
+      const target = await tools.event(id);
+      // A `:shortcode:` reaction renders only with its NIP-30 tag, so one
+      // outside the community palette is refused rather than published bare.
+      const isCustom = CUSTOM_REACTION.test(emoji);
+      const custom = isCustom ? await tools.emoji(emoji) : [];
+      if (isCustom && !custom.length)
+        throw new Error(`unknown custom emoji ${emoji}`);
+      await client.publish({
+        kind: 7,
+        content: emoji,
+        tags: [
+          ["e", id],
+          [
+            "p",
+            messageAuthor(
+              { ...target, tags: target.tags.map((tag) => [...tag]) },
+              client.signingAuthority,
+            ),
+          ],
+          ...custom,
+        ],
+      });
       return "reacted";
     }
     const mine = await client.query([
@@ -560,6 +771,26 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
 
   async read(tools, args) {
     const { client, context } = tools;
+    args = ignoreBlankFields(args, [
+      "channel",
+      "thread",
+      "message_url",
+      "author",
+      "before_id",
+    ]);
+    if (args.message_url !== undefined) {
+      if (args.channel !== undefined || args.thread !== undefined)
+        throw new Error(
+          "message_url cannot be combined with channel or thread.",
+        );
+      const link =
+        typeof args.message_url === "string"
+          ? parseBuzzLink(args.message_url)
+          : null;
+      if (link?.format !== "legacy" || !link.messageId)
+        throw new Error("message_url must be a Buzz message link.");
+      args = { ...args, channel: link.channelId, thread: link.messageId };
+    }
     const limit = typeof args.limit === "number" ? args.limit : undefined;
     const before = unixTime(args, "before");
     const since = unixTime(args, "since");
@@ -695,6 +926,145 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     ].join("\n");
   },
 
+  async search(tools, args) {
+    const { client } = tools;
+    args = ignoreBlankFields(args, ["q", "from", "in", "after", "before"]);
+    const q = text(args.q);
+    // 0 is what a model sends for a field it means to leave out.
+    const limit = bound(
+      typeof args.limit === "number" ? args.limit || undefined : undefined,
+      30,
+      100,
+    );
+    const page = (args.page as number) || 1;
+    if (!Number.isSafeInteger(page) || page < 1)
+      throw new Error("page must be a whole number, 1 or more.");
+    const sort = text(args.sort) ?? "relevance";
+    if (sort !== "relevance" && sort !== "newest")
+      throw new Error("sort must be relevance or newest.");
+    const since = searchTime(args, "after");
+    const before = searchTime(args, "before");
+    // `before` excludes its time; the relay's `until` includes it.
+    const until = before === undefined ? undefined : before - 1;
+    if (since !== undefined && until !== undefined && since > until)
+      throw new Error("after must be earlier than before.");
+    const from =
+      args.from === undefined
+        ? undefined
+        : await tools.author(String(args.from).trim().replace(/^@/, ""));
+    const place =
+      args.in === undefined ? undefined : await tools.place(String(args.in));
+    if (!q && !from && !place && since === undefined && until === undefined)
+      throw new Error("Give q, or from, in, after or before.");
+    const newest = !q || sort === "newest";
+    const found = await client.query([
+      {
+        kinds: q ? SEARCH : MESSAGES,
+        limit,
+        ...(q ? { search: q } : {}),
+        // Bridge extensions: a newest-first search, and a later page.
+        ...(q && newest ? { search_sort: "newest" } : {}),
+        ...(page > 1 ? { page } : {}),
+        ...(from ? { authors: [from] } : {}),
+        ...(place ? { "#h": [place.id] } : {}),
+        ...(since !== undefined ? { since } : {}),
+        ...(until !== undefined ? { until } : {}),
+      },
+    ]);
+    // Keep the relay's order: for a search, best match first.
+    const edits = found.length
+      ? await client.query([
+          { kinds: [40003], "#e": found.map((e) => e.id), limit: 500 },
+        ])
+      : [];
+    const latest = new Map(edited([...found, ...edits]).map((e) => [e.id, e]));
+    const hits = found.flatMap((event) => latest.get(event.id) ?? []);
+    // Newest first if this community supports it (it advertises
+    // `buzz-search-sort`). An older relay ignores `search_sort` and ranks by
+    // relevance; that shows here only when the page is out of date order, so
+    // one hit, or a relevance page that happens to be in date order, is still
+    // called newest first.
+    const unsorted =
+      q &&
+      newest &&
+      hits.some(
+        (event, i) =>
+          i > 0 && event.created_at > (hits[i - 1] as BuzzEvent).created_at,
+      );
+    const order = !newest
+      ? "best match first"
+      : unsorted
+        ? "best match first (this community can't sort a search by newest)"
+        : "newest first";
+    const owners = hits.flatMap((event) => tag(event, "auth") ?? []);
+    const names = await tools.names([
+      ...(from ? [from] : []),
+      ...hits.map((e) => e.pubkey),
+      ...owners,
+    ]);
+    // Always the key: anyone can take another person's display name.
+    const who = (key: string) => {
+      const name = names.get(key);
+      return name ? `${key} ${JSON.stringify(name)}` : key;
+    };
+    const asked = [
+      q && JSON.stringify(q),
+      from && `from ${who(from)}`,
+      place && `in ${place.label}`,
+      text(args.after) && `after ${text(args.after)}`,
+      text(args.before) && `before ${text(args.before)}`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const scope =
+      "Searched with your own access: channels you're in and open channels, not other people's private channels or DMs.";
+    if (!hits.length)
+      return `No messages${page > 1 ? ` on page ${page}` : ""} for ${asked}.\n${scope}`;
+    const places = await tools.places(hits.flatMap((e) => tag(e, "h") ?? []));
+    const words = q?.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+    const lines = hits.map((event, i) => {
+      const channel = tag(event, "h");
+      const thread = threadReference(event)?.rootId;
+      const owner = tag(event, "auth");
+      const link = channel
+        ? `buzz://message?${new URLSearchParams({ channel, id: event.id, ...(thread ? { thread } : {}) })}`
+        : event.id;
+      const meta = [
+        link,
+        channel && (places.get(channel) ?? channel),
+        `from ${who(event.pubkey)}`,
+        owner && `claimed owner ${who(owner)}`,
+        time(event.created_at),
+        thread && "in a thread",
+      ].filter(Boolean);
+      const body = snippet(
+        event.content.replace(/\s+/g, " ").trim(),
+        words,
+        400,
+      );
+      return `[${(page - 1) * limit + i + 1}] ${meta.join(" · ")}\n    ${body}`;
+    });
+    const more = {
+      ...(q ? { q } : {}),
+      ...(from ? { from } : {}),
+      ...(place ? { in: place.id } : {}),
+      // Resolved, so a span like 7d does not move between pages.
+      ...(since !== undefined ? { after: utc(since) } : {}),
+      ...(before !== undefined ? { before: utc(before) } : {}),
+      ...(q && newest ? { sort } : {}),
+      limit,
+      page: page + 1,
+    };
+    return [
+      `${hits.length} result${hits.length === 1 ? "" : "s"} for ${asked}, ${order}.`,
+      scope,
+      ...lines,
+      found.length >= limit
+        ? `More may match; continue with ${JSON.stringify(more)}`
+        : "No more matches.",
+    ].join("\n");
+  },
+
   async channel_list(tools, args) {
     const { client } = tools;
     const ids = new Set<string>();
@@ -745,6 +1115,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
                 tag(event, "t") === "stream" ? "" : tag(event, "t"),
                 has(event, "private") ? "private" : "",
                 has(event, "archived") ? "archived" : "",
+                has(event, "auto_join") ? "auto-join" : "",
                 ids.has(id)
                   ? ""
                   : membershipsComplete
@@ -772,6 +1143,11 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
 
   channel_get: (tools, args) => tools.details(target(tools, args)),
+  solo_workspace_list: async ({ client }) => {
+    if (!client.soloWorkspaces)
+      throw new Error("Solo workspaces are unavailable on this host");
+    return JSON.stringify(await client.soloWorkspaces.list());
+  },
   channel_create: (tools, args) => tools.create(args),
   channel_update: (tools, args) => tools.update(target(tools, args), args),
   channel_join: (tools, args) => lifecycle(tools, args, "join"),
@@ -860,22 +1236,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const { client } = tools;
     const to = list(args.to).map(pubkey);
     if (!to.length) throw new Error("to is required.");
-    const people = new Set([client.pubkey, ...to]);
-    const find = async () =>
-      (
-        await client.query([
-          { kinds: [39000], "#p": [client.pubkey], "#t": ["dm"], limit: 500 },
-        ])
-      ).find((event) => {
-        const members = new Set(
-          event.tags.filter((t) => t[0] === "p").map((t) => t[1]),
-        );
-        return (
-          members.size === people.size &&
-          [...people].every((key) => members.has(key))
-        );
-      });
-    let found = await find();
+    let found = await tools.findDm(to);
     if (!found) {
       await client.publish({
         kind: 41010,
@@ -885,7 +1246,7 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
       // The relay creates the channel's metadata just after answering.
       for (let tries = 0; !found && tries < 5; tries++) {
         if (tries) await new Promise((resolve) => setTimeout(resolve, 400));
-        found = await find();
+        found = await tools.findDm(to);
       }
     }
     const channel = found && tag(found, "d");
@@ -1172,6 +1533,10 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     const channel = text(args.channel) ?? context.channel;
     if (!channel) throw new Error("channel is required here.");
     const content = (await tools.body(args, true, "content")) as string;
+    if (new TextEncoder().encode(content).length > LIVE_CANVAS_BYTES)
+      throw new Error(
+        `The canvas is over its limit of ${LIVE_CANVAS_BYTES} bytes.`,
+      );
     const head = await canvas(tools, channel);
     // The newest canvas wins, so a write must be dated after the current one.
     const after = head ? (head.created_at + 1) * 1000 : 0;
@@ -1180,6 +1545,109 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
     await waitUntil(after);
     await client.publish({ kind: 40100, content, tags: [["h", channel]] });
     return "saved";
+  },
+
+  async canvas_history(tools, args) {
+    const channel = text(args.channel) ?? tools.context.channel;
+    if (!channel) throw new Error("channel is required here.");
+    const before = unixTime(args, "before");
+    const beforeId = args.before_id;
+    if (beforeId !== undefined && before === undefined)
+      throw new Error("before_id needs before, from the same continue line.");
+    if (
+      beforeId !== undefined &&
+      (typeof beforeId !== "string" || !HEX.test(beforeId))
+    )
+      throw new Error("before_id must be a 64-character event ID.");
+    // A page as the app's history shows it, with the relay's cursor. The
+    // first is read from the writer, so it includes a write just confirmed.
+    const rows = await tools.client.query([
+      {
+        kinds: [40100],
+        "#h": [channel],
+        limit: CANVAS_HISTORY_PAGE,
+        ...(before === undefined
+          ? { consistency: "strong" as const }
+          : { until: before }),
+        ...(beforeId ? { before_id: beforeId } : {}),
+      },
+    ]);
+    if (!rows.length) {
+      if (before === undefined && !(await tools.metadata(channel)))
+        throw unseen(channel);
+      return before === undefined ? "No canvas." : "No older revisions.";
+    }
+    const lines = rows.map((row) => {
+      const first = row.content.trim().split("\n", 1)[0] ?? "";
+      const bytes = new TextEncoder().encode(row.content).length;
+      return `${row.id} ${time(row.created_at)} ${row.pubkey} ${bytes}B ${first.slice(0, 80)}`;
+    });
+    const last = rows.at(-1);
+    if (last && rows.length >= CANVAS_HISTORY_PAGE)
+      lines.push(
+        `Older revisions may remain; continue with ${JSON.stringify({ channel, before: last.created_at, before_id: last.id })}`,
+      );
+    if (before === undefined) lines.unshift(`version: ${rows[0]?.id}`, "");
+    return lines.join("\n");
+  },
+
+  async canvas_restore(tools, args) {
+    const { client, context } = tools;
+    const id = required(args, "id");
+    if (!HEX.test(id)) throw new Error("id must be a 64-character event ID.");
+    const expected = required(args, "expected");
+    const channel = text(args.channel) ?? context.channel;
+    if (!channel) throw new Error("channel is required here.");
+    // Read from the writer, as the app does, so the guard sees the real head.
+    const head = async () =>
+      (
+        await client.query([
+          { kinds: [40100], "#h": [channel], limit: 1, consistency: "strong" },
+        ])
+      )[0];
+    const [revision] = await client.query([{ ids: [id], limit: 1 }]);
+    if (
+      revision?.kind !== 40100 ||
+      !revision.tags.some((t) => t[0] === "h" && t[1] === channel)
+    )
+      throw new Error(
+        `No canvas revision ${id} in ${channel}; canvas_history lists them.`,
+      );
+    if (new TextEncoder().encode(revision.content).length > LIVE_CANVAS_BYTES)
+      throw new Error(
+        `Revision ${id} is over the canvas limit of ${LIVE_CANVAS_BYTES} bytes, so it cannot be restored.`,
+      );
+    const current = await head();
+    // Guard the version the agent saw, never one that replaced it since.
+    if (current?.id !== expected)
+      throw new Error(
+        `The canvas changed since version ${expected}. Read canvas_history again before you restore.`,
+      );
+    if (current.id === id) return "That revision is already the canvas.";
+    // The newest canvas wins, so a write must be dated after the current one.
+    const after = (current.created_at + 1) * 1000;
+    if (after - Date.now() > 5000)
+      throw new Error("The canvas was just changed; try again.");
+    await waitUntil(after);
+    // The relay refuses it if the canvas moved past the revision read above.
+    const saved = await client.publish({
+      kind: 40100,
+      content: revision.content,
+      tags: [
+        ["h", channel],
+        ["expected-revision", expected],
+      ],
+    });
+    const selected = await head().catch((error: unknown) => {
+      throw new Error(
+        `restored ${id} as ${saved.id}, but the canvas could not be read back to confirm it is current: ${reason(error)}. Read canvas_history before you retry.`,
+      );
+    });
+    if (selected?.id !== saved.id)
+      throw new Error(
+        `conflict: the restore was received, but another canvas (${selected?.id}) is now current. Read canvas_history again before you retry.`,
+      );
+    return `restored ${id} as ${saved.id}`;
   },
 
   async repo(tools, args) {
@@ -1292,6 +1760,15 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   },
 };
 
+/** The signed request a post belongs to: the turn's triggering message,
+ * which a thread reply's flattened reply link cannot name. */
+function requestOf(args: Args): string[][] {
+  if (args.request === undefined) return [];
+  const id = text(args.request)?.toLowerCase();
+  if (!id || !HEX.test(id)) throw new Error(`Not an event id: ${args.request}`);
+  return [["buzz:request", id]];
+}
+
 /** The tags for a message's required audience. */
 function audienceOf(args: Args): string[][] {
   if (args.audience !== "everyone" && args.audience !== "agents")
@@ -1311,6 +1788,12 @@ async function post(
   const files = await tools.attach(list(args.files));
   const content = `${(await tools.body(args, !files.links)) ?? ""}${files.links}`;
   const mentions = await tools.mentions(channel, content, list(args.mentions));
+  // The runner suppresses every relay event authored by this agent. A post
+  // receipt must not suggest that a self-mention scheduled another session.
+  if (mentions.includes(tools.client.pubkey))
+    throw new Error(
+      "Self-mentions do not wake your other sessions. Nothing was posted. Use self_handoff with channel, text, and thread outside a Solo chat.",
+    );
   const event = await tools.client.publish({
     kind: 9,
     content,
@@ -1413,6 +1896,100 @@ class Tools {
     return metadata;
   }
 
+  /** Your DM with exactly `people`, if it exists; never creates one. */
+  async findDm(people: readonly string[]) {
+    const wanted = new Set([this.client.pubkey, ...people]);
+    const dms = await this.client.query([
+      { kinds: [39000], "#p": [this.client.pubkey], "#t": ["dm"], limit: 500 },
+    ]);
+    return dms.find((event) => {
+      const members = new Set(
+        event.tags.filter((t) => t[0] === "p").map((t) => t[1]),
+      );
+      return (
+        members.size === wanted.size &&
+        [...wanted].every((key) => members.has(key))
+      );
+    });
+  }
+
+  /** The channel `value` names: a Buzz link, @person for your DM with them,
+   * or a channel's ID or name (optionally #name). */
+  async place(value: string) {
+    const v = value.trim();
+    const link = parseBuzzLink(v);
+    if (link?.format === "legacy") return this.placeOf(link.channelId);
+    if (v.startsWith("@")) {
+      const person = await this.author(v.slice(1));
+      const dm =
+        person === this.client.pubkey ? undefined : await this.findDm([person]);
+      if (!dm) throw new Error(`You have no DM with ${v.slice(1)}.`);
+      return this.placeOf(tag(dm, "d") as string);
+    }
+    const name = v.replace(/^#/, "");
+    if (name === v && CHANNEL_ID.test(v) && (await this.metadata(v)))
+      return this.placeOf(v);
+    const lower = name.toLowerCase();
+    const named: BuzzEvent[] = [];
+    const similar: BuzzEvent[] = [];
+    await this.scan({ kinds: [39000] }, (event) => {
+      const channel = tag(event, "name")?.toLowerCase();
+      if (channel === lower) named.push(event);
+      else if (channel?.includes(lower) && similar.length < 5)
+        similar.push(event);
+      return true;
+    });
+    const rows = (events: BuzzEvent[]) =>
+      events.map((e) => `${tag(e, "d")} #${tag(e, "name")}`).join("\n");
+    if (named.length > 1)
+      throw new Error(
+        `${named.length} channels are named ${name}; give its ID.\n${rows(named)}`,
+      );
+    if (!named[0])
+      throw new Error(
+        `No channel you can see is named ${name}.${similar.length ? `\nSimilar:\n${rows(similar)}` : ""}`,
+      );
+    return this.placeOf(tag(named[0], "d") as string);
+  }
+
+  async placeOf(id: string) {
+    return { id, label: (await this.places([id])).get(id) ?? id };
+  }
+
+  /** Labels for `channels`: #name, or "DM with" its other members. */
+  async places(channels: readonly string[]) {
+    const wanted = [...new Set(channels)];
+    const labels = new Map<string, string>();
+    if (!wanted.length) return labels;
+    const found = await this.client.query([
+      { kinds: [39000], "#d": wanted, limit: wanted.length },
+    ]);
+    const others = (event: BuzzEvent) =>
+      event.tags
+        .filter((t) => t[0] === "p" && t[1] && t[1] !== this.client.pubkey)
+        .map((t) => t[1] as string);
+    const dms = found.filter((event) => tag(event, "t") === "dm");
+    const names = await this.names(dms.flatMap(others));
+    for (const event of found) {
+      const id = tag(event, "d");
+      if (!id) continue;
+      const name = tag(event, "name");
+      labels.set(
+        id,
+        tag(event, "t") === "dm"
+          ? `DM with ${
+              others(event)
+                .map((key) => names.get(key) ?? key)
+                .join(", ") || "yourself"
+            }`
+          : name
+            ? `#${name}`
+            : id,
+      );
+    }
+    return labels;
+  }
+
   async details(channel: string) {
     const metadata = await this.metadata(channel);
     if (!metadata) throw unseen(channel);
@@ -1421,8 +1998,10 @@ class Tools {
     )?.role;
     const flags = [
       tag(metadata, "t"),
+      soloChannelMetadata(metadata as RelayEvent) ? "solo" : "",
       has(metadata, "private") ? "private" : "open",
       has(metadata, "archived") ? "archived" : "",
+      has(metadata, "auto_join") ? "auto-join" : "",
       tag(metadata, "ttl")
         ? `archives after ${tag(metadata, "ttl")}s idle`
         : "",
@@ -1450,12 +2029,43 @@ class Tools {
     const role = joinRoleArg(args);
     if (role === "guest" && args.visibility === "private")
       throw new Error("join_role guest is for open channels.");
+    if (args.solo !== undefined && typeof args.solo !== "boolean")
+      throw new Error("solo must be true or false.");
+    const solo = args.solo === true;
+    if (!solo && args.members !== undefined)
+      throw new Error("members is for Solo chats.");
+    const members = keys(args, "members").filter(
+      (key) => key !== this.client.pubkey,
+    );
+    // Its members are only the ones named, so no template adds agents.
+    if (
+      solo &&
+      (args.visibility !== "private" ||
+        type !== "stream" ||
+        about ||
+        args.template !== undefined)
+    )
+      throw new Error(
+        "A Solo chat is a private stream without about or template.",
+      );
+    if (members.length > 32)
+      throw new Error("A Solo chat starts with at most 32 members.");
     // Found first, so a wrong name creates nothing.
     const template =
       args.template === undefined
         ? undefined
         : await this.template(required(args, "template"));
+    const workspace =
+      args.workspace === undefined ? undefined : required(args, "workspace");
+    if (workspace !== undefined && !solo)
+      throw new Error("workspace is for Solo chats.");
+    if (workspace !== undefined && !this.client.soloWorkspaces)
+      throw new Error("Solo workspaces are unavailable on this host");
     const id = crypto.randomUUID();
+    const file =
+      workspace === undefined
+        ? undefined
+        : await this.client.soloWorkspaces?.prepare(workspace, members, id);
     await this.client.publish({
       kind: 9007,
       content: "",
@@ -1466,12 +2076,38 @@ class Tools {
         ["channel_type", type],
         ...(about ? [["about", about]] : []),
         ...(ttl ? [["ttl", String(ttl)]] : []),
+        // As Buzz starts a Solo chat: the relay adds the `p` members in the create.
+        ...(solo ? channelLabelTags([SOLO_LABEL, SOLO_NAMED_LABEL]) : []),
+        ...members.map((key) => ["p", key]),
       ],
     });
-    const shown = await until(() => this.metadata(id), Boolean).catch(unread);
+    const labeled = (now: BuzzEvent | undefined) =>
+      !!now && (!solo || soloChannelMetadata(now as RelayEvent));
+    const shown = await until(() => this.metadata(id), labeled).catch(unread);
     if (!shown || shown instanceof Error)
-      return `The community accepted channel ${id} but ${shown ? shown.message : "does not show it yet"}${template ? "; the template was not applied" : ""}${role === "guest" ? "; join_role was not set" : ""}.`;
+      return `The community accepted channel ${id} but ${shown ? shown.message : "does not show it yet"}${template ? "; the template was not applied" : ""}${role === "guest" ? "; join_role was not set" : ""}${members.length ? "; its members are not confirmed" : ""}${file ? "; not filed in workspace" : ""}.`;
     const lines = [`created ${id}`];
+    if (!labeled(shown))
+      lines.push(
+        "The community did not keep the Solo label, so it is an ordinary private channel.",
+      );
+    if (members.length) lines.push(...(await this.joined(id, members)));
+    if (file) {
+      try {
+        const placement = await file(id);
+        lines.push(
+          placement.status === "filed"
+            ? `filed in workspace ${workspace}`
+            : placement.status === "not-filed"
+              ? `created, not filed in workspace: ${placement.error}. Use Move to on this chat; do not create another chat.`
+              : `created; workspace placement unconfirmed and may have completed: ${placement.error}. Inspect or refresh this chat before Move to; do not create another chat.`,
+        );
+      } catch (error) {
+        lines.push(
+          `created; workspace placement unconfirmed and may have completed: ${reason(error)}. Inspect or refresh this chat before Move to; do not create another chat.`,
+        );
+      }
+    }
     if (template) lines.push(...(await this.apply(id, template)));
     // Last, so the template's agents join as members, not guests.
     if (role === "guest")
@@ -1484,6 +2120,25 @@ class Tools {
         lines.push(`join_role not set: ${reason(error)}`);
       }
     return lines.join("\n");
+  }
+
+  /** Reports each of a new channel's `members` as its roster shows them. */
+  async joined(id: string, members: readonly string[]) {
+    const roster = await until(
+      () => this.roster(id),
+      (now) => members.every((key) => now.some((m) => m.pubkey === key)),
+    ).catch(unread);
+    const names = await this.names(members).catch(
+      () => new Map<string, string>(),
+    );
+    return members.map((key) => {
+      const who = names.has(key) ? `${key} ${names.get(key)}` : key;
+      if (roster instanceof Error)
+        return `${who}: the community accepted it but ${roster.message}`;
+      return roster.some((m) => m.pubkey === key)
+        ? `added ${who}`
+        : `${who}: the community accepted it but does not show it yet`;
+    });
   }
 
   /** Starts a new channel's Canvas and adds its agents from `template`. */
@@ -1697,6 +2352,76 @@ class Tools {
     return names;
   }
 
+  /** Every name `send` accepts after `@` for each of `pubkeys`, with its
+   * weight: lower wins when people share a name. A relay-verified name
+   * outranks a name someone gave their own profile, so a profile cannot take
+   * a verified person's name. */
+  async aliases(pubkeys: readonly string[]) {
+    const wanted = [...new Set(pubkeys)];
+    const aliases = new Map<string, Map<string, number>>();
+    const add = (pubkey: string, name: unknown, weight: number) => {
+      if (typeof name !== "string" || !name.trim()) return;
+      const lower = name.trim().toLowerCase();
+      const names = aliases.get(lower) ?? new Map<string, number>();
+      names.set(pubkey, Math.min(names.get(pubkey) ?? weight, weight));
+      aliases.set(lower, names);
+    };
+    if (!wanted.length) return aliases;
+    const profiles = await this.client.query([
+      { kinds: [0], authors: wanted, limit: wanted.length },
+    ]);
+    for (const event of newest(profiles)) {
+      const profile = parse(event.content);
+      add(event.pubkey, profile.display_name, NAME_WEIGHT.displayName);
+      add(event.pubkey, profile.name, NAME_WEIGHT.name);
+    }
+    for (const [pubkey, verified] of await this.verifiedNames(wanted)) {
+      add(pubkey, verified.displayName, NAME_WEIGHT.verifiedDisplayName);
+      add(pubkey, verified.username, NAME_WEIGHT.verifiedUsername);
+      add(pubkey, verified.fullName, NAME_WEIGHT.verifiedFullName);
+    }
+    return aliases;
+  }
+
+  /** The relay's verified names (kind 30382) for `pubkeys`, read as the app
+   * reads them, so `send` and the app agree on who is verified. None without
+   * the connection's relay key. */
+  async verifiedNames(pubkeys: readonly string[]) {
+    const names = new Map<string, VerifiedProfile>();
+    const relay = this.client.relayAuthor;
+    if (!relay || !HEX_KEY.test(relay)) return names;
+    const authority = { pubkey: relay, multipleIssuers: false };
+    const subjects = [...new Set(pubkeys)].filter((key) => HEX_KEY.test(key));
+    const batches: string[][] = [];
+    for (let at = 0; at < subjects.length; at += VERIFIED_PROFILE_BATCH)
+      batches.push(subjects.slice(at, at + VERIFIED_PROFILE_BATCH));
+    const found = (
+      await Promise.all(
+        batches.map((batch) =>
+          this.client
+            .query([verifiedProfileFilter(relay, batch)])
+            .catch(() => []),
+        ),
+      )
+    ).flat();
+    // The newest event at each address decides; a newer malformed or
+    // retracted one leaves the person unverified, as in the app.
+    const latest = new Map<string, RelayEvent>();
+    for (const item of found) {
+      // Queries admit the events whose signatures they checked; the app's
+      // projection takes only those.
+      const event = item as unknown as RelayEvent;
+      const subject = verifiedProfileSubject(event, authority);
+      if (!subject || !subjects.includes(subject)) continue;
+      latest.set(subject, newer(latest.get(subject), event));
+    }
+    for (const [subject, event] of latest) {
+      const verified = verifiedProfile(event, authority, true);
+      if (verified) names.set(subject, verified);
+    }
+    return names;
+  }
+
   /** Messages oldest first with their latest edits, a line each: its ID,
    * author and its claimed (unverified) agent owner, channel and thread,
    * omitting what `scope` names. Other agent read surfaces trim the same
@@ -1713,27 +2438,9 @@ class Tools {
       : [];
     const messages = edited([...events, ...edits]);
     const names = await this.names(messages.map((event) => event.pubkey));
-    return messages.map((event) => {
-      const name = names.get(event.pubkey);
-      const channel = tag(event, "h");
-      const owner = tag(event, "auth");
-      const reference = threadReference(event);
-      const thread = reference?.rootId;
-      return [
-        event.id,
-        `from ${event.pubkey}`,
-        name && JSON.stringify(name),
-        owner && `claimed owner ${owner}`,
-        channel && channel !== scope.channel && `in ${channel}`,
-        thread && thread !== scope.root && `re ${thread}`,
-        reference &&
-          reference.parentId !== thread &&
-          `reply_to ${reference.parentId}`,
-        `at ${time(event.created_at)}: ${event.content}`,
-      ]
-        .filter(Boolean)
-        .join(" ");
-    });
+    return messages.map((event) =>
+      messageLine(event, names.get(event.pubkey), scope),
+    );
   }
 
   /** NIP-30 tags for the community emoji `content` uses, as the composer
@@ -1764,13 +2471,7 @@ class Tools {
     if (!prose.includes("@") && !keys.size) return [];
     const members = await this.members(channel);
     if (prose.includes("@")) {
-      const byName = new Map<string, string[]>();
-      for (const [key, name] of await this.names(
-        members.map((member) => member.pubkey),
-      )) {
-        const lower = name.toLowerCase();
-        byName.set(lower, [...(byName.get(lower) ?? []), key]);
-      }
+      const byName = await this.aliases(members.map((member) => member.pubkey));
       const longest = [...byName.keys()].sort((a, b) => b.length - a.length);
       const unknown: string[] = [];
       for (const match of prose.matchAll(/(^|\s)@/g)) {
@@ -1782,7 +2483,7 @@ class Tools {
             rest.startsWith(candidate) &&
             /^($|[\s,;.!?:)\]}])/.test(rest.slice(candidate.length)),
         );
-        const found = name ? (byName.get(name) ?? []) : [];
+        const found = name ? bestNamed(byName.get(name)) : [];
         if (found.length === 1) keys.add(found[0] as string);
         else {
           const token = name ?? rest.match(/^[a-z0-9._-]+/)?.[0];
@@ -1822,6 +2523,32 @@ class Tools {
   }
 }
 
+/** A message's line in a read, omitting what `scope` names. */
+function messageLine(
+  event: BuzzEvent,
+  name: string | undefined,
+  scope: Readonly<{ channel?: string; root?: string }>,
+) {
+  const channel = tag(event, "h");
+  const owner = tag(event, "auth");
+  const reference = threadReference(event);
+  const thread = reference?.rootId;
+  return [
+    event.id,
+    `from ${event.pubkey}`,
+    name && JSON.stringify(name),
+    owner && `claimed owner ${owner}`,
+    channel && channel !== scope.channel && `in ${channel}`,
+    thread && thread !== scope.root && `re ${thread}`,
+    reference &&
+      reference.parentId !== thread &&
+      `reply_to ${reference.parentId}`,
+    `at ${time(event.created_at)}: ${event.content}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** The root of the thread `event` is in, by its NIP-10 markers. */
 function rootOf(event: BuzzEvent) {
   const tags = event.tags.filter(
@@ -1834,21 +2561,26 @@ function rootOf(event: BuzzEvent) {
 
 /** Messages oldest first, each showing its author's latest edit. */
 function edited(events: readonly BuzzEvent[]) {
+  const messages = events.filter((event) => event.kind !== 40003);
+  const byId = new Map(messages.map((event) => [event.id, event]));
   const edits = new Map<string, BuzzEvent>();
   for (const event of events)
     if (event.kind === 40003) {
       const target = tag(event, "e");
+      const message = target ? byId.get(target) : undefined;
       const last = target && edits.get(target);
-      if (target && (!last || last.created_at < event.created_at))
+      // Authorship first, so someone else's newer edit hides none.
+      if (
+        target &&
+        message?.pubkey === event.pubkey &&
+        (!last || last.created_at < event.created_at)
+      )
         edits.set(target, event);
     }
-  return events
-    .filter((event) => event.kind !== 40003)
+  return messages
     .map((event) => {
       const edit = edits.get(event.id);
-      return edit && edit.pubkey === event.pubkey
-        ? { ...event, content: edit.content }
-        : event;
+      return edit ? { ...event, content: edit.content } : event;
     })
     .sort((a, b) => a.created_at - b.created_at);
 }
@@ -1875,6 +2607,24 @@ function imeta(upload: Upload) {
       .filter((key) => upload[key] !== undefined)
       .map((key) => `${key} ${upload[key]}`),
   ];
+}
+
+/** A draft's picture: uploads the image at `path` as the agent once the
+ * draft is valid, giving its URL. */
+function proposedPicture(client: BuzzClient, path: unknown) {
+  const file = text(path)?.trim();
+  if (!file) return undefined;
+  const upload = client.uploadPicture?.bind(client);
+  if (!upload)
+    throw new Error("Picture proposals are unavailable on this host");
+  return async () => {
+    const data = await client.read(file);
+    // The preparer's own detector, so it never passes an image through.
+    const type = imageType(data);
+    if (!type)
+      throw new Error("picture must be a PNG, JPEG, GIF or WebP image");
+    return (await upload(data, type)).url;
+  };
 }
 
 /** An image or MP4's type, by the file's leading bytes. */
@@ -1949,15 +2699,20 @@ function searchMemory(entries: readonly Memory[], q: string) {
   ].join("\n");
 }
 
-/** `line`, cut to SEARCH_LINE_CHARS around its first match. */
-function snippet(line: string, words: readonly string[]) {
-  if (line.length <= SEARCH_LINE_CHARS) return line;
+/** `line`, cut to `chars` around its first match, or its start without one. */
+function snippet(
+  line: string,
+  words: readonly string[],
+  chars = SEARCH_LINE_CHARS,
+) {
+  if (line.length <= chars) return line;
   const lower = line.toLowerCase();
   const at = Math.min(
     ...words.map((word) => lower.indexOf(word)).filter((index) => index >= 0),
   );
-  const start = Math.max(0, Math.min(at - 40, line.length - SEARCH_LINE_CHARS));
-  const end = start + SEARCH_LINE_CHARS;
+  const start =
+    at === Infinity ? 0 : Math.max(0, Math.min(at - 40, line.length - chars));
+  const end = start + chars;
   return `${start ? "…" : ""}${line.slice(start, end)}${end < line.length ? "…" : ""}`;
 }
 
@@ -2003,6 +2758,28 @@ function pubkey(value: string) {
     if (decoded.type === "npub") return decoded.data;
   } catch {}
   throw new Error(`Not a pubkey: ${value}`);
+}
+
+/** How strongly each kind of name claims a person for `@`: lower wins. A
+ * verified username comes first, and every name the relay verified outranks
+ * every name a person gave themselves. */
+const NAME_WEIGHT = {
+  verifiedUsername: 0,
+  verifiedDisplayName: 1,
+  verifiedFullName: 2,
+  displayName: 3,
+  name: 4,
+} as const;
+
+const HEX_KEY = /^[0-9a-f]{64}$/;
+
+/** Who a name tags: everyone holding it in its strongest form. */
+function bestNamed(holders: ReadonlyMap<string, number> | undefined) {
+  if (!holders?.size) return [];
+  const best = Math.min(...holders.values());
+  return [...holders]
+    .filter(([, weight]) => weight === best)
+    .map(([key]) => key);
 }
 
 const profileName = (profile: Record<string, unknown>) =>
@@ -2124,7 +2901,7 @@ async function start(tools: Tools, channel: string, name: string) {
   return created;
 }
 
-/** The repository's URL and a Git command with its header. */
+/** The repository's URL and a Git command with its headers, one per line. */
 async function access(
   gitAuth: NonNullable<BuzzClient["gitAuth"]>,
   event: BuzzEvent,
@@ -2132,8 +2909,11 @@ async function access(
   const { url, header } = await gitAuth(event.pubkey, tag(event, "d") ?? "");
   return [
     `${tag(event, "name") ?? tag(event, "d")}: ${url}`,
-    "For the next 60 seconds, pass this header to each git command (call again for a new one; never save it):",
-    `git -c http.${url}.extraHeader='${header}' clone ${url}`,
+    "For the next 60 seconds, pass these headers to each git command (call again for a new one; never save it):",
+    `git ${header
+      .split("\n")
+      .map((line) => `-c http.${url}.extraHeader='${line}' `)
+      .join("")}clone ${url}`,
   ].join("\n");
 }
 
@@ -2275,7 +3055,8 @@ function joinRoleArg(args: Args) {
 /** A `since` or `before` argument: a Unix time in seconds, inclusive. */
 function unixTime(args: Args, key: string) {
   const value = args[key];
-  if (value === undefined) return undefined;
+  // 0 is left out too: no message is from before 1970.
+  if (value === undefined || value === 0) return undefined;
   // In milliseconds, a time from this century is past the year 5000.
   if (
     !Number.isSafeInteger(value) ||
@@ -2286,6 +3067,38 @@ function unixTime(args: Args, key: string) {
       `${key} must be Unix seconds: a whole number, not milliseconds.`,
     );
   return value as number;
+}
+
+const AGO: Record<string, number> = { d: 1, w: 7, m: 30, y: 365 };
+
+/** Unix `seconds` as a UTC time searchTime reads back. */
+const utc = (seconds: number) =>
+  new Date(seconds * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/** `args[key]` as Unix seconds: the start of a UTC date (YYYY-MM-DD), a UTC
+ * time (YYYY-MM-DDTHH:MM:SSZ), or a span back from now (7d, 2w, 3m, 1y; a
+ * month is 30 days). */
+function searchTime(args: Args, key: string) {
+  const value = text(args[key]);
+  if (value === undefined) return undefined;
+  const ago = /^(\d{1,4})([dwmy])$/i.exec(value);
+  if (ago)
+    return (
+      Math.floor(Date.now() / 1000) -
+      Number(ago[1]) * (AGO[(ago[2] as string).toLowerCase()] as number) * 86400
+    );
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const ms = Date.parse(day ? `${value}T00:00:00Z` : value);
+  // The round trip rejects other forms and impossible dates such as 02-30.
+  if (
+    !(day || /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value)) ||
+    Number.isNaN(ms) ||
+    utc(ms / 1000) !== (day ? `${value}T00:00:00Z` : value)
+  )
+    throw new Error(
+      `${key} must be a date (YYYY-MM-DD), a UTC time (YYYY-MM-DDTHH:MM:SSZ) or a span back from now (7d, 2w, 3m, 1y).`,
+    );
+  return ms / 1000;
 }
 
 /** The checks Buzz makes on a channel's name, description and lifetime. */
@@ -2301,6 +3114,15 @@ function checkDetails(name?: string, about?: string, ttl?: number) {
 }
 const text = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
+const isBlank = (value: unknown) => typeof value === "string" && !value.trim();
+/** Some models fill in every optional field, sending "" for each one they
+ * mean to leave out. Reads a blank one of `fields` as left out. */
+function ignoreBlankFields(args: Args, fields: readonly string[]): Args {
+  const checked = { ...args };
+  for (const field of fields)
+    if (isBlank(checked[field])) delete checked[field];
+  return checked;
+}
 const list = (value: unknown) =>
   Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")

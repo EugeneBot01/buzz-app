@@ -28,12 +28,16 @@ export class NativeSocket implements LiveSocket {
         | { type: "closed"; code: number | null; reason: string | null }
         // A refusal after the upgrade, ending the socket like its 401 would.
         | { type: "refused"; reason: string }
+        // The assertion is due for refresh: a planned close, marked `renew`.
+        | { type: "renew" }
       >((event) => {
         if (this.closed) return;
         if (event.type === "text") {
           relayMetrics.received(this.url, event.data);
           this.onmessage?.(new MessageEvent("message", { data: event.data }));
         } else if (event.type === "refused") this.refuse(event.reason);
+        else if (event.type === "renew")
+          this.finish(undefined, undefined, true);
         else this.finish(event.code ?? undefined, event.reason ?? undefined);
       });
       const mode = await invoke<"public" | "native">("relay_socket_connect", {
@@ -93,6 +97,8 @@ export class NativeSocket implements LiveSocket {
         "grant-refused",
         "invalid-proof",
         "invalid-assertion",
+        // This computer's clock is too far behind the issuer's.
+        "clock-skew",
         "invalid-response",
         "invalid-expiry",
         "invalid-viewer",
@@ -121,15 +127,14 @@ export class NativeSocket implements LiveSocket {
         this.finish(),
       );
   }
-  private finish(code?: number, reason?: string) {
+  private finish(code?: number, reason?: string, renew = false) {
     if (this.closed) return;
     this.close();
-    this.onclose?.(
-      new CloseEvent("close", {
-        ...(code === undefined ? {} : { code }),
-        ...(reason === undefined ? {} : { reason }),
-      }),
-    );
+    const event = new CloseEvent("close", {
+      ...(code === undefined ? {} : { code }),
+      ...(reason === undefined ? {} : { reason }),
+    });
+    this.onclose?.(renew ? Object.assign(event, { renew }) : event);
   }
   close() {
     if (this.closed) return;

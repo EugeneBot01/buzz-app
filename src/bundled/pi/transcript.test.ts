@@ -79,7 +79,7 @@ it("shows a turn's prompt, thinking, tools, sends and answer, steers included", 
         },
         { type: "toolCall", id: "c4", name: "buzz_read", arguments: {} },
       ]),
-      result(7, "c2", "sent"),
+      result(7, "c2", `sent ${"c".repeat(64)}`),
       result(8, "c3", "Not allowed", true),
       result(9, "c4", "messages"),
       assistant(10, [{ type: "text", text: "Done" }]),
@@ -112,7 +112,7 @@ it("shows a turn's prompt, thinking, tools, sends and answer, steers included", 
               item.paths,
             ]
           : item.type === "message"
-            ? ["message", item.text, item.posted]
+            ? ["message", item.text, item.posted, item.messageId]
             : [item.type, "text" in item ? item.text : ""],
     ),
   ).toEqual([
@@ -120,11 +120,11 @@ it("shows a turn's prompt, thinking, tools, sends and answer, steers included", 
     ["thought", "Let me write it"],
     ["tool", "write", "edit", "completed", "Wrote a.txt", ["a.txt"]],
     ["prompt", "and read it", "Sal", true],
-    ["message", "On it", true],
-    ["message", "Lost", undefined],
+    ["message", "On it", true, "c".repeat(64)],
+    ["message", "Lost", undefined, undefined],
     ["tool", "buzz.read", "other", "completed", "messages", []],
     ["status", "The message above was not posted: Not allowed"],
-    ["message", "Done", undefined],
+    ["message", "Done", undefined, undefined],
   ]);
 });
 
@@ -309,5 +309,57 @@ it("reads pages, newest first, until one turn more than it shows", async () => {
   expect(request).toHaveBeenCalledWith("entries", {
     agent: "agent",
     conversation: 2,
+  });
+});
+
+it("names each session by the reset that began it, however old", async () => {
+  // The window starts after older resets; one more is inside it.
+  const entries = [
+    user(10, event("older")),
+    assistant(11, [{ type: "text", text: "a" }]),
+    { id: 12, kind: "pi.reset" },
+    user(13, event("newer")),
+    assistant(14, [{ type: "text", text: "b" }]),
+  ];
+  // The host reads each page's oldest entry's session from Pi's own head
+  // markers; the oldest page read names where the shown entries begin.
+  const pages = [
+    { entries: entries.slice(2).reverse(), next: "older", session: 12 },
+    { entries: entries.slice(0, 2).reverse(), session: 7 },
+  ];
+  const request = vi.fn(async () => pages.shift());
+  const read = await readTranscript(
+    { request } as never,
+    "agent",
+    PLACE,
+    false,
+    new AbortController().signal,
+  );
+  expect(read.turns.map((turn) => [turn.sessionId, turn.newSession])).toEqual([
+    ["2:7", true],
+    ["2:12", true],
+  ]);
+  // A window that misses session 7's start shows none there.
+  expect(
+    piTurns(entries, PLACE, false, { session: 7, start: false }).map((turn) => [
+      turn.sessionId,
+      turn.newSession,
+    ]),
+  ).toEqual([
+    ["2:7", false],
+    ["2:12", true],
+  ]);
+});
+
+it("starts a session at the conversation's first entry", () => {
+  const turns = piTurns([user(1, event("hi"))], PLACE, false, {
+    session: 0,
+    start: true,
+  });
+  expect(turns[0]).toMatchObject({ sessionId: "2:0", newSession: true });
+  // Without a session from the host, the conversation's own id.
+  expect(piTurns([user(1, event("hi"))], PLACE, false)[0]).toMatchObject({
+    sessionId: "2",
+    newSession: false,
   });
 });

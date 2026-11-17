@@ -1,13 +1,36 @@
 import { expect, it, vi } from "vitest";
 import type { RelaySession } from "../relay/session";
-import { parseKitRecord } from "../channel-templates/model";
 import {
+  LIVE_CANVAS_BYTES,
+  LIVE_CANVAS_LIMIT,
+  parseKitRecord,
+} from "../channel-templates/model";
+import {
+  validateWorkspace,
   loadChatSetup,
   readWorkspace,
   projectTemplateId,
   workspaceCanvas,
   workspaceDirectories,
 } from "./workspace";
+
+it.each([{ folders: [] }, { folders: [" ", "\t"] }])(
+  "requires a nonempty folder only in worktree mode (%j)",
+  ({ folders }) => {
+    const workspace = { folders, canvas: "Keep this" };
+    expect(validateWorkspace(workspace)).toEqual({
+      folders: [],
+      canvas: "Keep this",
+    });
+    const worktree = { location: "~/worktrees", baseBranch: "main" };
+    expect(() => validateWorkspace({ ...workspace, worktree })).toThrow(
+      "Choose a workspace folder, worktree location, and base branch.",
+    );
+    expect(
+      validateWorkspace({ ...workspace, folders: [" ~/repo "], worktree }),
+    ).toEqual({ ...workspace, folders: ["~/repo"], worktree });
+  },
+);
 
 it("round trips folders, worktrees and Canvas through existing template records", async () => {
   const workspace = {
@@ -58,6 +81,33 @@ it("reads folder-only Canvas saved by earlier versions without treating it as ed
     canvas: "Instructions",
   });
 });
+it("reads worktree Canvas saved with the earlier worktree rule without treating it as edited", () => {
+  const saved = [
+    '<!-- buzz-session-workspace:v1 {"folders":["/repo"],"worktree":{"location":"~/trees","baseBranch":"main"}} -->',
+    "## Workspace instructions",
+    "",
+    "- Use `/repo` for review only. Do not make changes directly in it.",
+    "- Before starting new work, fetch the latest `main` branch from origin.",
+    "- For each repository that needs changes, create a new worktree under `~/trees` from `origin/main`.",
+    "- Make all changes in that new worktree.",
+    "<!-- /buzz-session-workspace -->",
+    "",
+    "Instructions",
+  ].join("\n");
+  const workspace = {
+    folders: ["/repo"],
+    worktree: { location: "~/trees", baseBranch: "main" },
+    canvas: "Instructions",
+  };
+  expect(readWorkspace(saved)).toEqual(workspace);
+  // Saved again, it gets the current rule.
+  expect(workspaceCanvas(workspace)).toContain(
+    "- Make code changes in that new worktree.",
+  );
+  expect(() =>
+    readWorkspace(saved.replace("Make all changes", "Make no changes")),
+  ).toThrow("edited");
+});
 it("preserves ordinary Canvas and refuses malformed or manually changed workspace blocks", () => {
   expect(readWorkspace("# Existing\nKeep me")).toEqual({
     folders: [],
@@ -76,9 +126,15 @@ it("preserves ordinary Canvas and refuses malformed or manually changed workspac
   expect(() =>
     workspaceCanvas({ folders: ["/repo`\nunsafe"], canvas: "" }),
   ).toThrow("folders");
+  expect(
+    workspaceCanvas({ folders: [], canvas: "x".repeat(LIVE_CANVAS_BYTES) }),
+  ).toHaveLength(LIVE_CANVAS_BYTES);
   expect(() =>
-    workspaceCanvas({ folders: [], canvas: "x".repeat(24577) }),
-  ).toThrow("24 KiB");
+    workspaceCanvas({
+      folders: [],
+      canvas: "x".repeat(LIVE_CANVAS_BYTES + 1),
+    }),
+  ).toThrow(LIVE_CANVAS_LIMIT);
 });
 
 function fixture() {
@@ -151,6 +207,7 @@ it("names the saved defaults it read, even when they change while agents load", 
           complete: true,
           identities: [{ pubkey, name: "Agent", managed: false }],
         },
+        identities: [],
         archives: { status: "ready", archived: [] },
       }),
     },
@@ -198,6 +255,7 @@ it.each([
           complete,
           identities: [{ pubkey, name: "Agent", managed: false }],
         },
+        identities: [],
         archives: {
           status: "ready",
           archived: state === "archived" ? [pubkey] : [],

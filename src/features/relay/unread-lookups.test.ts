@@ -75,10 +75,12 @@ async function setup(initial?: ReadJournal) {
   };
   let journal: ReadJournal | undefined = initial;
   const reads = createReadState({
+    floor: () => 0,
     viewer,
     reader,
     host: undefined,
     storage: {
+      capture: async () => structuredClone(journal),
       async update(change) {
         journal = readJournal(change(journal), viewer);
         return journal;

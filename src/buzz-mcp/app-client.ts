@@ -3,6 +3,9 @@
 // memory is read back through the owner's own session, to whom it is
 // encrypted.
 import type { BuzzClient, Memories } from "./client";
+import { nativeToolClient } from "../features/agents/tool-operation";
+import { prepareAttachment } from "../features/messages/prepare-attachment";
+import { imageType } from "../features/relay/attachment-limits";
 import type { AgentHandle, AgentHandoff } from "../features/agents/service";
 import type {
   HostProcess,
@@ -12,7 +15,7 @@ import type {
 type Spawn = (id: string, options?: HostProcessOptions) => Promise<HostProcess>;
 
 /** The largest file a tool reads: the community's upload limit. */
-const READ_LIMIT = 50 * 1024 * 1024;
+export const READ_LIMIT = 50 * 1024 * 1024;
 const READ_TIMEOUT_MS = 60_000;
 
 export function appClient(
@@ -29,7 +32,15 @@ export function appClient(
     /** Reject operations after the owning turn or community has ended. */
     check?(): void;
     signal?: AbortSignal;
+    /** Exact request cancellation exposed to added tools. */
+    callSignal?: AbortSignal;
     protectionContext?(): Promise<unknown>;
+    /** Retain a file-backed native snapshot until the exact tool check settles. */
+    captureProtectionContext?(): Promise<{ value: unknown; release(): void }>;
+    /** The runtime reviews each tool call itself before Buzz dispatches it. */
+    nativeToolGate?: boolean;
+    /** Set only by the native runtime for an active tool request. */
+    nativeCall?: () => void;
   }>,
 ): BuzzClient {
   const check = () => {
@@ -42,38 +53,93 @@ export function appClient(
     if (!found) throw new Error("Your community is not connected.");
     return found;
   };
+  const bestie = () => {
+    check();
+    const found = agent.bestie?.();
+    if (!found) throw new Error("Your community is not connected.");
+    return found;
+  };
   const handoff = agent.handoff;
-  return {
+  const plugins = agent.plugins;
+  const { settings, soloWorkspaces } = agent;
+  const client: BuzzClient = {
+    ...(options.callSignal ? { signal: options.callSignal } : {}),
     ...(agent.protection
       ? {
           protect: async (
             action: import("../features/agent-protection/service").ProtectionAction,
           ) => {
             check();
-            if (
-              action.kind === "tool" &&
-              agent.protection?.phases?.tool !== false
-            ) {
-              if (!options.protectionContext)
-                throw new Error(
-                  "The protected tool has no native conversation context",
-                );
-              action = {
-                ...action,
-                content: {
-                  ...(action.content as object),
-                  conversation: await options.protectionContext(),
-                },
-              };
+            let release = () => {};
+            try {
+              if (
+                action.kind === "tool" &&
+                agent.protection?.phases?.tool !== false
+              ) {
+                if (
+                  !options.protectionContext &&
+                  !options.captureProtectionContext
+                )
+                  throw new Error(
+                    "The protected tool has no native conversation context",
+                  );
+                const context = options.captureProtectionContext
+                  ? await options.captureProtectionContext()
+                  : {
+                      value: await options.protectionContext?.(),
+                      release: () => {},
+                    };
+                release = context.release;
+                action = {
+                  ...action,
+                  content: {
+                    ...(action.content as object),
+                    conversation: context.value,
+                  },
+                };
+              }
+              await agent.protection?.check(
+                action,
+                options.signal ?? new AbortController().signal,
+              );
+              check();
+            } finally {
+              release();
             }
-            await agent.protection?.check(
-              action,
-              options.signal ?? new AbortController().signal,
-            );
-            check();
           },
+          ...(options.nativeToolGate ? { nativeToolGate: true as const } : {}),
         }
       : {}),
+    ...(soloWorkspaces && {
+      soloWorkspaces: {
+        list: async () => {
+          check();
+          const result = await soloWorkspaces.list(options.signal);
+          check();
+          return result;
+        },
+        prepare: async (
+          workspace: string,
+          members: readonly string[],
+          channelId: string,
+        ) => {
+          check();
+          const file = await soloWorkspaces.prepare(
+            workspace,
+            members,
+            channelId,
+            options.signal,
+          );
+          check();
+          return async (id: string) => {
+            check();
+            const result = await file(id);
+            check();
+            return result;
+          };
+        },
+      },
+    }),
     pubkey: agent.pubkey,
     key: agent.key,
     owner: agent.owner,
@@ -115,6 +181,12 @@ export function appClient(
       check();
       return events;
     },
+    effectiveEdit: async (id, channel) => {
+      check();
+      const event = await agent.effectiveEdit(id, channel);
+      check();
+      return event;
+    },
     searchProfiles: (query, limit) => {
       check();
       return agent.searchProfiles(query, limit);
@@ -123,9 +195,39 @@ export function appClient(
       check();
       return agent.publish(event, check);
     },
-    upload: (data, mime) => {
+    upload: async (data, mime) => {
       check();
+      // An image loses its metadata as the composer's attachments do.
+      if (imageType(data)) {
+        const image = await prepareAttachment(
+          new File([new Uint8Array(data)], "file", { type: mime }),
+          options.signal ?? new AbortController().signal,
+        );
+        data = new Uint8Array(await image.arrayBuffer());
+        mime = image.type;
+        check();
+      }
       return agent.upload(toBase64(data), mime);
+    },
+    uploadPicture: async (data, mime) => {
+      check();
+      const file = new File([new Uint8Array(data)], "picture", { type: mime });
+      const picture = await prepareAttachment(
+        file,
+        options.signal ?? new AbortController().signal,
+        true,
+      );
+      // It returns a file it doesn't recognize as an image unprepared.
+      if (picture === file)
+        throw new Error("picture must be a PNG, JPEG, GIF or WebP image");
+      check();
+      const upload = await agent.upload(
+        toBase64(new Uint8Array(await picture.arrayBuffer())),
+        picture.type,
+      );
+      // A turn stopped during the upload proposes nothing.
+      check();
+      return upload;
     },
     media: (url) => {
       check();
@@ -173,6 +275,48 @@ export function appClient(
         throw new Error("Agent changes are unavailable on this host");
       return agent.updateAgent(input);
     },
+    readAgents: async (target) => {
+      check();
+      if (!agent.readAgents)
+        throw new Error("Agent reads are unavailable on this host");
+      return agent.readAgents(target);
+    },
+    readTeams: async (target) => {
+      check();
+      if (!agent.readTeams)
+        throw new Error("Team reads are unavailable on this host");
+      return agent.readTeams(target);
+    },
+    updateTeam: async (input) => {
+      check();
+      if (!agent.updateTeam)
+        throw new Error("Team changes are unavailable on this host");
+      return agent.updateTeam(input);
+    },
+    ...(plugins && {
+      plugins: {
+        list: () => {
+          check();
+          return plugins.list();
+        },
+        discover: (repository, reference) => {
+          check();
+          return plugins.discover(repository, reference);
+        },
+        disable: (id) => {
+          check();
+          return plugins.disable(id);
+        },
+        request: (input) => {
+          check();
+          return plugins.request(input);
+        },
+        status: (requestId) => {
+          check();
+          return plugins.status(requestId);
+        },
+      },
+    }),
     ...(handoff
       ? {
           handoff: (wake: AgentHandoff) => {
@@ -191,17 +335,57 @@ export function appClient(
       close: (channel, root) => tabs().close(channel, root),
       rename: (channel, root, name) => tabs().rename(channel, root, name),
     },
+    ...(settings
+      ? {
+          settings: {
+            list: () => {
+              check();
+              return settings.list();
+            },
+            get: (key) => {
+              check();
+              return settings.get(key);
+            },
+            // Synchronous, so the check holds until the write is read back.
+            set: (key, value) => {
+              check();
+              return settings.set(key, value);
+            },
+          },
+        }
+      : {}),
+    ...(agent.bestie && {
+      bestie: {
+        read: () => bestie().read(),
+        set: (pubkey: string) => bestie().set(pubkey, check),
+        clear: () => bestie().clear(),
+      },
+    }),
   };
+  if (options.nativeCall && options.callSignal) {
+    nativeToolClient(client, {
+      signal: options.callSignal,
+      check: () => {
+        check();
+        options.nativeCall?.();
+        agent.attention.enabled();
+      },
+    });
+  }
+  return client;
 }
 
 /** Reads a file with the plugin's declared `read` process (`base64 -i`),
- * which passes binary files through intact. */
+ * which passes binary files through intact, or another that prints base64
+ * given the path and `args`. */
 export async function readFile(
   spawn: Spawn,
   cwd: string,
   path: string,
   signal?: AbortSignal,
   protection?: ProcessProtection,
+  process = protection ? "read-protected" : "read",
+  args: string[] = [],
 ) {
   // `-` would wait on stdin.
   if (path.trim() === "-" || !path.trim())
@@ -210,8 +394,8 @@ export async function readFile(
   let error = "";
   let large = false;
   let child: Awaited<ReturnType<Spawn>> | undefined;
-  child = await spawn(protection ? "read-protected" : "read", {
-    args: [path],
+  child = await spawn(process, {
+    args: [path, ...args],
     cwd,
     ...(protection ? { protection: structuredClone(protection) } : {}),
     onStdout: (data) => {

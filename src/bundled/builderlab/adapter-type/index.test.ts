@@ -1,8 +1,9 @@
+import { createTestSession } from "../test-helpers";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Host, HostResponse } from "../../../features/host/service";
-import { createAgentClient } from "../agents/client";
+import { createAgentClient, type OwnerIdentity } from "../agents/client";
+import type { BuilderlabSession } from "../session";
 import type { RelayData } from "../../../features/relay/service";
-import { createOAuthSession } from "../oauth/session";
 import { builderlabType } from "./index";
 
 const pubkey = "ab".repeat(32);
@@ -37,9 +38,9 @@ afterEach(() => {
 });
 
 async function fixture(subject = "account-a") {
-  const session = createOAuthSession(
+  const session = createTestSession(
     async () => ({
-      value: "credential",
+      revision: "credential",
       account: {
         subject,
         email: "a@example.com",
@@ -178,14 +179,85 @@ it.each(["account", "server"])(
     const other = await fixture(
       changed === "account" ? "account-b" : "account-a",
     );
+    const refusal =
+      changed === "account"
+        ? "account that created"
+        : "another Builderlab server";
     await expect(
       other.remote.activate({ ...provision, pubkey, auth: proof }),
-    ).rejects.toThrow("account that created");
+    ).rejects.toThrow(refusal);
     other.session.signOut();
-    await expect(other.remote.remove(removal)).rejects.toThrow(
-      "account that created",
-    );
+    await expect(other.remote.remove(removal)).rejects.toThrow(refusal);
     expect(other.request).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["activation", "creation"])(
+  "aborts %s when the selection moves it to another server",
+  async (operation) => {
+    const h = await fixture();
+    // The selection's session: the same account until it moves server.
+    let target: string | undefined;
+    const listeners = new Set<() => void>();
+    const selected: BuilderlabSession = {
+      ...h.session,
+      get target() {
+        return target;
+      },
+      subscribe(listener) {
+        listeners.add(listener);
+        const stop = h.session.subscribe(listener);
+        return () => {
+          listeners.delete(listener);
+          stop();
+        };
+      },
+    };
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let reached = () => {};
+    const holding = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const owner: OwnerIdentity = {
+      key: async () => {
+        reached();
+        await held;
+        return "12".repeat(32);
+      },
+      signBinding: async () => ({}),
+    };
+    const remote = builderlabType(
+      createAgentClient(selected, owner),
+      selected,
+      relay,
+    ).remote;
+    if (!remote) throw new Error("Missing hosted adapter");
+    let pending: Promise<unknown>;
+    if (operation === "activation") {
+      pending = remote.activate({ ...provision, pubkey, auth: proof });
+      await holding;
+    } else {
+      h.request.mockImplementationOnce(async () => {
+        reached();
+        await held;
+        return response(registration);
+      });
+      pending = remote.provision(provision);
+      await holding;
+    }
+    target = "https://peer.example/api";
+    for (const listener of [...listeners]) listener();
+    release();
+    await expect(pending).rejects.toThrow("another Builderlab server");
+    expect(
+      h.request.mock.calls.map(([input]) => input.url.split("/").at(-1)),
+    ).toEqual(operation === "activation" ? [] : ["register-agent"]);
+    expect(
+      localStorage.getItem(`buzz.builderlab.adapter-identity.v1:${pubkey}`),
+    ).toBeNull();
   },
 );
 
@@ -290,7 +362,7 @@ it("does not stop a turn for an agent outside the signed-in account", async () =
 
 it("rejects a stop at once when signed out, without signing in or reaching Builderlab", async () => {
   const acquire = vi.fn(async () => ({
-    value: "credential",
+    revision: "credential",
     account: {
       subject: "account-a",
       email: "a@example.com",
@@ -298,7 +370,7 @@ it("rejects a stop at once when signed out, without signing in or reaching Build
       canUseBuilderlabDecisions: false,
     },
   }));
-  const session = createOAuthSession(acquire, undefined, {
+  const session = createTestSession(acquire, undefined, {
     request: (input) => request(input),
   });
   const request = vi.fn<Host["request"]>();
@@ -367,5 +439,81 @@ it("sends the picture when provisioning and publishes profile changes through Be
         agent_picture_url: "",
       }),
     }),
+  );
+});
+
+const withInstructions = (instructions: string, status = 2) =>
+  response({
+    status: 1,
+    agents: [
+      {
+        agent_id: "provider-id",
+        agent_pubkey: pubkey,
+        agent_name: "Helper",
+        status,
+        agent_instructions: instructions,
+      },
+    ],
+  });
+const edit = {
+  pubkey,
+  community: provision.community,
+  signal: provision.signal,
+};
+
+it("reads a hosted agent's instructions from the account's listing", async () => {
+  const h = await fixture();
+  h.request.mockResolvedValueOnce(withInstructions("Be brief."));
+  expect(await h.remote.instructions?.get(edit)).toBe("Be brief.");
+  expect(h.request).toHaveBeenLastCalledWith(
+    expect.objectContaining({ url: expect.stringContaining("/list-agents") }),
+  );
+  h.request.mockResolvedValueOnce(listing);
+  expect(await h.remote.instructions?.get(edit)).toBe("");
+});
+
+it("replaces a hosted agent's instructions with the provider's update", async () => {
+  const h = await fixture();
+  h.request
+    .mockResolvedValueOnce(withInstructions("Be brief."))
+    .mockResolvedValueOnce(response({ status: 1 }));
+  await h.remote.instructions?.set({ ...edit, instructions: "Be kind." });
+  expect(h.bodies()[1]).toEqual({
+    agent_pubkey: pubkey,
+    agent_instructions: "Be kind.",
+  });
+  expect(h.request).toHaveBeenLastCalledWith(
+    expect.objectContaining({ url: expect.stringContaining("/update-agent") }),
+  );
+});
+
+it("never starts browser login to read or replace a hosted agent's instructions", async () => {
+  const h = await fixture();
+  h.session.signOut();
+  const acquire = vi.spyOn(h.session, "ensureSignedIn");
+  await expect(h.remote.instructions?.get(edit)).rejects.toThrow(
+    "Sign in to Builderlab first.",
+  );
+  await expect(
+    h.remote.instructions?.set({ ...edit, instructions: "Be kind." }),
+  ).rejects.toThrow("Sign in to Builderlab first.");
+  expect(acquire).not.toHaveBeenCalled();
+  expect(h.request).not.toHaveBeenCalled();
+});
+
+it("refuses instructions the provider cannot take, and an agent it does not list", async () => {
+  const h = await fixture();
+  h.request.mockResolvedValueOnce(withInstructions("Be brief."));
+  await expect(
+    h.remote.instructions?.set({ ...edit, instructions: "x".repeat(20_001) }),
+  ).rejects.toThrow("up to 20000 characters");
+  // Only Active agents take an edit, as in Builderlab's own settings.
+  h.request.mockResolvedValueOnce(withInstructions("Be brief.", 1));
+  await expect(
+    h.remote.instructions?.set({ ...edit, instructions: "Be kind." }),
+  ).rejects.toThrow("Only Active agents");
+  h.request.mockResolvedValueOnce(response({ status: 1 }));
+  await expect(h.remote.instructions?.get(edit)).rejects.toThrow(
+    "Agent not found in this Builderlab account.",
   );
 });

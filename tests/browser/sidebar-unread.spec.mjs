@@ -38,7 +38,7 @@ const removeDm = async (page, id) => {
   await dm.click({ button: "right" });
   const menu = page.getByRole("menu", { name: /Actions for / });
   const remove = menu.getByRole("menuitem", {
-    name: "Remove from Team",
+    name: "Close conversation",
     exact: true,
   });
   await expect(remove).toBeVisible();
@@ -123,6 +123,65 @@ test("channel establishment preserves an in-flight unread batch and its sidebar 
   app,
 }) => {
   await holdReadingFocus(page);
+  // The held unread read must outlive the app's 10s read deadline and the
+  // broker's 20s upstream deadline on slow runners. Deadlines of those lengths
+  // started while it is held are deferred, not dropped: each starts its full
+  // length when the test releases the read, so an unrelated timer started
+  // during the hold still fires. The broker runs in this process.
+  const timeout = AbortSignal.timeout;
+  let deferredUpstream = [];
+  AbortSignal.timeout = (ms) => {
+    if (!deferredUpstream || ms !== 20_000)
+      return timeout.call(AbortSignal, ms);
+    const deadline = new AbortController();
+    deferredUpstream.push(deadline);
+    return deadline.signal;
+  };
+  const releaseUpstreamDeadlines = () => {
+    for (const deadline of deferredUpstream ?? [])
+      timeout
+        .call(AbortSignal, 20_000)
+        .addEventListener("abort", (event) =>
+          deadline.abort(event.target.reason),
+        );
+    deferredUpstream = undefined;
+  };
+  // The caller's deadline is an abort signal and the reader's is a timer; a
+  // deferred timer keeps its id, so clearing it before release still works.
+  await page.addInitScript(() => {
+    const timeout = AbortSignal.timeout.bind(AbortSignal);
+    const schedule = window.setTimeout.bind(window);
+    const clear = window.clearTimeout.bind(window);
+    let deferred = new Map();
+    const started = new Map();
+    let next = -1;
+    AbortSignal.timeout = (ms) => {
+      if (!deferred || ms !== 10_000) return timeout(ms);
+      const deadline = new AbortController();
+      deferred.set(next--, () =>
+        timeout(ms).addEventListener("abort", (event) =>
+          deadline.abort(event.target.reason),
+        ),
+      );
+      return deadline.signal;
+    };
+    window.setTimeout = (callback, ms, ...args) => {
+      if (!deferred || ms !== 10_000) return schedule(callback, ms, ...args);
+      const id = next--;
+      deferred.set(id, () => started.set(id, schedule(callback, ms, ...args)));
+      return id;
+    };
+    window.clearTimeout = (id) => {
+      if (deferred?.delete(id)) return;
+      clear(started.get(id) ?? id);
+      started.delete(id);
+    };
+    window.__releaseReadDeadlines = () => {
+      const held = deferred;
+      deferred = undefined;
+      for (const start of held.values()) start();
+    };
+  });
   const alphaHeads = () =>
     app.report.queries.filter(
       ({ community, filter }) =>
@@ -141,11 +200,14 @@ test("channel establishment preserves an in-flight unread batch and its sidebar 
         filter.depth_limit === undefined &&
         filter.until === undefined,
     );
+  // Every joined community holds its unread batch; only primary's is under test.
+  const holds = () =>
+    app.report.unreadHolds.filter(({ community }) => community === "primary");
   app.relay.holdEose("alpha");
   app.relay.holdUnread();
   const opening = open(page, app);
   try {
-    await expect.poll(() => app.report.unreadHolds.length).toBe(1);
+    await expect.poll(() => holds().length).toBe(1);
     expect(evidence()[0].filter["#h"]).toContain("alpha");
     expect(evidence()[0].filter["#h"]).toContain("dm-090");
     await expect.poll(() => alphaHeads().length).toBe(1);
@@ -154,10 +216,14 @@ test("channel establishment preserves an in-flight unread batch and its sidebar 
     // before releasing evidence. No sleep or scheduler luck creates the overlap.
     app.relay.releaseEose("alpha");
     await expect.poll(() => alphaHeads().length).toBe(2);
-    expect(app.report.unreadHolds).toEqual([{ pending: true, aborted: false }]);
+    expect(holds()).toEqual([
+      { community: "primary", pending: true, aborted: false },
+    ]);
     await opening;
     await expect(row(page, "dm-090")).toHaveCount(1);
     await expect(row(page, "dm-090").getByRole("img")).toHaveCount(0);
+    await page.evaluate(() => window.__releaseReadDeadlines());
+    releaseUpstreamDeadlines();
     app.relay.releaseUnread();
     await expect(row(page, "dm-030").getByRole("img")).toHaveCount(1);
     await expect(row(page, "dm-090").getByRole("img")).toHaveCount(1);
@@ -171,11 +237,13 @@ test("channel establishment preserves an in-flight unread batch and its sidebar 
     expect(evidence().map(({ filter }) => filter["#h"].length)).toEqual([
       128, 2,
     ]);
-    expect(app.report.unreadHolds).toEqual([
-      { pending: false, aborted: false },
+    expect(holds()).toEqual([
+      { community: "primary", pending: false, aborted: false },
     ]);
     expect(app.report.readPublications).toEqual([]);
   } finally {
+    releaseUpstreamDeadlines();
+    AbortSignal.timeout = timeout;
     app.relay.releaseEose("alpha");
     app.relay.releaseUnread();
     await opening;
@@ -210,8 +278,15 @@ test("edge controls follow scroll and reveal the nearest unread without selectio
     app.relay.releaseEose("alpha");
     await opening;
   }
-  const ordinary = row(page, "alpha");
-  await expect(ordinary).toHaveAttribute("aria-current", "page");
+  // The selected channel's row is quiet: opening it saw its unread.
+  const selected = row(page, "alpha");
+  await expect(selected).toHaveAttribute("aria-current", "page");
+  await expect(selected.locator("[data-channel-unread]")).toHaveCount(0);
+  await expect(selected.getByText("Alpha", { exact: true })).not.toHaveCSS(
+    "font-weight",
+    "600",
+  );
+  const ordinary = row(page, "beta");
   const ordinaryState = ordinary.locator("[data-channel-unread]");
   const directed = row(page, "dm-090").locator("[data-channel-priority]");
   await expect(ordinaryState).toHaveAttribute("data-priority", "false");
@@ -220,21 +295,8 @@ test("edge controls follow scroll and reveal the nearest unread without selectio
     /observed unread messages/,
   );
   await expect(ordinary.locator("[data-channel-priority]")).toHaveCount(0);
-  const ordinaryLabel = ordinary.getByText("Alpha", { exact: true });
+  const ordinaryLabel = ordinary.getByText("Beta", { exact: true });
   await expect(ordinaryLabel).toHaveCSS("font-weight", "600");
-  // A selected unread row keeps its weight and takes the selection's ink, so
-  // the label stays readable on the selection fill, hovered or not.
-  const unreadInk = await ordinaryLabel.evaluate((label) => {
-    const probe = document.createElement("span");
-    probe.style.color = "var(--text-row-selected)";
-    label.append(probe);
-    const color = getComputedStyle(probe).color;
-    probe.remove();
-    return color;
-  });
-  await expect(ordinaryLabel).toHaveCSS("color", unreadInk);
-  await ordinary.hover();
-  await expect(ordinaryLabel).toHaveCSS("color", unreadInk);
   await expect(directed).toBeVisible();
   await expect(directed).toHaveCSS("width", "6px");
   await expect(
@@ -265,8 +327,8 @@ test("edge controls follow scroll and reveal the nearest unread without selectio
   await releaseReadingFocus(page);
   // Keep actionable DMs below while moving only ordinary unread above: priority
   // is derived from the destinations on each edge, not from the whole roster.
-  await scrollRowAbove(page, "alpha");
-  await expect.poll(() => inView(page, "alpha")).toBe(false);
+  await scrollRowAbove(page, "beta");
+  await expect.poll(() => inView(page, "beta")).toBe(false);
   await expect(cue(page, "above")).toBeVisible();
   await expect(cue(page, "above")).toHaveText(/\d+ unread$/);
   await expect(cue(page, "above").locator("..")).toHaveCSS("top", "12px");

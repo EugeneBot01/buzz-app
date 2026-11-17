@@ -7,6 +7,7 @@ vi.mock("../../features/notifications/messages", () => ({
   bindMessageNotifications: (
     _notifications: unknown,
     _communities: unknown,
+    _localActivity: unknown,
     background: { id: string },
   ) => {
     bound.push(background.id);

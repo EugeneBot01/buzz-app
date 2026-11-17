@@ -121,6 +121,8 @@ export async function threadSample(
   ) => {
     view: ThreadView;
     rendered(): Promise<void>;
+    /** Resolves once the panel's thread reads have all finished. */
+    settled(): Promise<void>;
     dispose(): void;
   },
   corrupt = false,
@@ -257,6 +259,7 @@ export async function threadSample(
         },
       },
       {
+        readStateFloor: () => 0,
         // Match service.ts production options; no production defaults are changed.
         prepared: true,
         warm: true,
@@ -281,6 +284,7 @@ export async function threadSample(
           close() {},
         },
         readStateStorage: {
+          capture: async () => structuredClone(journal),
           async update(change) {
             journal = change(journal);
             return journal;
@@ -355,6 +359,7 @@ export async function threadSample(
       try {
         observe();
         await deadline(done.promise);
+        await deadline(mounted.settled());
         const completeMs = performance.now() - start;
         const cpuUsed = process.cpuUsage(cpu);
         await mounted.rendered();

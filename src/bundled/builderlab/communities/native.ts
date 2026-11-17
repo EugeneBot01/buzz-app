@@ -4,10 +4,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { HostResponse } from "../../../features/host/service";
 import { oauthTarget } from "../oauth/browser";
-import type {
-  BuilderlabRequest,
-  BuilderlabSession,
-  Credential,
+import {
+  UNAUTHORIZED,
+  type BuilderlabRequest,
+  type BuilderlabSession,
+  type Credential,
 } from "../session";
 import { boundKey, type Account, type Backend } from "./api";
 
@@ -96,10 +97,7 @@ export function createNativeBackend(
       body: JSON.stringify(body),
     });
     ensureCurrent(credential);
-    if (response.status === 401) {
-      session.expired(credential);
-      throw new Error("Your Builderlab session expired. Sign in again.");
-    }
+    if (response.status === 401) throw new Error(UNAUTHORIZED);
     const value = parse(response.body);
     const ok = response.status >= 200 && response.status < 300;
     // Structured `{ error: { code, ... } }` bodies pass through for friendly UI messages.
@@ -121,10 +119,7 @@ export function createNativeBackend(
     ensureCurrent(credential);
     const response = await http(credential, { path: "/v1/auth/me" });
     ensureCurrent(credential);
-    if (response.status === 401) {
-      session.expired(credential);
-      return null;
-    }
+    if (response.status === 401) return null;
     if (response.status < 200 || response.status >= 300)
       throw new Error(
         `Builderlab session check failed with HTTP ${response.status}`,
@@ -189,9 +184,7 @@ export function createNativeBackend(
       verified.status < 300 &&
       !(verified.value as { error?: unknown }).error
     )
-      void bridge
-        .invoke("nsec_backup_retry", { source: "builderlab" })
-        .catch(() => {});
+      void bridge.invoke("nsec_backup_retry").catch(() => {});
     return verified;
   };
   const call = (action: string, input?: Record<string, unknown>) => {

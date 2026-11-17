@@ -6,11 +6,12 @@ import type { ProfileQueries } from "../../features/relay/profile-directory";
 import { selectProfiles } from "../../features/relay/profile-selection";
 import { sortParticipantNames } from "../../features/identity-names/participant-order";
 
-/** Visible labels share the session's bounded profile directory, not per-row fetches. */
+/** Share bounded profiles, not per-row fetches; pickers may widen the name scope. */
 export function useChannelLabels(
   roster: readonly ChannelSummary[],
   queries: ProfileQueries,
   names?: IdentityNameView,
+  nameCandidates?: readonly string[],
 ) {
   const resolveName = useIdentityNames(names);
   const channels = useMemo(
@@ -37,9 +38,11 @@ export function useChannelLabels(
     selection.snapshot,
     selection.snapshot,
   );
-  // Access loss can purge loaded names or abort a cold fetch without changing
-  // DM participants. Retry for missing names or changed channel membership,
-  // not for message previews/renders; keep enrichment in the background.
+  // A name read can come back empty or fail (offline), and a full cache clear
+  // empties the directory, without changing DM participants. Retry missing
+  // names when channel membership changes, not for message previews/renders;
+  // keep enrichment in the background, which skips names a read on this
+  // connection found absent.
   const membership = useMemo(
     () =>
       roster
@@ -61,6 +64,7 @@ export function useChannelLabels(
         channel: ChannelSummary;
         profiles: typeof profiles;
         resolveName: typeof resolveName;
+        nameCandidates: typeof nameCandidates;
       }
     >(),
   );
@@ -73,7 +77,8 @@ export function useChannelLabels(
         const previous = labelled.current.get(channel);
         if (
           previous?.profiles === profiles &&
-          previous.resolveName === resolveName
+          previous.resolveName === resolveName &&
+          previous.nameCandidates === nameCandidates
         )
           return previous.channel;
         const name = channel.participants.length
@@ -82,7 +87,7 @@ export function useChannelLabels(
                 resolveName(
                   id,
                   profiles.get(id)?.name ?? id.slice(0, 10),
-                  channel.participants,
+                  nameCandidates ?? channel.participants,
                 ),
               ),
             ).join(", ")
@@ -94,10 +99,11 @@ export function useChannelLabels(
           channel: result,
           profiles,
           resolveName,
+          nameCandidates,
         });
         return result;
       }),
-    [channels, profiles, resolveName],
+    [channels, profiles, resolveName, nameCandidates],
   );
   return { channels: labelledChannels, profiles };
 }

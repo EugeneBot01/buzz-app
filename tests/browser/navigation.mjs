@@ -11,6 +11,14 @@ export async function pageChoices(page, query = "") {
   );
 }
 
+// Activity is a row at the top of the Messages sidebar; its name ends with its
+// unread count while conversations are unread.
+export function activityRow(page) {
+  return page
+    .getByRole("navigation", { name: "Pages", exact: true })
+    .getByRole("button", { name: /^Activity(?: \d+ unread)?$/ });
+}
+
 export async function openPage(page, name, { connected = true } = {}) {
   // The community switcher appears after local startup has replaced the launch view.
   await expect(
@@ -20,12 +28,17 @@ export async function openPage(page, name, { connected = true } = {}) {
   await selectPage(page, name, { connected });
 }
 
-// A Solo chat is not a page: New → New chat opens a Solo draft in Messages.
+// Nexus composes chat creation inside Chats; ordinary Buzz keeps the global menu.
 export async function newChat(page) {
   // The community switcher appears after local startup has replaced the launch view.
   await expect(
     page.getByRole("button", { name: /^Community switcher:/ }),
   ).toBeVisible();
+  await openPage(page, "Messages");
+  // The narrow drawer retains its startup owner while hidden from the AX tree.
+  const sidebar = page.locator('aside[aria-label="Sidebar"]');
+  await expect(sidebar).not.toHaveAttribute("data-buzz-launch-pending");
+  await expect(sidebar).not.toHaveAttribute("aria-busy", "true");
   if (page.viewportSize().width <= 650) {
     await settleShellToggle(page);
     const show = page.getByRole("button", {
@@ -35,7 +48,24 @@ export async function newChat(page) {
     if (await show.isVisible()) await show.click();
   }
   await page.getByRole("button", { name: "New", exact: true }).click();
-  await page.getByRole("menuitem", { name: "New chat", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  const globalChat = menu.getByRole("menuitem", {
+    name: "New chat",
+    exact: true,
+  });
+  if (await globalChat.isVisible()) {
+    await globalChat.click();
+    return;
+  }
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "Solo", exact: true }).click();
+  await expect(
+    page.getByRole("tab", { name: "Solo", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page
+    .getByRole("button", { name: "New chat in Chats", exact: true })
+    .click();
 }
 
 // The agents-only composer pill's menu adds and removes agents, never the
@@ -44,13 +74,12 @@ export async function newChat(page) {
 export async function sendOnlyTo(page, pill, agent) {
   await pill.click();
   const menu = page.getByRole("dialog", { name: "Mention a member or agent" });
-  const name = `${agent.name} ${agent.pubkey}`;
-  const row = menu.getByRole("button", { name, exact: true });
+  // A row's name no longer spells out its key; the row carries it instead.
+  const chosen = `[data-mention-choice="${agent.pubkey}"]`;
+  const row = menu.getByRole("button").and(page.locator(chosen));
   if ((await row.getAttribute("aria-pressed")) !== "true") await row.click();
   await expect(row).toHaveAttribute("aria-pressed", "true");
-  const others = menu.locator(
-    `[aria-pressed="true"]:not([aria-label="${name}"])`,
-  );
+  const others = menu.locator(`[aria-pressed="true"]:not(${chosen})`);
   while (await others.count()) await others.first().click();
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
@@ -184,7 +213,7 @@ export async function settlePanelMotion(page) {
         docks.flatMap((dock) =>
           [
             ...dock.getAnimations({ subtree: true }),
-            ...dock.parentElement.getAnimations(),
+            ...(dock.parentElement?.getAnimations() ?? []),
           ]
             .filter(
               (animation) =>
@@ -218,20 +247,32 @@ export async function openCommunityPicker(page) {
   return picker;
 }
 
+/** The switcher trigger for `name`, with or without the elsewhere-unread suffix. */
+export function communitySwitcher(page, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return page.getByRole("button", {
+    name: new RegExp(
+      `^Community switcher: ${escaped}(, unread in other communities)?$`,
+    ),
+  });
+}
+
 export async function selectCommunity(page, name) {
   const picker = await openCommunityPicker(page);
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // A row's name carries its unread suffix once that community's unread is known.
   await picker
     .getByRole("button", {
-      name: name === "Personal space" ? name : `Switch to ${name}`,
+      name:
+        name === "Personal space"
+          ? name
+          : new RegExp(
+              `^Switch to ${escaped}(, unread|, \\d+ items? needs? you)?$`,
+            ),
       exact: true,
     })
     .click();
-  await expect(
-    page.getByRole("button", {
-      name: `Community switcher: ${name}`,
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expect(communitySwitcher(page, name)).toBeVisible();
 }
 
 export function pageChoice(group, name) {

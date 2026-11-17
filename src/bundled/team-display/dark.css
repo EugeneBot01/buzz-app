@@ -31,3 +31,68 @@
   background-position: center;
   background-repeat: no-repeat;
 }
+
+/* Team build: KakaoTalk-style bubbles (UI EDIT → 말풍선). Bubbles fit their
+   text; mine take the app's accent colour so they follow the chosen theme. */
+html[data-team-bubbles="on"]
+  [data-message-action-anchor]:not([data-emoji-only]):not([data-diff-only]) {
+  width: fit-content;
+  max-width: min(62%, 36rem);
+  padding: 8px 12px;
+  border-radius: 14px;
+  border-top-left-radius: 4px;
+  background: var(--color-soft);
+  color: var(--text);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+/* Same :not() weight as the base bubble rule, so mine always wins. */
+html[data-team-bubbles="on"]
+  [data-message-action-anchor][data-own]:not([data-emoji-only]):not(
+    [data-diff-only]
+  ) {
+  margin-inline-start: auto;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 4px;
+  /* The sidebar's selected colour is the theme accent the member chose. */
+  background: var(--surface-sidebar-selected);
+  color: var(--text-sidebar-selected);
+  --mention-fill: color-mix(in srgb, currentColor 18%, transparent);
+  --mention-text: currentColor;
+  --message-link: currentColor;
+}
+html[data-team-bubbles="on"] [data-message-action-anchor][data-own] a,
+html[data-team-bubbles="on"] [data-message-action-anchor][data-own] code {
+  color: inherit;
+}
+html[data-team-bubbles="on"] [data-viewer-message] {
+  justify-content: flex-end;
+}
+[data-team-collapsed] > :not([data-team-more]) {
+  max-height: 7.5em;
+  overflow: hidden;
+}
+[data-team-more] {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  padding: 6px 0 0;
+  border: 0;
+  border-top: 1px solid currentColor;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  opacity: 0.85;
+  cursor: pointer;
+}
+/* A card inside a bubble keeps a readable width instead of one word a line. */
+html[data-team-bubbles="on"] [data-team-card] {
+  min-width: min(16rem, 100%);
+}
+html[data-team-bubbles="on"] [data-message-action-anchor]:has([data-team-card]) {
+  min-width: min(18rem, 62%);
+}

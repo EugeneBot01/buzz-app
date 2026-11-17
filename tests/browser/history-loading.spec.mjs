@@ -10,6 +10,7 @@ import {
 } from "./timeline.mjs";
 
 test.use({
+  enabledPlugins: ["buzz.workflows"],
   productionBroker: true,
   historyCounts: { alpha: 640, beta: 20 },
 });
@@ -23,8 +24,8 @@ tall(
   async ({ page, app }) => {
     await open(page, app);
     await expect(
-      page.getByRole("status", {
-        name: "Reconnecting to relay…",
+      page.getByRole("dialog", {
+        name: "Buzz is having trouble connecting",
         exact: true,
       }),
     ).toHaveCount(0);
@@ -63,8 +64,8 @@ test("returning to the top continues history loading on wheel without a button",
 }) => {
   await open(page, app);
   await expect(
-    page.getByRole("status", {
-      name: "Reconnecting to relay…",
+    page.getByRole("dialog", {
+      name: "Buzz is having trouble connecting",
       exact: true,
     }),
   ).toHaveCount(0);
@@ -96,13 +97,23 @@ test("saved top resumes automatic history on an upward gesture after remount", a
 }) => {
   await open(page, app);
   await expect(
-    page.getByRole("status", {
-      name: "Reconnecting to relay…",
+    page.getByRole("dialog", {
+      name: "Buzz is having trouble connecting",
       exact: true,
     }),
   ).toHaveCount(0);
   await history(page).hover();
-  await page.mouse.wheel(0, -100000);
+  // Establish the saved top with real input; remeasurement can consume part
+  // of a gesture. Each settled gesture must make progress toward the top.
+  while (true) {
+    const before = await history(page).evaluate((e) => e.scrollTop);
+    if (before <= 0) break;
+    await wheel(page, -before);
+    expect(
+      await history(page).evaluate((e) => e.scrollTop),
+      "saved-top setup retains upward progress",
+    ).toBeLessThan(before);
+  }
   await expect.poll(() => app.pending.length).toBe(1);
   await settle(page);
   await expect.poll(() => history(page).evaluate((e) => e.scrollTop)).toBe(0);
@@ -114,8 +125,8 @@ test("saved top resumes automatic history on an upward gesture after remount", a
   await openPage(page, "Messages");
   await expect(history(page)).toBeVisible();
   await expect(
-    page.getByRole("status", {
-      name: "Reconnecting to relay…",
+    page.getByRole("dialog", {
+      name: "Buzz is having trouble connecting",
       exact: true,
     }),
   ).toHaveCount(0);
@@ -136,8 +147,8 @@ test.describe("quota retry without threshold-driven continuation", () => {
   }) => {
     await open(page, app);
     await expect(
-      page.getByRole("status", {
-        name: "Reconnecting to relay…",
+      page.getByRole("dialog", {
+        name: "Buzz is having trouble connecting",
         exact: true,
       }),
     ).toHaveCount(0);
@@ -301,38 +312,84 @@ test.describe("pages inside one second", () => {
       };
     });
   }
+  // A pause in geometry is not completion of the deferred page measurements.
+  // Wait for Virtua's offsets to reflect the mounted rows' actual heights
+  // before taking an independent baseline for growth.
+  async function measured(page) {
+    await expect
+      .poll(() =>
+        history(page).evaluate((element) => {
+          const items = Array.from(element.querySelector("ol").children);
+          return items.every((item, index) => {
+            const next = items[index + 1];
+            return (
+              !next ||
+              Math.abs(
+                next.getBoundingClientRect().top -
+                  item.getBoundingClientRect().bottom,
+              ) < 1
+            );
+          });
+        }),
+      )
+      .toBe(true);
+    await settle(page);
+  }
 
   test("a held pointer scrolls across the page without being pulled back", async ({
     page,
     app,
   }) => {
+    // A shorter scroller lets the drag carry the held row out of view even
+    // when the randomized page leaves little loaded history above the reader.
+    await page.setViewportSize({ width: 1440, height: 600 });
     const pending = await reading(page, app, 1400);
     const box = await history(page).boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     try {
+      // The press records the topmost whole paragraph as the reading anchor.
+      // The timeline holds that row in place while any part of it stays in
+      // view, even as rows above it measure and move.
+      let held = await anchor(page);
       const height = await history(page).evaluate((e) => e.scrollHeight);
       pending.release();
       await expect
         .poll(() => history(page).evaluate((e) => e.scrollHeight))
         .toBeGreaterThan(height);
       await settle(page);
+      await expectAnchor(page, held);
+      // Keep enough gesture samples even when the randomized page is short.
+      const distance = Math.min(
+        150,
+        Math.floor((await history(page).evaluate((e) => e.scrollTop)) / 12),
+      );
+      expect(distance).toBeGreaterThan(0);
       // A scrollbar drag moves the scroller with no further input events,
       // into older rows that measure as they mount, short of the loaded top.
+      // Once a step carries the held row out of view, the timeline holds the
+      // row it reads at that scroll instead. Reading after the step settles
+      // could pick another row once rows above it measure.
       let step = 0;
+      let handOvers = 0;
       for (
         ;
-        step < 10 && (await history(page).evaluate((e) => e.scrollTop)) >= 150;
+        step < 10 &&
+        (await history(page).evaluate((e) => e.scrollTop)) >= distance;
         step++
       ) {
-        const before = await anchor(page);
-        await history(page).evaluate((e) => {
-          e.scrollTop -= 150;
-        });
+        const read = await anchor(page, held.id, -distance);
+        if (read.id === held.id) held = { ...held, y: held.y + distance };
+        else {
+          held = read;
+          handOvers++;
+        }
         await settle(page);
-        await expectAnchor(page, { ...before, y: before.y + 150 });
+        await expectAnchor(page, held);
       }
-      expect(step).toBeGreaterThanOrEqual(3);
+      // The drag hands over at least once and keeps asserting after it.
+      expect(step).toBeGreaterThanOrEqual(6);
+      expect(handOvers).toBeGreaterThan(0);
     } finally {
       await page.mouse.up();
     }
@@ -521,33 +578,64 @@ test.describe("pages inside one second", () => {
     } finally {
       await page.evaluate(() => window.releaseFrames());
     }
-    // A pause in geometry is not completion of the deferred page measurements.
-    // Wait for Virtua's offsets to reflect the mounted rows' actual heights
-    // before taking an independent baseline for the growth below the reader.
-    await expect
-      .poll(() =>
-        history(page).evaluate((element) => {
-          const items = Array.from(element.querySelector("ol").children);
-          return items.every((item, index) => {
-            const next = items[index + 1];
-            return (
-              !next ||
-              Math.abs(
-                next.getBoundingClientRect().top -
-                  item.getBoundingClientRect().bottom,
-              ) < 1
-            );
-          });
-        }),
-      )
-      .toBe(true);
-    await settle(page);
+    await measured(page);
     const measuredHeight = await history(page).evaluate((e) => e.scrollHeight);
     const beforeGrowth = await grow(page);
     await expect
       .poll(() => history(page).evaluate((e) => e.scrollHeight))
       .toBeGreaterThan(measuredHeight);
     await expectAnchor(page, beforeGrowth);
+  });
+
+  test("a drag released before a render that holds its row again ends the hold", async ({
+    page,
+    app,
+  }) => {
+    const pending = await reading(page, app, 1400);
+    const box = await history(page).boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    const height = await history(page).evaluate((e) => e.scrollHeight);
+    await holdFrames(page);
+    try {
+      pending.release();
+      await expect
+        .poll(() => history(page).evaluate((e) => e.scrollHeight))
+        .toBeGreaterThan(height);
+      await history(page).evaluate(
+        (e) =>
+          new Promise((resolve) => {
+            e.addEventListener("scrollend", resolve, { once: true });
+            e.scrollTop -= 300;
+          }),
+      );
+      await page.mouse.up();
+      // The timeline renders new rows before the page's rows measure, and
+      // holds the reader's row again for them.
+      app.append("primary", "alpha", undefined, true, false);
+      await expect(latest(page)).toHaveText("1 new message");
+    } finally {
+      await page.evaluate(() => window.releaseFrames());
+    }
+    await measured(page);
+    const before = await anchor(page);
+    // The reader's row and the rows after it in view grow below their
+    // paragraphs. A hold left on any of them would move the reader's row.
+    await history(page).evaluate((e, id) => {
+      const bottom = e.getBoundingClientRect().bottom;
+      const rows = [...e.querySelectorAll("[data-message-id]")];
+      for (const row of rows.slice(
+        rows.findIndex((row) => row.dataset.messageId === id),
+      )) {
+        const paragraph = row.querySelector("p");
+        if (paragraph.getBoundingClientRect().bottom > bottom) break;
+        const extra = document.createElement("div");
+        extra.style.height = "300px";
+        paragraph.after(extra);
+      }
+    }, before.id);
+    await settle(page);
+    await expectAnchor(page, before);
   });
 
   test("a cancelled drag ends the hold", async ({ page, app }) => {
@@ -677,7 +765,7 @@ test("cancelled navigation keeps relay reads usable in the same document", async
       { once: true },
     );
   });
-  const sessions = app.report.sessions.length;
+  const sessions = app.report.sessions.filter((c) => c === "primary").length;
   const dialog = page.waitForEvent("dialog");
   await page.evaluate(() => {
     setTimeout(() => window.location.reload(), 0);
@@ -689,5 +777,7 @@ test("cancelled navigation keeps relay reads usable in the same document", async
     page.getByRole("textbox", { name: "Message #Beta", exact: true }),
   ).toBeVisible();
   await expect(history(page)).toContainText("primary beta message");
-  expect(app.report.sessions).toHaveLength(sessions);
+  expect(app.report.sessions.filter((c) => c === "primary")).toHaveLength(
+    sessions,
+  );
 });

@@ -40,12 +40,21 @@ providerTest(
       exact: true,
     });
     await expect(dialog).toBeVisible();
+    const provider = await entry(page);
     await page.goBack();
     await expect(dialog).toHaveCount(0);
     await expect(settingsDialog(page)).toBeVisible();
     expect(await entry(page)).toEqual(parent);
     await page.goForward();
     await expect(dialog).toBeVisible();
+    // The history shortcuts traverse the same nested provider visit.
+    await page.keyboard.press("ControlOrMeta+BracketLeft");
+    await expect(dialog).toHaveCount(0);
+    await expect(settingsDialog(page)).toBeVisible();
+    expect(await entry(page)).toEqual(parent);
+    await page.keyboard.press("ControlOrMeta+BracketRight");
+    await expect(dialog).toBeVisible();
+    expect(await entry(page)).toEqual(provider);
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(await entry(page)).toEqual(parent);
@@ -98,11 +107,19 @@ providerTest(
       exact: true,
     });
     await expect(dialog).toBeVisible();
+    const visit = await entry(page);
     await page.goBack();
     await expect(dialog).toHaveCount(0);
     expect(await entry(page)).toEqual(agents);
     await page.goForward();
     await expect(dialog).toBeVisible();
+    // The history shortcuts traverse the same provider visit.
+    await page.keyboard.press("ControlOrMeta+BracketLeft");
+    await expect(dialog).toHaveCount(0);
+    expect(await entry(page)).toEqual(agents);
+    await page.keyboard.press("ControlOrMeta+BracketRight");
+    await expect(dialog).toBeVisible();
+    expect(await entry(page)).toEqual(visit);
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(await entry(page)).toEqual(agents);
@@ -181,7 +198,7 @@ test("a collapsible sidebar yields to narrow drawer styles during resize", async
   await expect(navigation).toBeVisible();
 });
 
-test("a retired contributed Settings destination fails promptly on Back", async ({
+test("a retired contributed Settings destination promptly reports the plugin turned off on Back", async ({
   page,
   app,
 }) => {
@@ -206,12 +223,19 @@ test("a retired contributed Settings destination fails promptly on Back", async 
   await expect(pairing).toHaveCount(0);
   // The shell toolbar is inert behind the Settings modal; traverse history.
   await page.goBack();
+  const card = page.getByRole("alert");
   await expect(
-    page.getByRole("alert").getByRole("heading", {
-      name: "This page isn’t available",
+    card.getByRole("heading", {
+      name: "Pair mobile is turned off",
       exact: true,
     }),
   ).toBeVisible({ timeout: 3000 });
+  await expect(
+    card.getByRole("button", { name: "Manage plugins", exact: true }),
+  ).toBeVisible();
+  await expect(
+    card.getByRole("button", { name: "Go to Messages" }),
+  ).toHaveCount(0);
 });
 
 test("channel visits, toolbar, browser traversal and Settings sections share one history", async ({

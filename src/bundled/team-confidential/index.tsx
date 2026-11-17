@@ -264,6 +264,7 @@ function ThreadRoot({
     <span
       className="my-1 flex max-w-md flex-col gap-2 rounded-lg border border-line p-3"
       data-no-translate=""
+      data-team-card=""
     >
       <span className="flex items-center gap-2 font-medium">
         <LockIcon size={16} aria-hidden="true" />

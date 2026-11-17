@@ -31,8 +31,16 @@ See the [capability contract](../src/features/workflows/types.ts).
   the active naming policy. Fallbacks lengthen their suffix to stay distinct across
   visible owners. Visible owners hydrate together in background profile
   batches of up to 500 identities. Narrow rows reflow their artwork, text, and
-  independent controls as text grows. Ownership and management
-  permissions remain tied to the signing identity, including agent-owned workflows.
+  independent controls as text grows. Editing, enabling and running remain tied
+  to the workflow author. A verified owner of an agent can also delete that
+  agent's workflows, signing as themselves;
+  select All channel workflows to find them. This ownership-authorized deletion
+  also works with a Guest channel role. Ownership claims in display metadata
+  do not grant permission, and the relay authorizes every deletion. Losing the
+  verified ownership proof disables deletion in the app; it does not clear the
+  relay's separately recorded agent owner.
+  If permission changes during confirmation, an error explains why deletion
+  could not start; the editor retains its draft.
   Clearing the owner filter or Clear all shows all channel workflows.
   Enabled and Disabled match saved configuration (omitted means enabled), not
   confirmed runtime activity; unreadable configurations are excluded from both.
@@ -98,6 +106,12 @@ See the [capability contract](../src/features/workflows/types.ts).
   configuration (the editor's Run now is unavailable while the draft has
   unsaved changes), and on-demand run/trace history in
   20-row pages with the relay's exact `(before,beforeId)` cursor.
+- Archived channels: the relay accepts saves and runs there, but every run
+  fails. Their group and Recently updated rows say Archived. Run now and
+  turning a workflow on are unavailable in rows, details and the editor, whose
+  Save is blocked only while the draft is enabled; turning off and Delete stay
+  available. New workflow omits them; the landing keeps them so an open editor
+  keeps its draft.
 - No approval UI, lifecycle negotiation, plugin command-replay API or JSON
   trigger inputs.
 
@@ -210,10 +224,11 @@ writes require separate consent; no backend work belongs to this plugin PR.
 
 Relay-attested workflow messages show an automation icon and **Workflow · owned
 by …**, not a message authored by the owner. The full message byline links the
-owner profile and discloses the separate relay signing key. Compact Search,
-Inbox/activity, link previews and notification titles retain the automation label;
-opening the message provides the full disclosure. Notifications use cached names
-only and do not add profile reads.
+owner profile. Its information icon opens a short card, on pointer rest or click,
+explaining that the owner set up the workflow but did not send the message
+personally; it shows no keys. Compact Search, Inbox/activity, link previews and
+notification titles retain the automation label; opening the message shows the
+full byline. Notifications use cached names only and do not add profile reads.
 
 Attribution requires a verified kind-9 event from the selected community's
 explicit NIP-11 `self`, exactly one canonical `buzz:workflow=true` marker and one
@@ -226,7 +241,8 @@ The owner tag identifies the identity that scheduled the workflow, not the autho
 of every rendered word. Templates can include trigger-controlled values; those
 values do not acquire the owner's prompt authority.
 
-Claude Code and Codex also use this proof to authorize delegated workflow mentions.
+Claude Code, Codex, Pi and Goose also use this proof to authorize delegated
+workflow mentions. Agent types that plugins bring do not.
 The receiving agent's ready community session must supply the explicit relay
 authority. The workflow owner must be that agent's owner, or an agent whose
 admitted kind-0 profile cryptographically proves the same owner through NIP-OA.
@@ -240,7 +256,10 @@ The event must contain a canonical `buzz:workflow-mention` for the receiving
 agent; all such tags
 must have exactly two fields, a lowercase-hex pubkey, and no duplicate targets.
 The relay emits these tags only for targets present in the owner-authored template
-and the rendered output. Legacy `p` tags route mentions but do not authorize them.
+and the rendered output. A relay running
+[owner-only agent mentions](https://github.com/block/buzz/blob/main/docs/operator-workflow-agent-mentions.md) may leave the tag off; the message still posts, but
+no agent acts on it, and the owner's app notes under the message which of their
+agents didn't respond. Legacy `p` tags route mentions but do not authorize them.
 Workflows created and maintained under an owned agent's own key remain owned by
 that agent and can wake agents with the same proven human owner. This does not
 grant an agent permission to edit a workflow owned by a different signing identity.
@@ -251,8 +270,8 @@ promoted to `self`, and no new trusted storage is introduced. Signer-based searc
 and Inbox sender filters and relay-reported participant
 summaries are unchanged by workflow presentation. Channel/thread rows retain the
 effective-author attribution and owner edit/delete behavior added separately in
-#661; when that author differs from the signer, the row carries a separate signing
-key so the disclosure still identifies the actual relay. Thread and media views
+#661; when that author differs from the signer, the row keeps the signing key
+for row identity only and does not display it. Thread and media views
 request workflow-owner profiles through the existing background profile directory.
 The workflow proof controls the automation label and the delegated-mention gate
 above; it does not control main's effective message-author policy. With explicit

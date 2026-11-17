@@ -1,12 +1,21 @@
 // The production tab and shared controls, with only the host data boundary replaced.
+import { Panel } from "../../src/shared/design-system/ui/Panel";
 import { createRoot } from "react-dom/client";
 import type { Context } from "../../src/plugins/author";
 import { presentPull } from "../../src/bundled/github/attention";
 import { createTab } from "../../src/bundled/watching/Tab";
+import { profileTarget } from "../../src/features/profiles/target";
 import "../../src/shared/styles/globals.css";
 
 const channel = "11111111-1111-4111-8111-111111111111";
 const listeners = new Set<() => void>();
+const now = Math.floor(Date.now() / 1000);
+const [alex, sam] = ["b".repeat(64), "c".repeat(64)];
+const people: Record<string, string> = { [alex]: "Alex", [sam]: "Sam" };
+const profiles = new Map([
+  [alex, { name: "alex" }],
+  [sam, { name: "sam" }],
+]);
 const value = {
   type: "event",
   name: "Release discussion",
@@ -30,8 +39,41 @@ let snapshot = {
       timers: {},
       attentionHistory: {
         "watch/discussion": {
-          output:
-            "2026-10-27T14:00:00Z · Alex\nThe release is ready for review.",
+          events: [
+            {
+              id: "1111111111111111111111111111111111111111111111111111111111111111",
+              at: now - 3600,
+              author: alex,
+              channel,
+              text: "Branch cut for **v2.4** is done.\n- Notes drafted\n- QA starts today",
+            },
+            {
+              id: "2222222222222222222222222222222222222222222222222222222222222222",
+              at: now - 1500,
+              author: sam,
+              channel,
+              text: "One blocker: the `migrate` step times out on large workspaces.",
+            },
+            {
+              id: "3333333333333333333333333333333333333333333333333333333333333333",
+              at: now - 300,
+              author: alex,
+              channel,
+              text: "The release is ready for review. Checklist: [release doc](https://example.com/release)",
+            },
+          ],
+        },
+        "watch/pr": {
+          events: [
+            {
+              at: now - 900,
+              text: "CI passed on 1a2b3c4 for https://github.com/example/project/pull/42.",
+            },
+            {
+              at: now - 120,
+              text: "New feedback on https://github.com/example/project/pull/42, quoted from GitHub:\n- review by wes: approved\n  > Looks good, ship it.",
+            },
+          ],
         },
       },
       attention: {
@@ -40,8 +82,7 @@ let snapshot = {
           modifiedAt: 1,
           value: {
             type: "interest",
-            instructions:
-              "# Release planning\nReport blockers and keep the release moving.",
+            instructions: `# Release planning\nReport blockers to [Sam](${profileTarget(sam)}) and keep the release moving.`,
           },
         },
         "watch/discussion": {
@@ -52,7 +93,13 @@ let snapshot = {
         "interest/review": {
           slug: "interest/review",
           modifiedAt: 1,
-          value: { type: "interest", instructions: "# Review checks" },
+          value: {
+            type: "interest",
+            title: "PR reviews",
+            summary:
+              "Wakes on new reviews and CI results for example/project#42, then fixes failures and replies to feedback.",
+            instructions: "# Review checks",
+          },
         },
         "watch/pr": {
           slug: "watch/pr",
@@ -79,6 +126,17 @@ const connection = {
   scope: `https://example.com:${"f".repeat(64)}`,
   session: {
     media: () => "",
+    profiles: {
+      snapshot: () => profiles,
+      subscribe: () => () => {},
+      ensure: async () => {},
+    },
+    names: {
+      resolve: (pubkey: string, fallback?: string) =>
+        people[pubkey] ?? fallback,
+      subscribe: () => () => {},
+      snapshot: () => 0,
+    },
     channels: {
       ensureList() {},
       subscribeList: () => () => {},
@@ -167,4 +225,15 @@ const Tab = createTab({
 } as unknown as Context);
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing fixture root");
-createRoot(root).render(<Tab agent={{ key: "membership-a" }} />);
+createRoot(root).render(
+  <Panel joined>
+    <Tab
+      agent={{ key: "membership-a" }}
+      open={(target) => {
+        document.body.dataset.opened = target;
+        return true;
+      }}
+      canOpen={() => true}
+    />
+  </Panel>,
+);

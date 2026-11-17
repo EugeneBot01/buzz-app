@@ -131,8 +131,11 @@ test("media review chrome follows host colors while stage controls stay dark", a
     const zoom = stage.getByRole("button", { name: "Zoom in", exact: true });
     await expect(stage).toHaveAttribute("data-color-mode", "dark");
     await page.mouse.move(0, 0);
-    for (const button of [close, comments]) {
-      await expect(button).toHaveCSS("color", "rgb(15, 15, 15)");
+    for (const [button, color] of [
+      [close, "rgb(95, 95, 95)"],
+      [comments, "rgb(15, 15, 15)"],
+    ]) {
+      await expect(button).toHaveCSS("color", color);
       await expect(button).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
     }
     await expect(zoom).toHaveCSS("color", "rgb(255, 255, 255)");
@@ -159,7 +162,13 @@ test("media review chrome follows host colors while stage controls stay dark", a
       for (const button of [close, comments]) {
         await expect(button).toHaveCSS(
           "color",
-          mode === "light" ? "rgb(15, 15, 15)" : "rgb(255, 255, 255)",
+          button === close
+            ? mode === "light"
+              ? "rgb(95, 95, 95)"
+              : "rgb(164, 164, 164)"
+            : mode === "light"
+              ? "rgb(15, 15, 15)"
+              : "rgb(255, 255, 255)",
         );
       }
       await expect(stage).toHaveCSS("background-color", "rgb(0, 0, 0)");
@@ -222,9 +231,13 @@ test("inline video controls follow playback, hover and keyboard focus", async ({
       .first()
       .focus();
     await expect(expand).toHaveCSS("opacity", "0");
-    // Keep playback active throughout the visibility assertions, independent of clip length.
+    // Keep playback active throughout the visibility assertions, independent
+    // of clip length: a zero rate plays without advancing the clock. Not
+    // `loop`: on Linux WebKit, a seek back to 0 during playback leaves this
+    // clip re-seeking to 0 and stalling, and in CI the Pause click then left
+    // the video playing.
     await video.evaluate((element) => {
-      element.loop = true;
+      element.playbackRate = 0;
     });
     await play.click();
     await expect(video).toHaveJSProperty("paused", false);
@@ -510,7 +523,7 @@ test("shared thread UI auto-loads, follows live replies, retries and isolates re
     for (const surface of [feed, history]) {
       const paragraph = surface
         .locator("p")
-        .filter({ hasText: /^first\s+second$/ });
+        .filter({ hasText: /^first\s*second$/ });
       await expect(paragraph.locator("br")).toHaveCount(1);
       const geometry = await paragraph.evaluate((element) => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
@@ -740,7 +753,7 @@ test("media review completions stay visible and preserve modal keyboard ownershi
         await expect(emoji).toContainText(":smile:");
         await expect.poll(() => topmost(emoji)).toBe(true);
         await input.press(key);
-        await expect(input).toHaveJSProperty("value", "😄");
+        await expect(input).toHaveJSProperty("value", "😄 ");
         await expect(input).toBeFocused();
         await expect(page.getByRole("listbox")).toHaveCount(0);
       }

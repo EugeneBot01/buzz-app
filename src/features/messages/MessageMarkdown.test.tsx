@@ -23,11 +23,14 @@ import type {
 import type { Contribution } from "../../plugins/contributions";
 import { CustomEmoji } from "../../bundled/emoji/CustomEmoji";
 import { emojiMatches } from "../relay/emoji";
-import { profileTarget } from "../profiles/target";
+import { profileKey, profileTarget } from "../profiles/target";
+import { parseBuzzLink } from "../navigation/buzz-links";
 import styles from "./Messages.module.css";
 import { LinkLabel } from "../../bundled/links/InlineLink";
 import { MessageMarkdown } from "./MessageMarkdown";
 import { serializeSelection } from "./selection-copy";
+import { buzzCopyDocument } from "./composer-clipboard";
+import { projectComposerDocument } from "./composer-document";
 import { createRelaySession } from "../relay/session";
 import { createAgentDirectory } from "../identity-names/testing";
 import { bindNames } from "../identity-names/service";
@@ -36,7 +39,7 @@ import {
   safeLinkUrl,
   safeMessageUrl,
 } from "../relay/message-content";
-import type { ChannelMessage } from "../relay/contracts";
+import type { ChannelMessage, Profile } from "../relay/contracts";
 
 const markdownRenders = vi.hoisted(() => vi.fn());
 vi.mock("react-markdown", async (importOriginal) => {
@@ -86,7 +89,7 @@ function props(
     },
     media: () => undefined,
     onOpenLink: () => false,
-    canOpenLink: () => true,
+    canOpenLink: (target) => !!profileKey(target) || !!parseBuzzLink(target),
     participantProfiles: profiles,
     ...options,
   };
@@ -97,6 +100,52 @@ function render(content: string, options: RenderOptions = {}) {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+});
+
+it("admits registered panel links from cached Markdown and rechecks activation", () => {
+  const target = "example-plugin://task/123";
+  let installed = false;
+  const onOpenLink = vi.fn(() => true);
+  const canOpenLink = (value: string) => installed && value === target;
+  const content = `[Task](${target}) [Unsafe](https://user:secret@example.test)`;
+  const draw = () => (
+    <MessageMarkdown {...props(content, { canOpenLink, onOpenLink })} />
+  );
+  const view = renderDom(draw());
+  expect(screen.queryByRole("link")).toBeNull();
+  installed = true;
+  view.rerender(draw());
+  const link = screen.getByRole("link", { name: "Task" });
+  expect(link).toHaveAttribute("href", target);
+  const selection = document.getSelection() as Selection;
+  const range = document.createRange();
+  range.selectNodeContents(link);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  expect(serializeSelection(selection, "text")).toBe(`Task (${target})`);
+  expect(serializeSelection(selection, "markdown")).toBe(`[Task](${target})`);
+  const pasted = buzzCopyDocument(
+    `<div data-buzz-copy="timeline">${serializeSelection(selection, "html")}</div>`,
+  );
+  expect(pasted && projectComposerDocument(pasted).draft.text).toBe(
+    `[Task](${target})`,
+  );
+  selection.removeAllRanges();
+  fireEvent.click(link, { ctrlKey: true });
+  expect(onOpenLink).toHaveBeenCalledWith(target);
+  expect(link).toHaveFocus();
+  onOpenLink.mockClear();
+  installed = false;
+  const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+  link.dispatchEvent(click);
+  expect(click.defaultPrevented).toBe(true);
+  expect(onOpenLink).not.toHaveBeenCalled();
+  view.rerender(draw());
+  expect(screen.queryByRole("link")).toBeNull();
+  installed = true;
+  view.rerender(draw());
+  fireEvent.click(screen.getByRole("link", { name: "Task" }));
+  expect(onOpenLink).toHaveBeenCalledOnce();
 });
 
 const party = {
@@ -153,12 +202,26 @@ second
 
 - [x] checked`);
     expect(html).toContain("<h1>Heading</h1>");
-    expect(html).toContain("first<br/>\nsecond");
+    expect(html).toContain("<p>first<br/>second</p>");
     expect(html).toContain("<ul>");
     expect(html).toContain("<del>done</del>");
     expect(html).toContain("<blockquote>");
     expect(html).toContain("<table>");
     expect(html).toContain('type="checkbox" disabled="" checked=""');
+  });
+
+  it("keeps authored spaces and writes no newline that pre-wrap would show", () => {
+    const html = render(
+      "hello       -   3\nnext  line\n\n- a\n  - b\n- c\n\n1. x\n\n2. y\n\n> quote   here\n\n| a     b |\n| - |\n| c   d |\n\n`a    b`\n\n```\none\n  two\n```",
+    );
+    expect(html).toContain(
+      `<div class="${styles.text}" data-no-translate=""><p>hello       -   3<br/>next  line</p>` +
+        "<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul>" +
+        "<ol><li><p>x</p></li><li><p>y</p></li></ol>" +
+        "<blockquote><p>quote   here</p></blockquote>" +
+        "<table><thead><tr><th>a     b</th></tr></thead><tbody><tr><td>c   d</td></tr></tbody></table>" +
+        "<p><code>a    b</code></p><pre><code>one\n  two\n</code>",
+    );
   });
 
   it("renders inline and fenced code without parsing markdown inside it", () => {
@@ -194,7 +257,7 @@ second
       '<div onclick="x()">\n**not bold** :party:\n</div>\n\n<!-- note -->',
     );
     expect(block).toContain(
-      "<p>&lt;div onclick=&quot;x()&quot;&gt;<br/>\n**not bold** :party:<br/>\n&lt;/div&gt;</p>",
+      "<p>&lt;div onclick=&quot;x()&quot;&gt;<br/>**not bold** :party:<br/>&lt;/div&gt;</p>",
     );
     expect(block).not.toContain("note");
     expect(block).not.toContain("<div onclick");
@@ -504,11 +567,38 @@ describe("mounted Markdown preparation", () => {
 });
 
 describe("Markdown profile mentions", () => {
+  it("rebinds mounted prose when a verified alias changes under the same name", () => {
+    const person = (fullName: string) =>
+      new Map([
+        [
+          mic,
+          {
+            name: "reader",
+            verified: { displayName: "reader", fullName },
+          } as Profile,
+        ],
+      ]);
+    const initial = props("@Reader Example and @Reader Updated", {
+      participantProfiles: person("Reader Example"),
+    });
+    const view = renderDom(<MessageMarkdown {...initial} />);
+    const bound = () =>
+      screen.queryAllByRole("button").map((button) => button.textContent);
+    expect(bound()).toEqual(["Reader Example"]);
+    view.rerender(
+      <MessageMarkdown
+        {...initial}
+        participantProfiles={person("Reader Updated")}
+      />,
+    );
+    expect(bound()).toEqual(["Reader Updated"]);
+  });
+
   it("binds exact signed names longest-first through surrounding emphasis", () => {
     const html = render("**@Mic Smith**, _@Mic_! @Other @Missing @Microscopic");
     expect(html).toContain("<strong><button");
     expect(html).toContain('aria-label="View Mic Smith profile"');
-    expect(html).toContain("</svg>Mic Smith</button></strong>");
+    expect(html).toContain("</svg>M</span>ic Smith</button></strong>");
     // The raw helper conservatively treats trailing underscore as a name suffix.
     expect(html.match(/<button/g)).toHaveLength(1);
     expect(html).toContain("<em>@Mic</em>");
@@ -525,7 +615,7 @@ describe("Markdown profile mentions", () => {
       extensions,
     });
     expect(html).toContain(`aria-label="View ${name} profile"`);
-    expect(html).toContain(`</svg>${name}</button></strong>`);
+    expect(html).toContain(`</svg>M</span>${name.slice(1)}</button></strong>`);
     expect(html).not.toContain("<em>");
     expect(html).not.toContain("<img");
   });
@@ -671,6 +761,21 @@ describe("Markdown profile mentions", () => {
     expect(html).toContain("@Mic Smith and <button");
   });
 
+  it("renders full-key-qualified namesakes as two named controls", () => {
+    const html = render(`@Mic (${mic}) @Mic (${other})`, {
+      patch: { mentions: [mic, other] },
+      participantProfiles: new Map([
+        [mic, { name: "Mic" }],
+        [other, { name: "Mic" }],
+      ]),
+    });
+    expect(html.match(/<button/g)).toHaveLength(2);
+    expect(html).toContain(`data-profile-target="${profileTarget(mic)}"`);
+    expect(html).toContain(`data-profile-target="${profileTarget(other)}"`);
+    expect(html.match(/data-mention-name="Mic"/g)).toHaveLength(2);
+    expect(html).not.toContain(`(${mic})`);
+  });
+
   it("updates a mounted mention label without changing signed binding or profile target", () => {
     const owned = createRelaySession(null);
     const session = owned.session;
@@ -787,6 +892,18 @@ describe("Markdown inline extensions", () => {
     expect(html).toContain("PLUGIN :party_parrot: @Mic</span>");
   });
 
+  it("renders a message ending in a bare Buzz link without duplicate React keys", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const content = "see buzz://channel/x";
+    const { container } = renderDom(
+      <MessageMarkdown {...props(content, { extensions })} />,
+    );
+    expect(container.textContent).toBe(content);
+    expect(
+      error.mock.calls.filter((call) => String(call[0]).includes("same key")),
+    ).toEqual([]);
+  });
+
   it.each(["http", "https"])(
     "keeps emoji shortcodes and encoded punctuation verbatim inside bare %s links",
     (scheme) => {
@@ -800,6 +917,39 @@ describe("Markdown inline extensions", () => {
       expect(html).toContain(`>${url.replaceAll("&", "&amp;")}</a>`);
     },
   );
+
+  it.each([
+    [
+      "https://github.com/block/buzz-app。",
+      "https://github.com/block/buzz-app",
+    ],
+    ["看这个 https://example.com/spec，大家看一下", "https://example.com/spec"],
+    ["（https://example.com）", "https://example.com/"],
+    ["他说“https://example.com/a”。", "https://example.com/a"],
+    [
+      "https://github。com/block/buzz-app。",
+      "https://github.com/block/buzz-app",
+    ],
+    ["http://localhost:3000。OK", "http://localhost:3000/"],
+    [
+      "https://zh.wikipedia.org/wiki/中文 ok",
+      "https://zh.wikipedia.org/wiki/%E4%B8%AD%E6%96%87",
+    ],
+    ["<https://example.com/a。>", "https://example.com/a%E3%80%82"],
+    [
+      "https://a.com，https://zh.wikipedia.org/wiki/中文",
+      "https://a.com/",
+      "https://zh.wikipedia.org/wiki/%E4%B8%AD%E6%96%87",
+    ],
+  ])("ends a bare link at fullwidth punctuation: %s", (content, ...hrefs) => {
+    const html = render(content);
+    expect([...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1])).toEqual(
+      hrefs,
+    );
+    expect(html.replace(/<[^>]*>/g, "")).toBe(
+      content.replace(/^<(.*)>$/, "$1"),
+    );
+  });
 
   it("keeps emoji-only sizing and readable fallback when media or extensions are unavailable", () => {
     const options = { emoji: [party], extensions, largeEmoji: true };
@@ -884,7 +1034,7 @@ it("keeps resolved private channel labels and lock icons for Buzz links", () => 
   expect(container.textContent).toContain("design");
   expect(container.textContent).not.toContain("buzz://");
   const lock = renderToStaticMarkup(
-    <LockIcon className={referenceStyles.icon} />,
+    <LockIcon className={`${referenceStyles.icon} ${referenceStyles.snug}`} />,
   );
   expect(html.split(lock)).toHaveLength(3);
 });
@@ -933,51 +1083,36 @@ it("renders tagged agent library names and profile names with the same agent ico
   ).not.toContain("data-mention-kind=");
 });
 
-describe("paragraph-leading profile capsules", () => {
-  it.each(["@Mic", `[@Mic](${profileTarget(mic)})`])(
-    "aligns %s only at the paragraph start",
-    (mention) => {
-      for (const [content, leading] of [
-        [mention, true],
-        [`Hello ${mention}`, false],
-        [`Hello  \n${mention}`, false],
-      ] as const) {
-        const view = renderDom(<MessageMarkdown {...props(content)} />);
-        const capsule = view.getByRole("button", { name: "View Mic profile" });
-        expect(capsule.closest("p")?.hasAttribute("data-leading-mention")).toBe(
-          leading,
-        );
-        view.unmount();
-      }
-    },
-  );
-});
+it.each(["@Mic", `[@Mic](${profileTarget(mic)})`])(
+  "keeps the %s chip icon on the line with the first character",
+  (mention) => {
+    const view = renderDom(<MessageMarkdown {...props(`Hello ${mention}`)} />);
+    const chip = view.container.querySelector("[data-mention-kind]");
+    const lead = chip?.firstElementChild;
+    expect(lead).toHaveClass(referenceStyles.lead ?? "");
+    expect(lead?.querySelector("svg")).not.toBeNull();
+    expect(lead?.textContent).toBe("M");
+    expect(chip?.textContent).toBe("Mic");
+  },
+);
 
-it("keeps explicit profile identities visible but inert when Profiles is unavailable", () => {
+it.each<[string, RenderOptions]>([
+  ["a refusing opener", { canOpenLink: () => false }],
+  ["no opener", { canOpenLink: undefined }],
+  ["a preview", { interactive: false }],
+])("renders explicit profile links as inert chips with %s", (_, options) => {
   const target = profileTarget(mic);
   const view = renderDom(
     <MessageMarkdown
-      {...props(`[@Mic](${target})`, {
-        patch: { mentions: [] },
-        canOpenLink: () => false,
-      })}
+      {...props(`[@Mic](${target})`, { patch: { mentions: [] }, ...options })}
     />,
   );
   expect(screen.queryByRole("button")).toBeNull();
   expect(screen.queryByRole("link")).toBeNull();
-  expect(view.container.textContent).toContain(target);
-  expect(view.container.querySelector("[data-leading-mention]")).toBeNull();
-  view.rerender(
-    <MessageMarkdown
-      {...props(`[@Mic](${target})`, {
-        patch: { mentions: [] },
-        interactive: false,
-      })}
-    />,
-  );
-  expect(screen.queryByRole("button")).toBeNull();
-  expect(screen.queryByRole("link")).toBeNull();
-  expect(view.container.textContent).toContain("Mic");
+  const chip = view.container.querySelector("[data-mention-kind]");
+  expect(chip?.tagName).toBe("SPAN");
+  expect(chip).toHaveAttribute("data-profile-target", target);
+  expect(view.container.textContent).toBe("Mic");
 });
 
 it.each([
@@ -1005,6 +1140,19 @@ it("keeps explicit profile links literal inside code", () => {
   expect(html).not.toContain("href=");
   expect(html).toContain(link);
 });
+
+it.each([
+  `buzz:agent-profile:${mic}`,
+  `buzz:profile?agent=${mic}&tab=activity`,
+  `${profileTarget(mic)}#version=1`,
+])(
+  "rejects app-local profile targets even when a panel matches: %s",
+  (target) => {
+    const html = render(`[Person](${target})`, { canOpenLink: () => true });
+    expect(html).not.toContain("href=");
+    expect(html).not.toContain("<button");
+  },
+);
 
 describe("text spoilers", () => {
   it("hides formatted content and link controls until reveal, and resets after edits", () => {

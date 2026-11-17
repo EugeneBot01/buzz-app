@@ -1,22 +1,59 @@
 // FOUNDATION: Type-only author entry. Runtime capabilities come from injected ctx.
 export type { AgentHook, AgentHookContext } from "../features/agents/hooks";
 export type { PluginManifest, PluginModule } from "./api";
+// Keep injected-context augmentation reachable in generated declarations.
+export type * from "./status";
 export type { SettingsCard, SettingsCards } from "../features/settings/service";
 export type { Context } from "@deepseek-ai/cordis";
-export type { Host, HostRequest, HostResponse } from "../features/host/service";
+export type {
+  Host,
+  HostRequest,
+  HostByteUpload,
+  HostRequestOnceOptions,
+  HostResponse,
+  HostByteRequest,
+  HostByteResponse,
+  HostSavedBytes,
+  HostMcpServer,
+  McpHandler,
+} from "../features/host/service";
 export type {
   IdentityNames,
   NamingPolicy,
 } from "../features/identity-names/service";
 export type { NamingIdentity } from "../features/identity-names/policy";
 export type { Browser, BrowserViewProps } from "../features/browser/api";
-export type { Page, PageSidebarProps, Pages } from "../features/pages/service";
+export type {
+  Page,
+  PagePreviewProps,
+  PageSidebarProps,
+  Pages,
+} from "../features/pages/service";
+export type { Backdrop, Backdrops } from "../features/backdrops/service";
+export type { SubjectLift } from "../features/messages/subject-lift";
+export type {
+  SidebarRow,
+  SidebarRowSortMode,
+  SidebarRowContribution,
+  SidebarRows,
+} from "../features/channel-navigation/sidebar-rows-service";
 export type {
   SidebarSectionAction,
   SidebarSectionContribution,
   SidebarSectionRow,
   SidebarSections,
 } from "../features/channel-navigation/sidebar-sections-service";
+export type {
+  PluginInstallOutcome,
+  PluginInstallSource,
+  PluginInstaller,
+  PluginReleaseCandidate,
+  PluginReleaseComparison,
+} from "./installer";
+export type {
+  SidebarRestriction,
+  SidebarScope,
+} from "../features/channel-navigation/sidebar-scope-service";
 export type {
   Panel,
   Panels,
@@ -25,6 +62,10 @@ export type {
 } from "../features/panels/service";
 export type { Conversation } from "../features/conversation/service";
 export type {
+  ConversationWorkspaceProps,
+  PageTabTarget,
+  PageTabOptions,
+  PageTabsProps,
   ComposerObservation,
   CompletionContext,
   CompletionQuery,
@@ -33,6 +74,11 @@ export type {
   CompletionResult,
   ComposerCompletionProps,
   ComposerCompletion,
+  AnnotationObservation,
+  ComposerAnnotation,
+  ComposerAnnotator,
+  ComposerAnnotatorProps,
+  ComposerReplacement,
   ComposerAccessory,
   ComposerAccessoryProps,
   ComposerResource,
@@ -47,6 +93,7 @@ export type {
   LinkRenderer,
   MessageRenderer,
   MessageAction,
+  IdentityMark,
   TargetOpener,
 } from "../features/conversation/contracts";
 export type { RelayData, RelaySnapshot } from "../features/relay/service";
@@ -106,6 +153,7 @@ export type {
   Notifications,
   NotificationInput,
   NotificationCategoryDescriptor,
+  NotificationGate,
 } from "../features/notifications/service";
 
 export type { VoiceRecording } from "../features/relay/voice-media";
@@ -113,12 +161,30 @@ export type { VoiceRecording } from "../features/relay/voice-media";
 export type {
   Agents,
   AgentAddedTab,
+  AgentHandle,
+  AgentInstructions,
   AgentType,
   AgentSession,
   AgentSessions,
+  Delivery,
+  StandaloneTurn,
+  TurnResult,
 } from "../features/agents/service";
+export type {
+  HarnessConversation,
+  HarnessKit,
+  HarnessPrompt,
+  HarnessScope,
+} from "../features/agent-harness/kit";
 
 export type { ArtifactStorage } from "../features/artifact-storage/service";
+export type {
+  AgentExecution,
+  AgentExecutionBinding,
+  AgentExecutionProvider,
+  AgentExecutionSession,
+  AgentExecutionTarget,
+} from "../features/agents/execution";
 export type {
   ArtifactCollection,
   ArtifactCollectionDefinition,
@@ -134,6 +200,10 @@ export type {
 
 export type {
   SoloNavigation,
+  SoloWorkspaces,
+  SoloWorkspaceSnapshot,
+  SoloWorkspaceProps,
+  SoloChannelGroupProps,
   SoloRegionBinding,
   SoloRegionSnapshot,
   SoloRegionAction,
@@ -146,6 +216,7 @@ export type {
   SoloConversationLinkProps,
   SoloCardProps,
   SoloDisclosureProps,
+  SoloDraftStart,
 } from "../features/channel-navigation/solo-navigation-contract";
 
 export type {
@@ -153,3 +224,11 @@ export type {
   SessionSnapshot,
   AuthenticatedRequest,
 } from "../features/federated-identity/service";
+
+export type { AddedTool } from "../buzz-mcp/session-tools";
+export type {
+  BuzzClient,
+  Media,
+  Context as AddedToolContext,
+} from "../buzz-mcp/client";
+export type { Reply as AddedToolReply } from "../buzz-mcp/tools";

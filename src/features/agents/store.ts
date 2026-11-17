@@ -24,6 +24,10 @@ import { AGENT_KEY, type AgentKey } from "./membership";
 export type AgentStore = Readonly<{
   keys(): readonly string[];
   get(key: string): string | null;
+  /** Reads saved state after this program's pending writes to the key. */
+  read(key: string): Promise<string | null>;
+  /** Reads saved entries under a prefix without changing this program's copy. */
+  scan(prefix: string): Promise<Record<string, string>>;
   /** Saves `value` under `key`; null removes the key. */
   set(key: string, value: string | null): Promise<void>;
   /** Saves `value` only if no program saved a value under `key`. Resolves
@@ -42,6 +46,16 @@ export function localStore(
         storage.key(index),
       ).filter((key): key is string => key !== null),
     get: (key: string) => storage.getItem(key),
+    read: async (key: string) => storage.getItem(key),
+    scan: async (prefix: string) =>
+      Object.fromEntries(
+        Array.from({ length: storage.length }, (_, index) => storage.key(index))
+          .filter((key): key is string => Boolean(key?.startsWith(prefix)))
+          .flatMap((key) => {
+            const value = storage.getItem(key);
+            return value === null ? [] : [[key, value]];
+          }),
+      ),
     set: async (key: string, value: string | null) => {
       if (value === null) storage.removeItem(key);
       else storage.setItem(key, value);
@@ -62,10 +76,68 @@ export type SkippedObject = Readonly<{
   modifiedAt: number;
   problem: string;
 }>;
+/** One event a watch woke its agent for, or one output of a source. */
+export type AttentionEntry = Readonly<{
+  /** The woken event's id, so it can show as that message. */
+  id?: string | undefined;
+  at: number;
+  text: string;
+  author?: string | undefined;
+  channel?: string | undefined;
+  /** Pubkeys its signed `p` tags name. */
+  mentions?: readonly string[] | undefined;
+  /** Pubkeys its signed two-field `mention` tags name. */
+  mentionReferences?: readonly string[] | undefined;
+}>;
 export type AttentionHistory = Readonly<{
   lastWokeAt?: number;
+  /** What a watch saved before it kept `events`. */
   output?: string;
+  events?: readonly AttentionEntry[];
 }>;
+const pubkeys = (value: unknown) =>
+  Array.isArray(value)
+    ? [
+        ...new Set(
+          value.filter(
+            (key): key is string =>
+              typeof key === "string" && /^[0-9a-f]{64}$/.test(key),
+          ),
+        ),
+      ].slice(0, 100)
+    : [];
+/** The latest valid `entries` a watch's history keeps, each clipped. */
+export const recentEntries = (entries: readonly unknown[]) =>
+  entries
+    .flatMap((value): AttentionEntry[] => {
+      const entry = value as Partial<AttentionEntry> | null;
+      // An event keeps its place even without a body, as a deletion has none.
+      return entry &&
+        Number.isFinite(entry.at) &&
+        typeof entry.text === "string" &&
+        (entry.text || typeof entry.id === "string")
+        ? [
+            {
+              at: entry.at as number,
+              text: entry.text.slice(0, 2000),
+              ...(typeof entry.id === "string" ? { id: entry.id } : {}),
+              ...(typeof entry.author === "string"
+                ? { author: entry.author }
+                : {}),
+              ...(typeof entry.channel === "string"
+                ? { channel: entry.channel }
+                : {}),
+              ...(pubkeys(entry.mentions).length
+                ? { mentions: pubkeys(entry.mentions) }
+                : {}),
+              ...(pubkeys(entry.mentionReferences).length
+                ? { mentionReferences: pubkeys(entry.mentionReferences) }
+                : {}),
+            },
+          ]
+        : [];
+    })
+    .slice(-10);
 export type AgentRecord = Readonly<{
   /** Its membership's key (see `agentKey`): the agent's pubkey in its home
    * community. Saved as `pubkey`, which every record had before agents
@@ -100,6 +172,18 @@ export const STORAGE_KEY = "buzz.agents.v1";
 export const RECORD_PREFIX = "buzz.agent.v1:";
 export const recordKey = (key: AgentKey) => `${RECORD_PREFIX}${key}`;
 const PUBKEY = /^[0-9a-f]{64}$/;
+/** Whether an older reader cannot apply this Interest: it is paused, or has a
+ * title or summary its validator rejects. Its watches are saved in an envelope
+ * that reader rejects too, so it never runs them without the instructions. */
+const sealed = (attention: AgentRecord["attention"], id: string) => {
+  const value = attention[`interest/${id}`]?.value;
+  return (
+    value?.type === "interest" &&
+    (value.paused === true ||
+      value.title !== undefined ||
+      value.summary !== undefined)
+  );
+};
 const group = (value: AttentionValue) =>
   value.type === "interest" ? "Interests" : "watches and timers";
 
@@ -151,7 +235,53 @@ function readRecord(
   const entries = Object.entries(record.attention ?? {}).sort(([a], [b]) =>
     a < b ? -1 : a > b ? 1 : 0,
   );
-  for (const [slug, object] of entries) {
+  for (const [slug, stored] of entries) {
+    // Older readers reject this watch extension and retain it for repair. Only
+    // unwrap after its parent has been validated (Interests sort before watches).
+    let object = stored;
+    const value = stored?.value;
+    if (
+      value &&
+      typeof value === "object" &&
+      "interest_paused" in value &&
+      value.interest_paused &&
+      typeof value.interest_paused === "object" &&
+      value.type !== "interest" &&
+      sealed(attention, value.interest_id)
+    ) {
+      const { interest_paused, ...watch } = value;
+      // Skipped objects survive older rewrites, while their top-level runtime
+      // metadata does not. Recover it here, then use the usual validators below.
+      const state = interest_paused as {
+        timer?: TimerState;
+        completed?: true;
+        history?: AttentionHistory;
+      };
+      record = {
+        ...record,
+        ...(state.timer && {
+          timers: { [slug]: state.timer, ...record.timers },
+        }),
+        ...(state.completed === true &&
+          watch.type === "source" && {
+            sourceRuns: {
+              ...record.sourceRuns,
+              [slug]: sourceSignature({
+                slug,
+                value: watch,
+                modifiedAt: stored.modifiedAt,
+              }),
+            },
+          }),
+        ...(state.history && {
+          attentionHistory: {
+            [slug]: state.history,
+            ...record.attentionHistory,
+          },
+        }),
+      };
+      object = { ...stored, value: watch };
+    }
     const modifiedAt = Number.isSafeInteger(object?.modifiedAt)
       ? object.modifiedAt
       : 0;
@@ -165,7 +295,7 @@ function readRecord(
         problem = `Over the limit of ${OBJECT_LIMIT} ${kind}`;
     }
     if (problem)
-      skipped[slug] = { slug, value: object?.value, modifiedAt, problem };
+      skipped[slug] = { slug, value: stored?.value, modifiedAt, problem };
     else attention[slug] = { slug, value: object.value, modifiedAt };
   }
   const timers: Record<string, TimerState> = {};
@@ -223,6 +353,9 @@ function readRecord(
                                   .join("\n"),
                               }
                             : {}),
+                          ...(Array.isArray(entry.events)
+                            ? { events: recentEntries(entry.events) }
+                            : {}),
                         },
                       ],
                     ]
@@ -271,21 +404,88 @@ export function removeRecord(storage: AgentStore, key: AgentKey) {
 }
 
 /** A record as it is saved. */
-function recordText({ skipped, ...record }: AgentRecord) {
-  // Skipped objects go back where they were read from, so a later reader that
-  // can apply them still finds them.
+export function recordText({ skipped, ...record }: AgentRecord) {
+  // A sealed Interest's watches are saved in an envelope older readers reject.
+  // Their history moves into the envelope rather than being saved twice.
+  const enveloped = new Set(
+    Object.values(record.attention)
+      .filter(
+        ({ value }) =>
+          value.type !== "interest" &&
+          sealed(record.attention, value.interest_id),
+      )
+      .map(({ slug }) => slug),
+  );
   return JSON.stringify({
     ...record,
+    ...(record.attentionHistory && {
+      attentionHistory: Object.fromEntries(
+        Object.entries(record.attentionHistory).filter(
+          ([slug]) => !enveloped.has(slug),
+        ),
+      ),
+    }),
     attention: {
+      // Skipped objects go back where they were read from, so a later reader
+      // that can apply them still finds them, enveloped as their Interest
+      // requires: one over a limit here can be within an older reader's.
       ...Object.fromEntries(
         Object.values(skipped ?? {}).map(({ problem: _, ...object }) => [
           object.slug,
-          object,
+          { ...object, value: skippedValue(record.attention, object.value) },
         ]),
       ),
-      ...record.attention,
+      ...Object.fromEntries(
+        Object.entries(record.attention).map(([slug, object]) => {
+          const value = object.value;
+          if (value.type === "interest") {
+            // Active Interests need no extension, so older readers keep their instructions.
+            const { paused, ...interest } = value;
+            return [slug, paused ? object : { ...object, value: interest }];
+          }
+          return [
+            slug,
+            enveloped.has(slug)
+              ? {
+                  ...object,
+                  value: {
+                    ...value,
+                    interest_paused: {
+                      ...(record.timers?.[slug] && {
+                        timer: record.timers[slug],
+                      }),
+                      ...(sourceCompleted(record.sourceRuns, object) && {
+                        completed: true,
+                      }),
+                      ...(record.attentionHistory?.[slug] && {
+                        history: record.attentionHistory[slug],
+                      }),
+                    },
+                  },
+                }
+              : object,
+          ];
+        }),
+      ),
     },
   });
+}
+
+/** A skipped watch's value, enveloped while its Interest is sealed and
+ * unwrapped once that Interest is readable again. */
+function skippedValue(
+  attention: AgentRecord["attention"],
+  value: unknown,
+): unknown {
+  if (!value || typeof value !== "object") return value;
+  const { interest_paused, ...watch } = value as Record<string, unknown>;
+  if (watch.type === "interest" || typeof watch.interest_id !== "string")
+    return value;
+  const parent = attention[`interest/${watch.interest_id}`]?.value;
+  if (parent?.type !== "interest") return value;
+  if (sealed(attention, watch.interest_id))
+    return { ...watch, interest_paused: interest_paused ?? {} };
+  return watch;
 }
 
 /** Saves one record, when it changed. */

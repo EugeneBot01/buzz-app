@@ -50,6 +50,9 @@ pub(crate) enum SocketEvent {
     Refused {
         reason: String,
     },
+    /// The assertion reached its refresh point; the renderer reconnects at
+    /// once with a fresh one. Ends the socket before the relay's deadline.
+    Renew,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -77,7 +80,7 @@ pub(crate) async fn relay_socket_connect(
             .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if live.len() >= 16 || live.contains_key(&id) {
+        if live.len() >= 32 || live.contains_key(&id) {
             return Err("Native sockets are busy".into());
         }
         live.insert(
@@ -115,18 +118,19 @@ pub(crate) async fn relay_socket_connect(
         // A connection without a token (the relay decides) never expires here.
         let expiry = async {
             match &assertion {
-                Some(assertion) => tokio::time::sleep(assertion.remaining()).await,
+                Some(assertion) => tokio::time::sleep(assertion.renew_in()).await,
                 None => std::future::pending().await,
             }
         };
         tokio::pin!(expiry);
         let mut closing: Option<(u16, String)> = None;
         let mut refused = None;
+        let mut renew = false;
         let ready = tokio::select! {
             result = tokio::time::timeout(Duration::from_secs(10), started) => result.is_ok_and(|value| value.is_ok()),
             _ = cancel.cancelled() => false,
             _ = stop.cancelled() => false,
-            _ = &mut expiry => false,
+            _ = &mut expiry => { renew = true; false },
         };
         if ready {
             let pump = async {
@@ -167,7 +171,7 @@ pub(crate) async fn relay_socket_connect(
             tokio::select! {
                 _ = cancel.cancelled() => {},
                 _ = stop.cancelled() => {},
-                _ = &mut expiry => {},
+                _ = &mut expiry => renew = true,
                 _ = pump => {},
             }
         }
@@ -192,6 +196,7 @@ pub(crate) async fn relay_socket_connect(
             Some(reason) => SocketEvent::Refused {
                 reason: reason.into(),
             },
+            None if renew => SocketEvent::Renew,
             None => SocketEvent::Closed { code, reason },
         });
     });
@@ -293,7 +298,7 @@ async fn upgrade(
     }
     let cancel = match &assertion {
         Some(assertion) => {
-            let cancel = fi.cancellation_for(&assertion.revision)?;
+            let cancel = assertion.cancellation()?;
             fi.admit_assertion(identity, assertion).await?;
             cancel
         }
@@ -338,7 +343,17 @@ async fn upgrade(
                         // Missing evidence: the relay requires a token after all.
                         None => unsigned.unwrap_or("relay-unauthorized"),
                     },
-                    403 => "relay-forbidden",
+                    403 => {
+                        if let Ok(server) = fi.server_for(relay) {
+                            server.note_clock_offset(super::protocol::clock_offset(
+                                response
+                                    .headers()
+                                    .get("date")
+                                    .and_then(|v| v.to_str().ok()),
+                            ));
+                        }
+                        "relay-forbidden"
+                    }
                     503 => "relay-unavailable",
                     _ => "Native socket upgrade refused",
                 }

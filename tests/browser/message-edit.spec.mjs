@@ -5,7 +5,7 @@ import { createServer } from "./vite-server.mjs";
 // Browser boundary: native caret/focus and undo in the real decorated composer,
 // plus channel/session wiring and responsive edit-header geometry. State and
 // eligibility matrices live in colocated unit/component tests.
-test("Up and Cmd+Up edit in the existing composer and restore native focus, draft history and attachments", async ({
+test("Cmd+Up edits in the existing composer and restores native focus, draft history and attachments", async ({
   page,
 }, testInfo) => {
   const server = await createServer({
@@ -42,7 +42,9 @@ test("Up and Cmd+Up edit in the existing composer and restore native focus, draf
     await input.fill("Unsent draft");
     await input.fill("");
     const originalNode = await input.elementHandle();
-    await input.press("ArrowUp");
+    // Plain Up selects the newest message, as in Slack (E then edits it; see
+    // src/app/message-shortcuts.test.ts). Cmd+Up still edits directly.
+    await input.press("Meta+ArrowUp");
     const editor = page.getByRole("textbox", {
       name: "Edit message",
       exact: true,
@@ -101,12 +103,16 @@ test("Up and Cmd+Up edit in the existing composer and restore native focus, draf
       source.replace("Original caption", "Revised caption reject"),
     );
     await editor.press("Enter");
-    await expect(
-      page.getByRole("button", { name: "Retry edit", exact: true }),
-    ).toBeVisible();
-    await page.getByRole("button", { name: "Retry edit", exact: true }).click();
+    // The editor closes on submit; the rejection is reported outside it.
     await expect(input).toBeFocused();
     await expect(input).toHaveJSProperty("value", "");
+    const retry = page.getByRole("button", {
+      name: "Retry message update",
+      exact: true,
+    });
+    await expect(retry).toBeVisible();
+    await retry.click();
+    await expect(retry).toBeHidden();
     // The applied edit replaces the caption and marks it as edited.
     const revised = page.getByText("Revised caption reject (edited)", {
       exact: true,
@@ -125,7 +131,11 @@ test("Up and Cmd+Up edit in the existing composer and restore native focus, draf
     await expect(
       page.getByRole("link", { name: "Download report.txt", exact: true }),
     ).toBeVisible();
-    await input.press("ArrowUp");
+    // Cmd+Up skips a message whose retried edit is still sending.
+    await expect(async () => {
+      await input.press("Meta+ArrowUp");
+      await expect(editor).toBeVisible({ timeout: 500 });
+    }).toPass();
     await expect(editor).toHaveJSProperty(
       "value",
       source.replace("Original caption", "Revised caption reject"),

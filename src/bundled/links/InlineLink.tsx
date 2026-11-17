@@ -16,7 +16,7 @@ import {
   PresentationIcon,
   GlobeIcon,
   ChatCircleIcon,
-  MessageReplyIcon,
+  ThreadIcon,
   HashIcon,
   LockIcon,
 } from "../../shared/design-system/icons/index";
@@ -28,6 +28,7 @@ import {
 } from "../../features/conversation/LinkLabelContext";
 import { buzzLinkKind } from "../../features/navigation/buzz-links";
 import styles from "../../shared/InlineReference.module.css";
+import { channelIconClass } from "../../shared/inline-reference";
 
 // Match actual host boundaries, never a service name found in a path or query.
 const serviceHosts = {
@@ -99,7 +100,7 @@ const icons = {
   buzz: ChatCircleIcon,
   channel: HashIcon,
   message: ChatCircleIcon,
-  thread: MessageReplyIcon,
+  thread: ThreadIcon,
 };
 
 /** Anchor wrapper for the isolated lab; messages use LinkLabel in a host-owned anchor. */
@@ -153,7 +154,12 @@ export function LinkLabel({
     label === href ||
     (linkKind(label) !== null && new URL(label).href === new URL(href).href);
   const Icon = kind === "channel" && privateChannel ? LockIcon : icons[kind];
-  icon ??= <Icon aria-hidden="true" className={styles.icon} />;
+  icon ??= (
+    <Icon
+      aria-hidden="true"
+      className={kind === "channel" ? channelIconClass(Icon) : styles.icon}
+    />
+  );
   if (content !== undefined && !rawDestination)
     return (
       <span data-link-kind={kind}>

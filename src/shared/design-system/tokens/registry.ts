@@ -385,6 +385,21 @@ export const ROLE_GROUPS: RoleGroup[] = [
         status: "core",
       },
       {
+        token: "--affordance-message-highlight",
+        variable: "--affordance-message-highlight",
+        pointsAt: "black 10% light / white 16% dark",
+        use: "Temporary arrival cue across a received bubble; replaces hover while it shows.",
+        status: "core",
+      },
+      {
+        token: "--affordance-message-own-highlight",
+        variable: "--affordance-message-own-highlight",
+        pointsAt:
+          "affordance-message-highlight; at Buzzin’, the accent's regular overlay step on its fill (black 10%, white 16% on Mono in light mode)",
+        use: "Temporary arrival cue across your own bubble. It follows the bubble's lightness, as its chips do.",
+        status: "core",
+      },
+      {
         token: "--affordance-reaction",
         variable: "--affordance-reaction",
         pointsAt: "black 6% light / white 10% dark",
@@ -400,10 +415,25 @@ export const ROLE_GROUPS: RoleGroup[] = [
         status: "core",
       },
       {
+        token: "--affordance-reaction-self",
+        variable: "--affordance-reaction-self",
+        pointsAt: "surface-message-own at Buzzin’; accent-9 at Chillin’",
+        use: "A reaction you made, on received bubbles and the panel: your own bubble's fill, paired with text-reaction-self.",
+        status: "core",
+      },
+      {
+        token: "--affordance-reaction-self-own",
+        variable: "--affordance-reaction-self-own",
+        pointsAt:
+          "surface-message at Buzzin’; neutral-1 at Chillin’ (neutral-7 in dark mode)",
+        use: "A reaction you made inside your own bubble: the received bubble's fill, paired with text-reaction-self-own.",
+        status: "core",
+      },
+      {
         token: "bg-surface-message-highlight",
         variable: "--surface-message-highlight",
         pointsAt: "accent step 3",
-        use: "Temporary return-to-message cue; follows the accent color.",
+        use: "Temporary arrival cue on a message without a filled bubble; follows the accent color.",
         status: "core",
       },
       {
@@ -482,6 +512,20 @@ export const ROLE_GROUPS: RoleGroup[] = [
         status: "proposed",
       },
       {
+        token: "bg-surface-dock-count",
+        variable: "--surface-dock-count",
+        pointsAt: "dark mono 2 in both modes",
+        use: "Dark corner count capsules on dock tiles; pair with text-dock-count.",
+        status: "core",
+      },
+      {
+        token: "text-dock-count",
+        variable: "--text-dock-count",
+        pointsAt: "dark-mode accent link ink in both modes",
+        use: "Readable accent numerals on surface-dock-count.",
+        status: "core",
+      },
+      {
         token: "bg-surface-row-selected-detail",
         variable: "--surface-row-selected-detail",
         pointsAt: "neutral-2 light / neutral-6 dark",
@@ -538,6 +582,13 @@ export const ROLE_GROUPS: RoleGroup[] = [
         status: "core",
       },
       {
+        token: "--text-on-find-match",
+        variable: "--text-on-find-match",
+        pointsAt: "neutral-12 light / neutral-1 dark",
+        use: "Text over find-on-screen match fills: dark in both modes.",
+        status: "core",
+      },
+      {
         token: "text-on-prominent",
         variable: "--text-on-prominent",
         pointsAt: "text-inverse (neutral prominent controls)",
@@ -554,7 +605,7 @@ export const ROLE_GROUPS: RoleGroup[] = [
       {
         token: "text-danger",
         variable: "--text-danger",
-        pointsAt: "red-12 light / red-12 dark",
+        pointsAt: "red-text light / red-12 dark",
         use: "Error text and destructive action labels.",
         status: "core",
       },
@@ -576,7 +627,7 @@ export const ROLE_GROUPS: RoleGroup[] = [
       {
         token: "text-success",
         variable: "--text-success",
-        pointsAt: "green-12 light / green-12 dark",
+        pointsAt: "green-text light / green-12 dark",
         use: "Success text.",
         status: "core",
       },
@@ -642,6 +693,20 @@ export const ROLE_GROUPS: RoleGroup[] = [
         variable: "--text-message-link-own",
         pointsAt: "accent link at Chillin’; accent ink at Buzzin’",
         use: "Links on the selected outgoing message surface.",
+        status: "core",
+      },
+      {
+        token: "text-reaction-self",
+        variable: "--text-reaction-self",
+        pointsAt: "text-message-own at Buzzin’; accent ink at Chillin’",
+        use: "Count of a reaction you made on received bubbles and the panel, paired with bg-affordance-reaction-self.",
+        status: "core",
+      },
+      {
+        token: "text-reaction-self-own",
+        variable: "--text-reaction-self-own",
+        pointsAt: "text-standard",
+        use: "Count of a reaction you made inside your own bubble, paired with bg-affordance-reaction-self-own.",
         status: "core",
       },
       {
@@ -1083,21 +1148,21 @@ export const ROLE_GROUPS: RoleGroup[] = [
       {
         token: "bg-affordance-floating-control",
         variable: "--affordance-floating-control",
-        pointsAt: "affordance-subtle light / neutral-6 dark",
+        pointsAt: "neutral-3 light / neutral-6 dark",
         use: "Secondary action at rest on floating surfaces.",
         status: "proposed",
       },
       {
         token: "bg-affordance-floating-control-hover",
         variable: "--affordance-floating-control-hover",
-        pointsAt: "affordance-subtle-hover light / neutral-7 dark",
+        pointsAt: "neutral-4 light / neutral-7 dark",
         use: "Secondary action hover on floating surfaces; pair with standard text.",
         status: "proposed",
       },
       {
         token: "bg-affordance-floating-control-pressed",
         variable: "--affordance-floating-control-pressed",
-        pointsAt: "affordance-subtle-pressed light / neutral-8 dark",
+        pointsAt: "neutral-5 light / neutral-8 dark",
         use: "Pressed action on floating surfaces; pair with standard text.",
         status: "proposed",
       },
@@ -1148,6 +1213,34 @@ export const ROLE_GROUPS: RoleGroup[] = [
         variable: "--affordance-warning",
         pointsAt: "amber-3 light / amber-3 dark",
         use: "A warning fill.",
+        status: "core",
+      },
+      {
+        token: "surface-status-success",
+        variable: "--surface-status-success",
+        pointsAt: "citrus step 9",
+        use: "Completed task fill, paired with text-on-status-success.",
+        status: "core",
+      },
+      {
+        token: "surface-status-danger",
+        variable: "--surface-status-danger",
+        pointsAt: "red light step 11",
+        use: "Failed task fill, paired with text-on-status.",
+        status: "core",
+      },
+      {
+        token: "text-on-status-success",
+        variable: "--text-on-status-success",
+        pointsAt: "citrus ink",
+        use: "Foreground on solid Citrus completed task status.",
+        status: "core",
+      },
+      {
+        token: "text-on-status",
+        variable: "--text-on-status",
+        pointsAt: "white",
+        use: "Foreground on solid failed task status.",
         status: "core",
       },
       {
@@ -1222,6 +1315,20 @@ export const ROLE_GROUPS: RoleGroup[] = [
         variable: "--surface-text-selection-own",
         pointsAt: "neutral-12 / accent ink at Buzzin’",
         use: "Neutral selection fill that contrasts with the outgoing bubble at either vibe.",
+        status: "core",
+      },
+      {
+        token: "--surface-find-match",
+        variable: "--surface-find-match",
+        pointsAt: "amber-5 light / amber-9 dark",
+        use: "Find on screen: a match other than the active one; pair with text-on-find-match.",
+        status: "core",
+      },
+      {
+        token: "--surface-find-match-active",
+        variable: "--surface-find-match-active",
+        pointsAt: "orange-7 light / orange-11 dark",
+        use: "Find on screen: the active match; pair with text-on-find-match.",
         status: "core",
       },
       {
@@ -1616,10 +1723,10 @@ export const TYPE_ROLES: TypeRole[] = [
     token: "text-message",
     pointsAt: "body/message",
     size: "14px",
-    lineHeight: "1.625 (22.75px at default)",
+    lineHeight: "1.5714285714285714 (22px at default)",
     tracking: "-0.0025em",
     weight: "400",
-    use: "Sent and received message prose, with relaxed line spacing.",
+    use: "Sent and received message prose, with compact line spacing.",
     status: "core",
   },
   {
@@ -1700,10 +1807,6 @@ export const TYPE_FAMILIES = [
     use: "Code, keys and identifiers, set in the xsmall detail role at 12/16.",
   },
 ];
-
-/** Source for the primitive ladder and resolved roles displayed below. */
-export const TYPE_SOURCE =
-  "https://github.com/squareup/design-blockinterface/blob/eff766161ba8aaee3258ca107f0d904dd542c708/blockUI/docs/type.resolution.draft.json";
 
 /** Active size primitives, with xsmall sharing the 12px step. */
 export const TYPE_RAMPS = [

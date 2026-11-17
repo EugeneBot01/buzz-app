@@ -3,8 +3,10 @@ import {
   openSettings,
   selectSettingsSection,
   settingsDialog,
+  settingsSections,
 } from "./navigation.mjs";
 import { test, expect } from "./fixture.mjs";
+import { npubEncode } from "nostr-tools/nip19";
 
 test.use({ historyCounts: { alpha: 0, beta: 0 } });
 
@@ -28,13 +30,15 @@ test("settings share a centered, bounded column and keep controls contained acro
   await expect(settingsDialog(page).locator(":focus")).toHaveCount(1);
   await selectSettingsSection(page, "Identity");
   // Copy failure must leave the entire value selectable as ordinary text.
-  const profile = page.getByRole("region", {
+  const identity = page.getByRole("region", {
     name: "Identity",
     exact: true,
   });
-  await expect(
-    profile.getByRole("button", { name: "Copy public key" }),
-  ).toBeVisible();
+  const copyId = identity.getByRole("button", {
+    name: "Copy Buzz ID",
+    exact: true,
+  });
+  await expect(copyId).toBeVisible();
   await page.evaluate(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -45,18 +49,20 @@ test("settings share a centered, bounded column and keep controls contained acro
       },
     });
   });
-  await profile.getByRole("button", { name: "Copy public key" }).click();
+  await copyId.click();
   await expect(page.getByText(/Select it and copy manually/)).toBeVisible();
-  const publicKey = profile.locator("code").first();
-  const key = await publicKey.textContent();
+  // The card abbreviates the ID; clipboard failure exposes the full value below it.
+  const publicKey = identity.getByText(/^Full Buzz ID:/).locator("code");
+  const key = npubEncode(app.viewer);
+  await expect(publicKey).toHaveText(key);
   await publicKey.click();
   await expect
     .poll(() => page.evaluate(() => window.getSelection()?.toString()))
     .toBe(key);
-  await profile.getByRole("button", { name: "Copy public key" }).focus();
-  await page.keyboard.press("Tab");
+  await copyId.focus();
+  await page.keyboard.press("Shift+Tab");
   await expect(
-    profile.getByRole("button", { name: "Copy nostr address" }),
+    identity.getByRole("button", { name: "More options", exact: true }),
   ).toBeFocused();
   await page
     .getByRole("dialog", { name: "Identity wasn’t copied" })
@@ -241,6 +247,63 @@ test("settings share a centered, bounded column and keep controls contained acro
   }
 });
 
+// Once the section list scrolls, a classic scrollbar takes its width from the
+// labels. Only a browser with scrollbars that take space can show that.
+test("settings section labels fit beside a classic scrollbar", {
+  tag: "@classic-scrollbars",
+}, async ({ page, app }) => {
+  test.skip(
+    process.platform !== "linux" && !process.env.BUZZ_CLASSIC_SCROLLBARS,
+    "Set BUZZ_CLASSIC_SCROLLBARS=1 on a Mac whose scrollbars take space",
+  );
+  // A short window makes the fixture's section list scroll.
+  await page.setViewportSize({ width: 1440, height: 700 });
+  await page.goto(app.origin);
+  await openSettings(page);
+  await page.evaluate(() => document.fonts.ready);
+  const sections = settingsSections(page);
+  await expect
+    .poll(
+      () =>
+        sections.evaluate((nav) => {
+          const style = getComputedStyle(nav);
+          return (
+            nav.offsetWidth -
+            nav.clientWidth -
+            parseFloat(style.borderLeftWidth) -
+            parseFloat(style.borderRightWidth)
+          );
+        }),
+      {
+        message: "the section list scrolls beside a scrollbar that takes space",
+      },
+    )
+    .toBeGreaterThan(0);
+  const labels = await sections.evaluate((nav) =>
+    // The community address row truncates long hosts by design.
+    [
+      ...nav.querySelectorAll(
+        ".navigation-item:not([aria-label]) .navigation-item-label",
+      ),
+    ].map((label) => {
+      const text = document.createRange();
+      text.selectNodeContents(label);
+      return {
+        name: label.textContent,
+        overflows:
+          text.getBoundingClientRect().width >
+          label.getBoundingClientRect().width,
+      };
+    }),
+  );
+  expect(labels.map(({ name }) => name)).toEqual(
+    expect.arrayContaining(["Channel templates", "Software updates"]),
+  );
+  expect(
+    labels.filter(({ overflows }) => overflows).map(({ name }) => name),
+  ).toEqual([]);
+});
+
 // Real layout metrics and Base UI focus handoff need a browser; empty/loading
 // conditions are covered by component tests.
 test.describe("settings empty collections", () => {
@@ -393,84 +456,107 @@ test.describe("settings empty collections", () => {
   });
 });
 
+// The Builderlab section applies only in FI builds. With no native host its
+// session stays signed out, and hosted communities use the fixture broker.
+const fiBuild = test.extend({ federatedIdentity: true });
+
 // Hosted setup states use the real settings page with isolated account replies;
 // account operations and failures are covered by the owning component tests.
-test("hosted settings empty and setup cards fit without covering their actions", async ({
-  page,
-  app,
-}, info) => {
-  let signedIn = false;
-  await page.route("**/api/builderlab/**", async (route) => {
-    const action = new URL(route.request().url()).pathname.split("/").pop();
-    const replies = {
-      auth: {
-        auth: signedIn
-          ? { email: "test@example.com", expiresAt: "2030" }
-          : null,
-      },
-      identity: { identity: { pubkey_hex: app.viewer } },
-      list: { communities: [] },
-    };
-    if (!(action in replies))
-      throw new Error(`Unexpected account action: ${action}`);
-    await route.fulfill({ json: replies[action] });
-  });
-  for (const state of ["setup", "empty"]) {
-    signedIn = state === "empty";
-    await page.goto(app.origin);
-    await page
-      .getByRole("button", { name: "Your profile", exact: true })
-      .click();
-    await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
-    for (const mode of ["light", "dark"]) {
-      await selectSettingsSection(page, "Appearance");
-      await chooseColorMode(page, mode === "light" ? "Light" : "Dark");
-      for (const width of [1440, 800, 390]) {
-        await page.setViewportSize({ width, height: 1000 });
-        await selectSettingsSection(page, "Builderlab");
-        const card = page.locator(".buzz-empty-state").filter({
-          has: page.getByRole("heading", {
-            name: signedIn
-              ? "No hosted communities yet"
-              : "Sign in to manage hosted communities",
-          }),
-        });
-        await expect(card).toBeVisible();
-        for (const scale of ["100%", "200%"]) {
-          await page.evaluate((value) => {
-            document.documentElement.style.fontSize = value;
-          }, scale);
-          await expect
-            .poll(
-              () =>
-                card.evaluate((root) => {
-                  const box = root.getBoundingClientRect();
-                  return (
-                    [...root.querySelectorAll("*")].every((node) => {
-                      const child = node.getBoundingClientRect();
-                      return child.left >= box.left && child.right <= box.right;
-                    }) && root.scrollWidth <= root.clientWidth
-                  );
+fiBuild(
+  "hosted settings empty and setup cards fit without covering their actions",
+  async ({ page, app }, info) => {
+    let signedIn = false;
+    await page.route("**/api/builderlab/**", async (route) => {
+      const action = new URL(route.request().url()).pathname.split("/").pop();
+      const replies = {
+        auth: {
+          auth: signedIn
+            ? { email: "test@example.com", expiresAt: "2030" }
+            : null,
+        },
+        identity: { identity: { pubkey_hex: app.viewer } },
+        list: { communities: [] },
+      };
+      if (!(action in replies))
+        throw new Error(`Unexpected account action: ${action}`);
+      await route.fulfill({ json: replies[action] });
+    });
+    for (const state of ["setup", "empty"]) {
+      signedIn = state === "empty";
+      await page.goto(app.origin);
+      await page
+        .getByRole("button", { name: "Your profile", exact: true })
+        .click();
+      await page
+        .getByRole("menuitem", { name: "Settings", exact: true })
+        .click();
+      for (const mode of ["light", "dark"]) {
+        await selectSettingsSection(page, "Appearance");
+        await chooseColorMode(page, mode === "light" ? "Light" : "Dark");
+        for (const width of [1440, 800, 390]) {
+          await page.setViewportSize({ width, height: 1000 });
+          await selectSettingsSection(page, "Builderlab");
+          await expect(
+            page.getByRole("region", { name: "Builderlab", exact: true }),
+          ).toBeVisible();
+          const back = page.getByRole("button", { name: "Back to Builderlab" });
+          if (await back.isVisible()) await back.click();
+          const open = page.getByRole("button", { name: "Open Communities" });
+          await open.click();
+          const card = signedIn
+            ? page.getByRole("region", { name: "Communities", exact: true })
+            : page.locator(".buzz-empty-state").filter({
+                has: page.getByRole("heading", {
+                  name: "Sign in to manage hosted communities",
                 }),
-              { message: `${state}, ${mode}, ${width}px, ${scale}` },
-            )
-            .toBe(true);
-          if (!signedIn) {
-            const action = card.getByRole("button", {
-              name: "Sign in with Builderlab",
+              });
+          if (signedIn) {
+            const create = card.getByRole("button", {
+              name: "Create community",
+              exact: true,
             });
-            await action.scrollIntoViewIfNeeded();
-            await expect(action).toBeInViewport({ ratio: 1 });
+            await expect(create).toBeEnabled();
           }
-          if (width === 390 && scale === "200%")
-            await page.screenshot({
-              path: info.outputPath(`hosted-${state}-${mode}-200.png`),
-            });
+          await expect(card).toBeVisible();
+          for (const scale of ["100%", "200%"]) {
+            await page.evaluate((value) => {
+              document.documentElement.style.fontSize = value;
+            }, scale);
+            await expect
+              .poll(
+                () =>
+                  card.evaluate((root) => {
+                    const box = root.getBoundingClientRect();
+                    return (
+                      [...root.querySelectorAll("*")].every((node) => {
+                        if (!node.getClientRects().length) return true;
+                        const child = node.getBoundingClientRect();
+                        return (
+                          child.left >= box.left && child.right <= box.right
+                        );
+                      }) && root.scrollWidth <= root.clientWidth
+                    );
+                  }),
+                { message: `${state}, ${mode}, ${width}px, ${scale}` },
+              )
+              .toBe(true);
+            if (!signedIn) {
+              const action = card.getByRole("button", {
+                name: "Sign in with Builderlab",
+              });
+              await action.scrollIntoViewIfNeeded();
+              await expect(action).toBeInViewport({ ratio: 1 });
+            }
+            if (width === 390 && scale === "200%")
+              await page.screenshot({
+                path: info.outputPath(`hosted-${state}-${mode}-200.png`),
+              });
+          }
+          await page.evaluate(() => {
+            document.documentElement.style.fontSize = "";
+          });
         }
-        await page.evaluate(() => {
-          document.documentElement.style.fontSize = "";
-        });
       }
     }
-  }
-});
+  },
+);

@@ -1,13 +1,25 @@
+import { LIVE_CANVAS_BYTES } from "../features/channel-templates/model";
+import {
+  CANVAS_HISTORY_PAGE,
+  CANVAS_MAX_EVENT_BYTES,
+  CANVAS_READ_BYTES,
+} from "../features/channel-templates/canvas-limits";
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { npubEncode } from "nostr-tools/nip19";
 import { bytesToHex } from "nostr-tools/utils";
 import { expect, it, vi } from "vitest";
+import { eventDto } from "../features/relay/events";
+import { keypair, signed } from "../features/relay/testing";
 import type { BuzzClient, BuzzEvent, Filter, Memory, Template } from "./client";
 import { respond } from "./rpc";
 import { ATTENTION_TOOLS } from "./attention";
 import { createHash } from "node:crypto";
 import { callTool, memoryVersion, TOOLS } from "./tools";
-import { callSessionTool } from "./session-tools";
+import { callSessionTool, sessionTools } from "./session-tools";
+import { PLUGIN_TOOLS } from "./plugins";
+import { BESTIE_TOOLS } from "./bestie";
+import { SETTINGS_TOOLS } from "./settings";
+import { SOLO_WORKER_TOOLS } from "./solo-worker";
 import { Context } from "@deepseek-ai/cordis";
 import { AgentProtectionService } from "../features/agent-protection/service";
 import type { Agent } from "../features/agents/service";
@@ -78,6 +90,11 @@ function fake(
   const client: BuzzClient = {
     key: me,
     pubkey: me,
+    effectiveEdit: vi.fn(async (id: string) => {
+      const found = events.find((event) => event.id === id);
+      if (!found) throw new Error("No effective edit fixture");
+      return found;
+    }),
     query: vi.fn(async (filters: readonly Filter[]) => {
       const newest = [...events, ...kept].sort(
         (a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id),
@@ -137,9 +154,12 @@ it.each([false, true])(
     const protect = vi.fn<NonNullable<BuzzClient["protect"]>>(async () => {});
     const client = new Proxy({} as BuzzClient, {
       get(_target, property) {
-        // The shared session gate checks this optional hook before dispatch.
+        // The shared session gate checks these optional hooks before dispatch.
         if (property === "protect")
           return protectedSession ? protect : undefined;
+        if (property === "nativeToolGate") return undefined;
+        // The tool list checks whether settings and the Bestie can change here.
+        if (property === "settings" || property === "bestie") return undefined;
         throw new Error(`Help must not access the host: ${String(property)}`);
       },
     });
@@ -331,7 +351,29 @@ it.each(["send", "reply_in_subthread"])(
   },
 );
 
-it("refuses an oversized captured file before review or publication", async () => {
+it.each(["agent_create", "agent_update"])(
+  "refuses protected %s pictures before reads or uploads",
+  async (tool) => {
+    const { client } = fake([]);
+    client.protect = vi.fn(async () => {});
+    client.createAgent = vi.fn();
+    client.updateAgent = vi.fn();
+    await expect(
+      callSessionTool(client, {}, tool, {
+        agent: "Child",
+        type: "codex/codex",
+        name: "Kid",
+        picture: "me.png",
+      }),
+    ).rejects.toThrow("Protected picture uploads are not supported");
+    expect(client.read).not.toHaveBeenCalled();
+    expect(client.upload).not.toHaveBeenCalled();
+    expect(client.createAgent).not.toHaveBeenCalled();
+    expect(client.updateAgent).not.toHaveBeenCalled();
+  },
+);
+
+it("enforces a plugin’s captured-file budget before review or publication", async () => {
   const { client, published } = fake(community);
   const ctx = new Context();
   const agent = {
@@ -351,29 +393,30 @@ it("refuses an oversized captured file before review or publication", async () =
       update: async () => {},
     },
   );
-  const check = vi.fn(async () => true);
   ctx
     .extend({ pluginOwner: { id: "security.test", revision: "one" } })
     .agentProtection.register({
       processProtection: { readOnlyPaths: [], hiddenPaths: [] },
-      check,
+      checkEvidence: async (_metadata, evidence) => {
+        let size = 0;
+        for await (const part of evidence.read())
+          size += new TextEncoder().encode(part).length;
+        return size <= 1024;
+      },
     });
   const protection = service.bind(agent);
   if (!protection) throw new Error("Expected protected handle");
   client.protect = (action) =>
     protection.check(action, new AbortController().signal);
-  client.read = vi.fn(async () =>
-    new TextEncoder().encode("x".repeat(256 * 1024)),
-  );
+  client.read = vi.fn(async () => new TextEncoder().encode("x".repeat(1024)));
   try {
     await expect(
       callSessionTool(client, { channel: "chan" }, "send", {
         audience: "everyone",
         path: "large.md",
       }),
-    ).rejects.toThrow("too large");
+    ).rejects.toThrow("denied by its protection policy");
     expect(client.read).toHaveBeenCalledExactlyOnceWith("large.md");
-    expect(check).not.toHaveBeenCalled();
     expect(client.upload).not.toHaveBeenCalled();
     expect(published).toEqual([]);
   } finally {
@@ -400,6 +443,25 @@ it("replies in the current thread and notifies the members it names", async () =
   ]);
 });
 
+// As a model that fills in every optional field sends it.
+it("replies in the current thread when channel and reply are blank", async () => {
+  const { client, published } = fake(community);
+  await callTool(client, { channel: "chan", root }, "send", {
+    audience: "everyone",
+    text: "hi",
+    channel: "",
+    reply: "",
+    path: "",
+    files: [],
+    mentions: [],
+    final: true,
+  });
+  expect(published.at(-1)?.tags).toEqual([
+    ["h", "chan"],
+    ["e", root, "", "reply"],
+  ]);
+});
+
 it("tags a message for agents, and needs the audience said", async () => {
   const { client, published } = fake(community);
   const context = { channel: "chan", root };
@@ -422,6 +484,32 @@ it("tags a message for agents, and needs the audience said", async () => {
   expect(published).toHaveLength(1);
 });
 
+it("signs the turn's triggering request separately from the flattened reply", async () => {
+  const { client, published } = fake(community);
+  const context = { channel: "chan", root };
+  const request = "f".repeat(64);
+  await callTool(client, context, "send", {
+    text: "Checking",
+    audience: "agents",
+    request: request.toUpperCase(),
+  });
+  expect(published[0]?.tags).toEqual([
+    ["h", "chan"],
+    ["e", root, "", "reply"],
+    ["audience", "agents"],
+    ["buzz:request", request],
+  ]);
+  for (const bad of ["", "nope", 7])
+    await expect(
+      callTool(client, context, "send", {
+        text: "hi",
+        audience: "agents",
+        request: bad,
+      }),
+    ).rejects.toThrow("Not an event id");
+  expect(published).toHaveLength(1);
+});
+
 it("refuses to post a name it cannot resolve unless told who it means", async () => {
   const { client, published } = fake(community);
   const context = { channel: "chan", root };
@@ -437,6 +525,106 @@ it("refuses to post a name it cannot resolve unless told who it means", async ()
     mentions: [bob],
   });
   expect(published[0]?.tags).toContainEqual(["p", bob]);
+});
+
+it("tags a member by the names the relay verified, ahead of names people gave themselves", async () => {
+  const relay = keypair();
+  // Signed and admitted, as a connection's query returns them.
+  const verified = (
+    subject: string,
+    names: readonly string[][],
+    { by = relay, at = 100, active = true } = {},
+  ): BuzzEvent =>
+    eventDto(
+      signed(by, {
+        kind: 30382,
+        content: "",
+        created_at: at,
+        tags: [
+          ["d", subject],
+          ["p", subject],
+          ["active", String(active)],
+          ...(active
+            ? [
+                ["issuer_label", "Example"],
+                ["verified_at", String(at)],
+              ]
+            : []),
+          ...names,
+        ],
+      }),
+    );
+  const { client, published } = fake([
+    ...community,
+    verified(alice, [
+      ["display_name", "Alice S"],
+      ["username", "asmith"],
+      ["full_name", "Alice Smith-Jones"],
+    ]),
+    // Bob's own profile claims Alice's verified name, and her username.
+    profile(bob, "Alice S"),
+    event({
+      kind: 0,
+      pubkey: bob,
+      created_at: 101,
+      content: JSON.stringify({ display_name: "Alice S", name: "asmith" }),
+    }),
+    // A name another key signed, one the relay retracted, and one the app
+    // would reject give nobody.
+    verified(
+      bob,
+      [
+        ["display_name", "Forged"],
+        ["username", "forged"],
+      ],
+      {
+        by: keypair(),
+      },
+    ),
+    verified(
+      bob,
+      [
+        ["display_name", "Bobby"],
+        ["username", "bobby"],
+      ],
+      {
+        at: 90,
+      },
+    ),
+    verified(bob, [], { at: 95, active: false }),
+    verified(me, [
+      ["display_name", "Bad"],
+      ["username", "Not A Handle"],
+    ]),
+  ]);
+  const tagged = { ...client, relayAuthor: relay.pubkey };
+  const context = { channel: "chan", root };
+  for (const text of [
+    "@Alice S see this",
+    "@asmith see this",
+    "@alice smith-jones see this",
+  ]) {
+    await callTool(tagged, context, "send", { audience: "everyone", text });
+    expect(published.at(-1)?.tags).toEqual([
+      ["h", "chan"],
+      ["e", root, "", "reply"],
+      ["p", alice],
+    ]);
+  }
+  for (const name of ["forged", "bobby", "bad"])
+    await expect(
+      callTool(tagged, context, "send", {
+        audience: "everyone",
+        text: `@${name} hi`,
+      }),
+    ).rejects.toThrow(`No single channel member is @${name}`);
+  // Without the relay's key, verified names are not read at all, so only
+  // the names people gave themselves are left.
+  await callTool(client, context, "send", {
+    audience: "everyone",
+    text: "@asmith hi",
+  });
+  expect(published.at(-1)?.tags).toContainEqual(["p", bob]);
 });
 
 it("replies to a message inside a thread at the thread's root, and posts a file's text and attachments", async () => {
@@ -486,6 +674,18 @@ it("posts at the channel's top level when given a channel", async () => {
   expect(published[0]?.tags).toEqual([["h", "other"]]);
 });
 
+it("refuses to edit when the host cannot obtain effective attachment state", async () => {
+  const { client, published } = fake(community);
+  delete client.effectiveEdit;
+  await expect(
+    callTool(client, { channel: "chan" }, "edit", {
+      id: root,
+      text: "must not copy the original's attachments",
+    }),
+  ).rejects.toThrow("cannot obtain effective edit state");
+  expect(published).toEqual([]);
+});
+
 it("tags the community emoji a message or edit uses, as the composer does", async () => {
   const stamp = "https://relay/media/stamp.png";
   const emojiSet = (pubkey: string, created_at: number, entries: string[][]) =>
@@ -526,6 +726,49 @@ it("tags the community emoji a message or edit uses, as the composer does", asyn
       ["emoji", "wave", "https://relay/media/wave.png"],
     ],
   ]);
+});
+
+it("tags a community emoji reaction and refuses a shortcode outside the palette", async () => {
+  const approve = "https://relay/media/approve.png";
+  const { client, published } = fake([
+    ...community,
+    event({ id: root, pubkey: alice }),
+    event({
+      id: "e".repeat(64),
+      pubkey: bob,
+      created_at: 20,
+      kind: 30030,
+      tags: [
+        ["d", "buzz:custom-emoji"],
+        ["emoji", "approve", approve],
+      ],
+    }),
+  ]);
+  await callTool(client, {}, "react", { id: root, emoji: ":Approve:" });
+  await callTool(client, {}, "react", { id: root, emoji: "👍" });
+  expect(published).toEqual([
+    {
+      kind: 7,
+      content: ":Approve:",
+      tags: [
+        ["e", root],
+        ["p", alice],
+        ["emoji", "approve", approve],
+      ],
+    },
+    {
+      kind: 7,
+      content: "👍",
+      tags: [
+        ["e", root],
+        ["p", alice],
+      ],
+    },
+  ]);
+  await expect(
+    callTool(client, {}, "react", { id: root, emoji: ":foo:" }),
+  ).rejects.toThrow("unknown custom emoji :foo:");
+  expect(published).toHaveLength(2);
 });
 
 it("reads no emoji sets for a message without a shortcode", async () => {
@@ -597,6 +840,18 @@ it("reads the current thread with each message's latest edit", async () => {
         ["e", nested],
       ],
     }),
+    // Newer, but not the author's, so it must not hide the author's edit.
+    event({
+      id: "e".repeat(64),
+      kind: 40003,
+      pubkey: bob,
+      created_at: 130,
+      content: "not theirs",
+      tags: [
+        ["h", "chan"],
+        ["e", nested],
+      ],
+    }),
   ]);
   const text = (await callTool(
     client,
@@ -612,11 +867,36 @@ it("reads the current thread with each message's latest edit", async () => {
   ]);
 });
 
+// As a model that fills in every optional field sends it.
+it("reads the current thread when optional fields are blank or 0", async () => {
+  const { client } = fake(community);
+  const blank = (await callTool(client, { channel: "chan", root }, "read", {
+    channel: "",
+    thread: "",
+    message_url: "",
+    q: "",
+    author: "",
+    since: 0,
+    before: 0,
+    before_id: "",
+    limit: 5,
+  })) as string;
+  expect(blank).toBe(
+    await callTool(client, { channel: "chan", root }, "read", { limit: 5 }),
+  );
+  expect(blank).toContain(`thread ${root} in chan`);
+});
+
 it.each([
   ["channel", { channel: "chan" }],
   ["search", { q: "hello" }],
   ["current thread", {}],
   ["explicit thread", { thread: nested }],
+  ["message link", { message_url: `buzz://message?channel=chan&id=${nested}` }],
+  [
+    "message search",
+    { message_url: `buzz://message?channel=chan&id=${nested}`, q: "hello" },
+  ],
 ] as const)(
   "keeps agent ownership and nested reply context in a %s read",
   async (_, args) => {
@@ -842,6 +1122,280 @@ it("refuses read arguments it cannot apply, saying how to fix them", async () =>
       error,
     );
   expect(client.query).not.toHaveBeenCalled();
+});
+
+const DAY = 86_400;
+const SEARCH_KINDS = [9, 40002, 45001, 45003];
+const SCOPE =
+  "Searched with your own access: channels you're in and open channels, not other people's private channels or DMs.";
+const search = (client: BuzzClient, args: Record<string, unknown>) =>
+  callTool(
+    client,
+    { channel: "chan", root },
+    "search",
+    args,
+  ) as Promise<string>;
+const metadata = (id: string, name: string, tags: string[][] = []) =>
+  event({
+    id: createHash("sha256").update(id).digest("hex"),
+    kind: 39000,
+    tags: [["d", id], ["name", name], ...tags],
+  });
+/** Answers a message search with `ranked`, as a relay ranks it; the fake
+ * only filters. */
+const ranking = (client: BuzzClient, ranked: () => BuzzEvent[]) => {
+  const query = client.query;
+  client.query = vi.fn(async (filters: readonly Filter[]) =>
+    filters[0]?.search && (filters[0].kinds as number[]).includes(9)
+      ? ranked()
+      : query(filters),
+  );
+};
+
+it("searches by name, channel and date, best match first, citing each hit", async () => {
+  const best = event({
+    id: "3".repeat(64),
+    created_at: 2 * DAY,
+    content: "relay  deploy done;\ndeploy verified",
+    tags: [
+      ["h", "other"],
+      ["auth", bob, "kind=9", "8".repeat(128)],
+    ],
+  });
+  const reply = event({
+    id: "4".repeat(64),
+    created_at: 2 * DAY + 60,
+    content: "the deploy",
+    tags: [
+      ["h", "other"],
+      ["e", root, "", "reply"],
+    ],
+  });
+  const { client } = fake([
+    profile(alice, "Alice Smith"),
+    profile(bob, "Bob"),
+    metadata("other", "ops"),
+    best,
+    reply,
+    event({
+      kind: 40003,
+      created_at: 3 * DAY,
+      content: "the deploy, edited",
+      tags: [["e", reply.id]],
+    }),
+  ]);
+  ranking(client, () => [best, reply]);
+  const answer = await search(client, {
+    q: "deploy",
+    from: "@alice smith",
+    in: "#OPS",
+    after: "1970-01-02",
+    before: "1970-01-04",
+  });
+  expect(client.query).toHaveBeenCalledWith([
+    {
+      kinds: SEARCH_KINDS,
+      limit: 30,
+      search: "deploy",
+      authors: [alice],
+      "#h": ["other"],
+      since: DAY,
+      // `before` excludes its day.
+      until: 3 * DAY - 1,
+    },
+  ]);
+  expect(answer.split("\n")).toEqual([
+    `2 results for "deploy" from ${alice} "Alice Smith" in #ops after 1970-01-02 before 1970-01-04, best match first.`,
+    SCOPE,
+    `[1] buzz://message?channel=other&id=${best.id} · #ops · from ${alice} "Alice Smith" · claimed owner ${bob} "Bob" · 1970-01-03T00:00Z`,
+    "    relay deploy done; deploy verified",
+    `[2] buzz://message?channel=other&id=${reply.id}&thread=${root} · #ops · from ${alice} "Alice Smith" · 1970-01-03T00:01Z · in a thread`,
+    "    the deploy, edited",
+    "No more matches.",
+  ]);
+  // Each link opens its message.
+  await expect(
+    read(client, {
+      message_url: `buzz://message?channel=other&id=${best.id}`,
+    }),
+  ).resolves.toContain("relay  deploy done");
+});
+
+it("reads newest history without q, in a DM named by its person, a page at a time", async () => {
+  const dm = event({
+    id: "d".repeat(64),
+    kind: 39000,
+    tags: [
+      ["d", "dm1"],
+      ["t", "dm"],
+      ["p", me],
+      ["p", bob],
+    ],
+  });
+  const { client } = fake([
+    profile(me, "Helper"),
+    profile(bob, "Bob"),
+    dm,
+    event({
+      id: "3".repeat(64),
+      pubkey: me,
+      created_at: 200,
+      content: "hi bob",
+      tags: [["h", "dm1"]],
+    }),
+    event({
+      id: "4".repeat(64),
+      pubkey: me,
+      created_at: 100,
+      content: "earlier",
+      tags: [["h", "dm1"]],
+    }),
+  ]);
+  const first = await search(client, { in: "@Bob", from: "me", limit: 1 });
+  expect(client.query).toHaveBeenCalledWith([
+    {
+      kinds: [9, 40002, 40008, 45001, 45003],
+      limit: 1,
+      authors: [me],
+      "#h": ["dm1"],
+    },
+  ]);
+  expect(first.split("\n")).toEqual([
+    `1 result for from ${me} "Helper" in DM with Bob, newest first.`,
+    SCOPE,
+    `[1] buzz://message?channel=dm1&id=${"3".repeat(64)} · DM with Bob · from ${me} "Helper" · 1970-01-01T00:03Z`,
+    "    hi bob",
+    `More may match; continue with {"from":"${me}","in":"dm1","limit":1,"page":2}`,
+  ]);
+  // The fake ignores page; the relay's bridge offsets by it.
+  const second = await search(client, next(first) as Record<string, unknown>);
+  expect(client.query).toHaveBeenCalledWith(
+    expect.arrayContaining([
+      expect.objectContaining({ page: 2, "#h": ["dm1"], authors: [me] }),
+    ]),
+  );
+  expect(second).toContain("\n[2] buzz://message?channel=dm1&id=");
+});
+
+it("asks for newest first, and says when the community ranked anyway", async () => {
+  const older = event({ id: "3".repeat(64), created_at: 100, content: "x" });
+  const newer = event({ id: "4".repeat(64), created_at: 200, content: "x" });
+  const { client } = fake([older, newer]);
+  let ranked = [older, newer];
+  ranking(client, () => ranked);
+  const header = async () =>
+    (await search(client, { q: "x", sort: "newest" })).split("\n")[0];
+  expect(await header()).toBe(
+    `2 results for "x", best match first (this community can't sort a search by newest).`,
+  );
+  expect(client.query).toHaveBeenCalledWith([
+    { kinds: SEARCH_KINDS, limit: 30, search: "x", search_sort: "newest" },
+  ]);
+  ranked = [newer, older];
+  expect(await header()).toBe(`2 results for "x", newest first.`);
+});
+
+it("keeps a span back from now fixed across pages", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(30 * DAY * 1000);
+    const { client } = fake([event({ created_at: 25 * DAY, content: "x" })]);
+    const first = await search(client, { q: "x", after: "7d", limit: 1 });
+    expect(client.query).toHaveBeenCalledWith([
+      expect.objectContaining({ search: "x", since: 23 * DAY }),
+    ]);
+    expect(next(first)).toEqual({
+      q: "x",
+      after: "1970-01-24T00:00:00Z",
+      limit: 1,
+      page: 2,
+    });
+    // An hour later, page 2 still starts where page 1 did.
+    vi.setSystemTime(30 * DAY * 1000 + 3_600_000);
+    await search(client, next(first) as Record<string, unknown>);
+    expect(client.query).toHaveBeenCalledWith([
+      expect.objectContaining({ page: 2, since: 23 * DAY }),
+    ]);
+    // A UTC time is read to the second; before excludes it.
+    await search(client, { q: "x", before: "1970-01-24T00:00:05Z" });
+    expect(client.query).toHaveBeenCalledWith([
+      expect.objectContaining({ until: 23 * DAY + 4 }),
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("gives every author's key, whatever name they chose, and cuts long messages around the match", async () => {
+  const long = `${"a ".repeat(300)}needle${" b".repeat(300)}`;
+  const { client } = fake([
+    profile(alice, "Sam"),
+    profile(bob, "Sam"),
+    metadata("chan", "general"),
+    event({ id: "3".repeat(64), content: long }),
+    event({ id: "4".repeat(64), pubkey: bob, created_at: 120, content: "x" }),
+  ]);
+  const lines = (await search(client, { q: "needle" })).split("\n");
+  expect(lines[2]).toContain(` · #general · from ${bob} "Sam" · `);
+  expect(lines[4]).toContain(` · #general · from ${alice} "Sam" · `);
+  const cut = lines[5] as string;
+  expect(cut).toMatch(/^ {4}…a a .*needle b b .*…$/);
+  expect(cut.length).toBeLessThanOrEqual(4 + 402);
+});
+
+it("refuses search arguments it cannot apply, saying how to fix them", async () => {
+  const { client } = fake([
+    profile(alice, "Sam"),
+    profile(bob, "Sam"),
+    profile(me, "Lau"),
+    profile("e".repeat(64), "Kim"),
+    metadata("c1", "ops"),
+    metadata("c2", "ops"),
+    metadata("c3", "general"),
+  ]);
+  for (const [args, error] of [
+    [{}, "Give q, or from, in, after or before."],
+    [{ q: " ", limit: 0, page: 0 }, "Give q, or from, in, after or before."],
+    [{ q: "x", sort: "oldest" }, "sort must be relevance or newest."],
+    [{ q: "x", page: -1 }, "page must be a whole number, 1 or more."],
+    [{ q: "x", page: 1.5 }, "page must be a whole number, 1 or more."],
+    [{ q: "x", after: "friday" }, "after must be a date (YYYY-MM-DD)"],
+    [{ q: "x", before: "2026-02-30" }, "before must be a date (YYYY-MM-DD)"],
+    [
+      { q: "x", after: "2026-01-02T25:00:00Z" },
+      "after must be a date (YYYY-MM-DD)",
+    ],
+    [
+      { q: "x", after: "2026-01-02T10:00:00+01:00" },
+      "after must be a date (YYYY-MM-DD)",
+    ],
+    [
+      { q: "x", after: "2026-01-02", before: "2026-01-02" },
+      "after must be earlier than before.",
+    ],
+    [{ from: "Sam" }, "2 people are named Sam; give their npub."],
+    [{ from: "Nobody" }, "No one is named Nobody."],
+    [{ in: "@Sam" }, "2 people are named Sam; give their npub."],
+    [{ in: "@Kim" }, "You have no DM with Kim."],
+    [{ in: "#ops" }, "2 channels are named ops; give its ID."],
+    [
+      { in: "gen" },
+      "No channel you can see is named gen.\nSimilar:\nc3 #general",
+    ],
+  ] as const)
+    await expect(search(client, args), JSON.stringify(args)).rejects.toThrow(
+      error,
+    );
+  // Nothing was searched.
+  expect(
+    vi
+      .mocked(client.query)
+      .mock.calls.flat(2)
+      .some((filter) => (filter.kinds as number[]).includes(9)),
+  ).toBe(false);
+  await expect(search(client, { q: "zebra", in: "c3" })).resolves.toBe(
+    `No messages for "zebra" in #general.\n${SCOPE}`,
+  );
 });
 
 it("takes back its own reaction", async () => {
@@ -1171,8 +1725,16 @@ it("lists its tools before it can call them", async () => {
       method: "tools/list",
     },
   )) as { result: { tools: unknown[] } };
-  // Every app session lists the same tools: the Buzz and attention tools.
-  expect(list.result.tools).toHaveLength(TOOLS.length + ATTENTION_TOOLS.length);
+  // Every app session lists the same tools: the Buzz, attention, Solo worker,
+  // plugin, settings and Bestie tools.
+  expect(list.result.tools).toHaveLength(
+    TOOLS.length +
+      ATTENTION_TOOLS.length +
+      SOLO_WORKER_TOOLS.length +
+      PLUGIN_TOOLS.length +
+      SETTINGS_TOOLS.length +
+      BESTIE_TOOLS.length,
+  );
   await expect(
     respond(
       undefined,
@@ -1270,7 +1832,13 @@ function relay(refused: Readonly<Record<string, string>> = {}) {
   client.publish = vi.fn(async (template: Template) => {
     const id = template.tags.find((t) => t[0] === "h")?.[1] ?? "";
     const target = template.tags.find((t) => t[0] === "p")?.[1] ?? "";
-    if (refused[target]) throw new Error(refused[target]);
+    // Like the relay, any refused member keeps a whole create out.
+    const refusal = (
+      template.kind === 9007
+        ? template.tags.flatMap(([key, value]) => (key === "p" ? [value] : []))
+        : [target]
+    ).find((key) => key && refused[key]);
+    if (refusal) throw new Error(refused[refusal]);
     published.push(template);
     const { kind } = template;
     if (kind === 9007) {
@@ -1279,6 +1847,11 @@ function relay(refused: Readonly<Record<string, string>> = {}) {
       const value = (key: string) =>
         template.tags.find((t) => t[0] === key)?.[1];
       const type = ["t", value("channel_type") ?? "stream"];
+      // Labels follow the type; `p` members join in the create.
+      const labels = template.tags.filter((t) => t[0] === "t");
+      const members = template.tags.flatMap(([key, value]) =>
+        key === "p" && value ? [["p", value, "", "member"]] : [],
+      );
       state.push(
         event({
           kind: 39000,
@@ -1286,12 +1859,13 @@ function relay(refused: Readonly<Record<string, string>> = {}) {
             ["d", id],
             ["name", value("name") ?? ""],
             type,
+            ...labels,
             ...(value("visibility") === "private" ? [["private"]] : []),
           ],
         }),
         event({
           kind: 39002,
-          tags: [["d", id], type, ["p", me, "", "owner"]],
+          tags: [["d", id], type, ["p", me, "", "owner"], ...members],
         }),
       );
     }
@@ -1493,6 +2067,317 @@ it("creates a system channel", async () => {
       type: "dm",
     }),
   ).rejects.toThrow("type must be stream, forum or system.");
+});
+
+it("creates a Solo chat with its members in the create, as Buzz does", async () => {
+  const { client, published } = relay();
+  const answer = await callTool(client, {}, "channel_create", {
+    name: "triage",
+    visibility: "private",
+    solo: true,
+    members: [alice, npubEncode(bob), alice, me],
+  });
+  const id = published[0]?.tags[0]?.[1] as string;
+  expect(published).toEqual([
+    {
+      kind: 9007,
+      content: "",
+      tags: [
+        ["h", id],
+        ["name", "triage"],
+        ["visibility", "private"],
+        ["channel_type", "stream"],
+        ["t", "buzz.solo"],
+        ["t", "buzz.session.named"],
+        ["p", alice],
+        ["p", bob],
+      ],
+    },
+  ]);
+  expect(answer).toBe(
+    `created ${id}\nadded ${alice} Alice Smith\nadded ${bob}`,
+  );
+  await expect(
+    callTool(client, {}, "channel_get", { channel: id }),
+  ).resolves.toBe(`${id} triage (stream, solo, private)\nyou: owner`);
+  await expect(
+    callTool(client, {}, "member_list", { channel: id }),
+  ).resolves.toBe(`${me}  (owner)\n${alice} Alice Smith\n${bob} `);
+  // An ordinary private channel is not Solo.
+  await callTool(client, {}, "channel_create", {
+    name: "ops",
+    visibility: "private",
+  });
+  const plain = published[1]?.tags[0]?.[1] as string;
+  expect(published[1]?.tags.some(([key]) => key === "t" || key === "p")).toBe(
+    false,
+  );
+  await expect(
+    callTool(client, {}, "channel_get", { channel: plain }),
+  ).resolves.toBe(`${plain} ops (stream, private)\nyou: owner`);
+});
+
+it("discovers local workspaces and files only after creating a Solo with explicit members", async () => {
+  const { client, published } = relay();
+  const file = vi.fn(async () => ({ status: "filed" as const }));
+  const list = vi.fn(async () => [{ id: "work", name: "Work" }]);
+  const prepare = vi.fn(async () => file);
+  client.soloWorkspaces = { list, prepare };
+  expect(await callTool(client, {}, "solo_workspace_list", {})).toBe(
+    JSON.stringify([{ id: "work", name: "Work" }]),
+  );
+  const answer = await callTool(client, {}, "channel_create", {
+    name: "triage",
+    visibility: "private",
+    solo: true,
+    members: [alice],
+    workspace: "work",
+  });
+  const id = published[0]?.tags[0]?.[1];
+  expect(prepare).toHaveBeenCalledExactlyOnceWith("work", [alice], id);
+  expect(file).toHaveBeenCalledExactlyOnceWith(id);
+  expect(answer).toBe(
+    `created ${id}\nadded ${alice} Alice Smith\nfiled in workspace work`,
+  );
+  expect(published).toHaveLength(1);
+  expect(published[0]?.kind).toBe(9007);
+});
+
+it("rejects unsupported or invalid workspace placement before publication", async () => {
+  const { client, published } = relay();
+  const args = {
+    name: "triage",
+    visibility: "private",
+    solo: true,
+    members: [alice],
+    workspace: "work",
+  };
+  await expect(callTool(client, {}, "solo_workspace_list", {})).rejects.toThrow(
+    "unavailable on this host",
+  );
+  await expect(callTool(client, {}, "channel_create", args)).rejects.toThrow(
+    "unavailable on this host",
+  );
+  const prepare = vi.fn(async () => {
+    throw new Error("No such workspace");
+  });
+  client.soloWorkspaces = { list: async () => [], prepare };
+  await expect(
+    callTool(client, {}, "channel_create", {
+      ...args,
+      solo: false,
+      members: undefined,
+    }),
+  ).rejects.toThrow("workspace is for Solo");
+  await expect(callTool(client, {}, "channel_create", args)).rejects.toThrow(
+    "No such workspace",
+  );
+  expect(published).toEqual([]);
+});
+
+it.each([
+  "deleted target",
+  "record full",
+  "revision conflict",
+  "community changed",
+])("keeps the created chat ID when filing fails: %s", async (message) => {
+  const { client, published } = relay();
+  const file = vi.fn(async () => {
+    throw new Error(message);
+  });
+  client.soloWorkspaces = { list: async () => [], prepare: async () => file };
+  const answer = await callTool(client, {}, "channel_create", {
+    name: "triage",
+    visibility: "private",
+    solo: true,
+    members: [alice],
+    workspace: "work",
+  });
+  const id = published[0]?.tags[0]?.[1];
+  expect(answer).toContain(`created ${id}`);
+  expect(answer).toContain(
+    `workspace placement unconfirmed and may have completed: ${message}`,
+  );
+  expect(answer).toContain("do not create another chat");
+  expect(published).toHaveLength(1);
+  expect(file).toHaveBeenCalledOnce();
+});
+
+it.each(["not-filed", "unconfirmed"] as const)(
+  "reports structured placement outcome without repeating create: %s",
+  async (status) => {
+    const { client, published } = relay();
+    client.soloWorkspaces = {
+      list: async () => [],
+      prepare: async () => async () => ({ status, error: "placement stopped" }),
+    };
+    const answer = await callTool(client, {}, "channel_create", {
+      name: "triage",
+      visibility: "private",
+      solo: true,
+      members: [alice],
+      workspace: "work",
+    });
+    expect(answer).toContain(`created ${published[0]?.tags[0]?.[1]}`);
+    expect(answer).toContain(
+      status === "not-filed"
+        ? "created, not filed"
+        : "placement unconfirmed and may have completed",
+    );
+    if (status === "unconfirmed")
+      expect(answer).toContain("Inspect or refresh");
+    expect(published).toHaveLength(1);
+  },
+);
+
+it("reports uncertainty after a gated durable placement loses its app lifetime", async () => {
+  const { client, published } = relay();
+  let release!: () => void;
+  const delivered = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started!: () => void;
+  const enqueued = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let durable = false;
+  client.soloWorkspaces = {
+    list: async () => [],
+    prepare: async () => async () => {
+      durable = true;
+      started();
+      await delivered;
+      throw new Error("retired after durable placement");
+    },
+  };
+  const pending = callTool(client, {}, "channel_create", {
+    name: "triage",
+    visibility: "private",
+    solo: true,
+    members: [alice],
+    workspace: "work",
+  });
+  try {
+    await enqueued;
+    expect(durable).toBe(true);
+    expect(published).toHaveLength(1);
+  } finally {
+    release();
+  }
+  const answer = await pending;
+  expect(answer).toContain(`created ${published[0]?.tags[0]?.[1]}`);
+  expect(answer).toContain("placement unconfirmed and may have completed");
+  expect(answer).toContain("Inspect or refresh");
+  expect(answer).not.toContain("not filed");
+});
+
+it("refuses Solo arguments that do not fit, before publishing", async () => {
+  const { client, published } = relay();
+  const create = (args: Record<string, unknown>) =>
+    callTool(client, {}, "channel_create", {
+      name: "x",
+      visibility: "private",
+      ...args,
+    });
+  const shape = "A Solo chat is a private stream without about or template.";
+  await expect(create({ solo: true, visibility: "open" })).rejects.toThrow(
+    shape,
+  );
+  await expect(create({ solo: true, type: "forum" })).rejects.toThrow(shape);
+  await expect(create({ solo: true, about: "notes" })).rejects.toThrow(shape);
+  await expect(create({ solo: true, template: "Triage" })).rejects.toThrow(
+    shape,
+  );
+  for (const members of [[alice], ["alice"], alice])
+    await expect(create({ members })).rejects.toThrow(
+      "members is for Solo chats.",
+    );
+  await expect(create({ solo: true, members: ["alice"] })).rejects.toThrow(
+    "Not a pubkey: alice",
+  );
+  await expect(create({ solo: true, members: alice })).rejects.toThrow(
+    "members must be a list of pubkeys.",
+  );
+  await expect(create({ solo: "true" })).rejects.toThrow(
+    "solo must be true or false.",
+  );
+  const many = Array.from({ length: 33 }, (_, n) =>
+    n.toString(16).padStart(64, "0"),
+  );
+  await expect(create({ solo: true, members: many })).rejects.toThrow(
+    "A Solo chat starts with at most 32 members.",
+  );
+  expect(published).toEqual([]);
+});
+
+it("starts a Solo chat with the relay's maximum of 32 members", async () => {
+  const { client, published } = relay();
+  const members = Array.from({ length: 32 }, (_, n) =>
+    (n + 1).toString(16).padStart(64, "0"),
+  );
+  await callTool(client, {}, "channel_create", {
+    name: "x",
+    visibility: "private",
+    solo: true,
+    members: [...members, me],
+  });
+  expect(
+    published[0]?.tags.filter(([key]) => key === "p").map(([, key]) => key),
+  ).toEqual(members);
+});
+
+it("creates no Solo chat when a member refuses, and says what it cannot confirm", async () => {
+  const { client, published, state } = relay({
+    [alice]: "blocked: this agent only joins its owner's channels",
+  });
+  await expect(
+    callTool(client, {}, "channel_create", {
+      name: "triage",
+      visibility: "private",
+      solo: true,
+      members: [bob, alice],
+    }),
+  ).rejects.toThrow("blocked: this agent only joins its owner's channels");
+  expect(published).toEqual([]);
+  expect(state.filter((e) => e.kind === 39000)).toHaveLength(1);
+
+  vi.useFakeTimers();
+  try {
+    // A relay without channel labels drops them and keeps the channel.
+    const publish = client.publish;
+    client.publish = vi.fn(async (template: Template) =>
+      publish({
+        ...template,
+        tags: template.tags.filter(([key]) => key !== "t"),
+      }),
+    );
+    let answer = callTool(client, {}, "channel_create", {
+      name: "triage",
+      visibility: "private",
+      solo: true,
+      members: [bob],
+    });
+    await vi.runAllTimersAsync();
+    let id = published.at(-1)?.tags[0]?.[1] as string;
+    await expect(answer).resolves.toBe(
+      `created ${id}\nThe community did not keep the Solo label, so it is an ordinary private channel.\nadded ${bob}`,
+    );
+    // A create the community never shows leaves its members unconfirmed.
+    client.query = vi.fn(async () => []);
+    answer = callTool(client, {}, "channel_create", {
+      name: "triage",
+      visibility: "private",
+      solo: true,
+      members: [bob],
+    });
+    await vi.runAllTimersAsync();
+    id = published.at(-1)?.tags[0]?.[1] as string;
+    await expect(answer).resolves.toBe(
+      `The community accepted channel ${id} but does not show it yet; its members are not confirmed.`,
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("finds a channel past the relay's first page, by name and then by ID", async () => {
@@ -1857,6 +2742,319 @@ it("publishes the first canvas only after finding visible channel metadata", asy
   expect(published).toEqual([
     { kind: 40100, content: "first", tags: [["h", "chan"]] },
   ]);
+});
+
+it("lists canvas revisions newest first, a page at a time", async () => {
+  const rows = Array.from({ length: CANVAS_HISTORY_PAGE + 1 }, (_, i) =>
+    event({
+      kind: 40100,
+      id: `${i}`.padStart(64, "0"),
+      created_at: 100 + i,
+      content: `# Plan ${i}\nbody`,
+    }),
+  );
+  const { client } = fake(rows);
+  const page = await callTool(
+    client,
+    { channel: "chan" },
+    "canvas_history",
+    {},
+  );
+  const lines = (page as string).split("\n");
+  expect(lines).toHaveLength(CANVAS_HISTORY_PAGE + 3);
+  expect(lines[0]).toBe(`version: ${rows[CANVAS_HISTORY_PAGE]?.id}`);
+  expect(lines[2]).toBe(
+    `${rows[CANVAS_HISTORY_PAGE]?.id} 1970-01-01T00:01Z ${alice} 14B # Plan ${CANVAS_HISTORY_PAGE}`,
+  );
+  expect(lines[CANVAS_HISTORY_PAGE + 2]).toBe(
+    `Older revisions may remain; continue with ${JSON.stringify({ channel: "chan", before: 101, before_id: rows[1]?.id })}`,
+  );
+  await expect(
+    callTool(client, {}, "canvas_history", {
+      channel: "chan",
+      before: 101,
+      before_id: rows[1]?.id,
+    }),
+  ).resolves.toBe(`${rows[0]?.id} 1970-01-01T00:01Z ${alice} 13B # Plan 0`);
+  await expect(
+    callTool(client, {}, "canvas_history", {
+      channel: "chan",
+      before_id: root,
+    }),
+  ).rejects.toThrow("before_id needs before");
+  await expect(
+    callTool(client, {}, "canvas_history", { channel: "chan", before: 1e12 }),
+  ).rejects.toThrow("Unix seconds");
+  // Only the first page is read from the writer.
+  const filters = (client.query as ReturnType<typeof vi.fn>).mock.calls.map(
+    ([[filter]]) => filter,
+  );
+  expect(filters[0]).toEqual({
+    kinds: [40100],
+    "#h": ["chan"],
+    limit: CANVAS_HISTORY_PAGE,
+    consistency: "strong",
+  });
+  expect(filters[1]).not.toHaveProperty("consistency");
+});
+
+it("pages canvas revisions that share a timestamp without gaps", async () => {
+  const rows = Array.from({ length: 30 }, (_, i) =>
+    event({
+      kind: 40100,
+      id: `${i}`.padStart(64, "0"),
+      created_at: 100,
+      content: `${i}`,
+    }),
+  );
+  const { client } = fake(rows);
+  const first = (await callTool(client, {}, "canvas_history", {
+    channel: "chan",
+  })) as string;
+  const cursor = JSON.parse(first.split("continue with ")[1] ?? "");
+  const second = (await callTool(
+    client,
+    {},
+    "canvas_history",
+    cursor,
+  )) as string;
+  const ids = [
+    ...first.split("\n").slice(2, 2 + CANVAS_HISTORY_PAGE),
+    ...second.split("\n"),
+  ].map((line) => line.split(" ")[0]);
+  expect(ids).toEqual(rows.map((row) => row.id));
+});
+
+it("reads a full canvas_history page of the largest escaped revisions within the agent read cap", async () => {
+  const size = (row: BuzzEvent) =>
+    new TextEncoder().encode(JSON.stringify(row)).length;
+  const largest = (i: number) => {
+    const base = event({
+      kind: 40100,
+      id: `${i}`.padStart(64, "0"),
+      pubkey: alice,
+      created_at: 1700000000 - i,
+      sig: "e".repeat(128),
+    });
+    // Each quote serializes as two bytes.
+    const quotes = Math.floor((CANVAS_MAX_EVENT_BYTES - size(base)) / 2);
+    return { ...base, content: '"'.repeat(quotes) };
+  };
+  const rows = Array.from({ length: CANVAS_HISTORY_PAGE + 1 }, (_, i) =>
+    largest(i),
+  );
+  const [biggest] = rows;
+  if (!biggest) throw new Error("no rows");
+  expect(size(biggest)).toBeGreaterThan(CANVAS_MAX_EVENT_BYTES - 2);
+  expect(size(biggest)).toBeLessThanOrEqual(CANVAS_MAX_EVENT_BYTES);
+  const { client } = fake(rows);
+  const query = client.query;
+  client.query = vi.fn(async (filters: Filter[]) => {
+    const page = await query(filters);
+    // The bare event array app_agents.rs bounds.
+    expect(
+      new TextEncoder().encode(JSON.stringify(page)).length,
+    ).toBeLessThanOrEqual(CANVAS_READ_BYTES);
+    return page;
+  });
+  const first = (await callTool(client, {}, "canvas_history", {
+    channel: "chan",
+  })) as string;
+  const page = rows.slice(0, CANVAS_HISTORY_PAGE);
+  expect(
+    first
+      .split("\n")
+      .slice(2, -1)
+      .map((line) => line.split(" ")[0]),
+  ).toEqual(page.map((row) => row.id));
+  const last = page.at(-1);
+  expect(JSON.parse(first.split("continue with ")[1] ?? "")).toEqual({
+    channel: "chan",
+    before: last?.created_at,
+    before_id: last?.id,
+  });
+});
+
+it("restores a canvas revision guarded by the head it read", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(300_000);
+    const old = event({ kind: 40100, id: root, content: "# Old" });
+    const head = event({ kind: 40100, id: nested, created_at: 200 });
+    const { client, published } = fake([old, head], { keep: true });
+    await expect(
+      callTool(client, { channel: "chan" }, "canvas_restore", {
+        id: root,
+        expected: nested,
+      }),
+    ).resolves.toBe(`restored ${root} as ${"1".padStart(64, "e")}`);
+    expect(published).toEqual([
+      {
+        kind: 40100,
+        content: "# Old",
+        tags: [
+          ["h", "chan"],
+          ["expected-revision", nested],
+        ],
+      },
+    ]);
+    await expect(
+      callTool(client, { channel: "chan" }, "canvas_get", {}),
+    ).resolves.toBe("# Old");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("refuses to restore what is not a revision of this canvas", async () => {
+  const { client, published } = fake([
+    event({ kind: 9, id: root }),
+    event({ kind: 40100, id: nested, tags: [["h", "other"]] }),
+  ]);
+  for (const id of [root, nested, "f".repeat(64)])
+    await expect(
+      callTool(client, { channel: "chan" }, "canvas_restore", {
+        id,
+        expected: root,
+      }),
+    ).rejects.toThrow(`No canvas revision ${id} in chan`);
+  await expect(
+    callTool(client, { channel: "chan" }, "canvas_restore", {
+      id: "x",
+      expected: root,
+    }),
+  ).rejects.toThrow("64-character");
+  await expect(
+    callTool(client, { channel: "chan" }, "canvas_restore", { id: root }),
+  ).rejects.toThrow("expected");
+  expect(published).toEqual([]);
+});
+
+it("refuses to restore over a canvas saved since the agent read it", async () => {
+  const old = event({ kind: 40100, id: root, content: "# Old" });
+  const seen = event({ kind: 40100, id: nested, created_at: 200 });
+  const { client, published } = fake([old, seen]);
+  await callTool(client, { channel: "chan" }, "canvas_history", {});
+  // A collaborator saves after the agent read the history.
+  (client.query as ReturnType<typeof vi.fn>).mockImplementation(
+    async ([filter]: readonly { ids?: string[] }[]) =>
+      filter?.ids
+        ? [old]
+        : [event({ kind: 40100, id: "c".repeat(64), created_at: 300 })],
+  );
+  await expect(
+    callTool(client, { channel: "chan" }, "canvas_restore", {
+      id: root,
+      expected: nested,
+    }),
+  ).rejects.toThrow(`The canvas changed since version ${nested}`);
+  expect(published).toEqual([]);
+});
+
+it("restores only revisions within the canvas size limit", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(300_000);
+    const head = event({ kind: 40100, id: nested, created_at: 200 });
+    for (const [content, ok] of [
+      ["", true],
+      ["x".repeat(LIVE_CANVAS_BYTES), true],
+      ["x".repeat(LIVE_CANVAS_BYTES + 1), false],
+    ] as const) {
+      const old = event({ kind: 40100, id: root, content });
+      const { client, published } = fake([old, head], { keep: true });
+      const restore = callTool(client, { channel: "chan" }, "canvas_restore", {
+        id: root,
+        expected: nested,
+      });
+      if (ok) await expect(restore).resolves.toMatch(/^restored /);
+      else await expect(restore).rejects.toThrow("over the canvas limit");
+      expect(published).toHaveLength(ok ? 1 : 0);
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("annotates the canvas history and restore tools", () => {
+  const find = (name: string) => TOOLS.find((item) => item.name === name);
+  expect(find("canvas_history")?.annotations).toEqual({ readOnlyHint: true });
+  expect(find("canvas_restore")?.annotations).toEqual({
+    readOnlyHint: false,
+    destructiveHint: true,
+  });
+});
+
+it("reports a restore that another canvas write overtook", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(300_000);
+    const old = event({ kind: 40100, id: root, content: "# Old" });
+    const later = event({ kind: 40100, id: nested, created_at: 999 });
+    const { client } = fake([old]);
+    const publish = client.publish;
+    client.publish = vi.fn(async (template) => {
+      const signed = await publish(template);
+      (client.query as ReturnType<typeof vi.fn>).mockResolvedValue([later]);
+      return signed;
+    });
+    await expect(
+      callTool(client, { channel: "chan" }, "canvas_restore", {
+        id: root,
+        expected: root,
+      }),
+    ).resolves.toBe("That revision is already the canvas.");
+    const { client: other } = fake([
+      old,
+      event({ kind: 40100, id: "d".repeat(64), created_at: 200 }),
+    ]);
+    const otherPublish = other.publish;
+    other.publish = vi.fn(async (template) => {
+      const signed = await otherPublish(template);
+      (other.query as ReturnType<typeof vi.fn>).mockResolvedValue([later]);
+      return signed;
+    });
+    await expect(
+      callTool(other, { channel: "chan" }, "canvas_restore", {
+        id: root,
+        expected: "d".repeat(64),
+      }),
+    ).rejects.toThrow(
+      `conflict: the restore was received, but another canvas (${nested})`,
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("reports an accepted restore whose read-back fails", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(300_000);
+    const old = event({ kind: 40100, id: root, content: "# Old" });
+    const head = event({ kind: 40100, id: nested, created_at: 200 });
+    const { client } = fake([old, head]);
+    const publish = client.publish;
+    let saved = "";
+    client.publish = vi.fn(async (template) => {
+      const signed = await publish(template);
+      saved = signed.id;
+      (client.query as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("socket closed"),
+      );
+      return signed;
+    });
+    const restore = callTool(client, { channel: "chan" }, "canvas_restore", {
+      id: root,
+      expected: nested,
+    });
+    await expect(restore).rejects.toThrow(/^restored /);
+    await expect(restore).rejects.toThrow(
+      `restored ${root} as ${saved}, but the canvas could not be read back to confirm it is current: socket closed`,
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("reads and replaces the canvas of a named channel or the current one", async () => {
@@ -3050,10 +4248,10 @@ const repo = (
     id: d.padEnd(64, "0"),
     tags: [["d", d], ...channels.map((c) => ["buzz-channel", c]), ...extra],
   });
-const git = (client: BuzzClient) => {
+const git = (client: BuzzClient, header = "Authorization: Nostr abc") => {
   const gitAuth = vi.fn(async (owner: string, name: string) => ({
     url: `https://relay/git/${owner}/${name}.git`,
-    header: "Authorization: Nostr abc",
+    header,
   }));
   client.gitAuth = gitAuth;
   return gitAuth;
@@ -3092,9 +4290,22 @@ it("gives the channel's repository and a Git header signed for it", async () => 
   expect(answer).toBe(
     [
       `hive: ${url}`,
-      "For the next 60 seconds, pass this header to each git command (call again for a new one; never save it):",
+      "For the next 60 seconds, pass these headers to each git command (call again for a new one; never save it):",
       `git -c http.${url}.extraHeader='Authorization: Nostr abc' clone ${url}`,
     ].join("\n"),
+  );
+});
+
+it("passes each Git header line, sign-in evidence included", async () => {
+  const { client } = fake([
+    hive({ [bob]: "admin" }),
+    repo(bob, "hive", ["chan"]),
+  ]);
+  git(client, "Authorization: Nostr abc\nNostr-Federated-Identity: Bearer xyz");
+  const answer = await callTool(client, { channel: "chan" }, "repo", {});
+  const url = `https://relay/git/${bob}/hive.git`;
+  expect(answer).toContain(
+    `git -c http.${url}.extraHeader='Authorization: Nostr abc' -c http.${url}.extraHeader='Nostr-Federated-Identity: Bearer xyz' clone ${url}`,
   );
 });
 
@@ -3319,6 +4530,21 @@ it("validates creation inputs and reports hosts without agent creation", async (
       "required",
     );
   expect(client.createAgent).not.toHaveBeenCalled();
+  await callTool(client, {}, "agent_create", { type: "x", name: "Child" });
+  await callTool(client, {}, "agent_create", {
+    type: "x",
+    name: "Child",
+    instructions: "Review PRs.",
+  });
+  expect(client.createAgent).toHaveBeenNthCalledWith(1, {
+    type: "x",
+    name: "Child",
+  });
+  expect(client.createAgent).toHaveBeenNthCalledWith(2, {
+    type: "x",
+    name: "Child",
+    instructions: "Review PRs.",
+  });
 });
 
 it("hands off to the agent in another of its conversations it can see", async () => {
@@ -3401,6 +4627,45 @@ it("hands off to the agent in another of its conversations it can see", async ()
     [{ channel: "chan", root, text: "carry on", from: {} }],
   ]);
 });
+it("reads agents and teams and drafts team changes without members", async () => {
+  const { client } = fake([]);
+  for (const name of ["agent_read", "team_read"])
+    await expect(callTool(client, {}, name, {})).rejects.toThrow("unavailable");
+  client.readAgents = vi.fn(async () => []);
+  client.readTeams = vi.fn(async () => ({
+    id: "t",
+    name: "Crew",
+    instructions: "",
+    members: [],
+    synced: true,
+    revision: "r",
+  }));
+  client.updateTeam = vi.fn(async () => ({
+    requestId: "draft",
+    saved: false as const,
+  }));
+  expect(await callTool(client, {}, "agent_read", {})).toBe("[]");
+  expect(client.readAgents).toHaveBeenCalledWith(undefined);
+  expect(
+    JSON.parse(
+      (await callTool(client, {}, "team_read", { team: "Crew" })) as string,
+    ),
+  ).toMatchObject({ id: "t", revision: "r" });
+  expect(client.readTeams).toHaveBeenCalledWith("Crew");
+  await expect(callTool(client, {}, "team_update", {})).rejects.toThrow(
+    "required",
+  );
+  await callTool(client, {}, "team_update", {
+    team: "Crew",
+    name: " ",
+    instructions: "",
+    members: ["x"],
+  });
+  expect(client.updateTeam).toHaveBeenCalledWith({
+    team: "Crew",
+    instructions: "",
+  });
+});
 it("validates change drafts and passes only the proposed fields", async () => {
   const { client } = fake([]);
   await expect(
@@ -3436,6 +4701,68 @@ it("validates change drafts and passes only the proposed fields", async () => {
   });
 });
 
+it("uploads a proposed picture as the agent once its draft is valid", async () => {
+  const { client } = fake([]);
+  const image = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10, 0]);
+  const read = client.read;
+  client.read = vi.fn(async (path: string) =>
+    path === "/tmp/me.png" || path === "kid.png" ? image : read(path),
+  );
+  const pictures: string[] = [];
+  const saved = async (input: { picture?: () => Promise<string> }) => {
+    if (input.picture) pictures.push(await input.picture());
+    return { requestId: "draft", saved: false as const };
+  };
+  client.updateAgent = vi.fn(saved);
+  client.createAgent = vi.fn(saved);
+  await expect(
+    callTool(client, {}, "agent_update", { agent: "Child", picture: "me.png" }),
+  ).rejects.toThrow("Picture proposals are unavailable");
+  expect(client.updateAgent).not.toHaveBeenCalled();
+  client.uploadPicture = vi.fn(async (_data: Uint8Array, type: string) => ({
+    url: "https://relay/media/x.png",
+    sha256: "ab",
+    size: 7,
+    type,
+  }));
+  // A text file, and a PNG signature cut short that the preparer would
+  // pass through unchanged.
+  for (const picture of ["notes.md", "short.png"])
+    for (const [name, args] of [
+      ["agent_update", { agent: "Child" }],
+      ["agent_create", { type: "codex/codex", name: "Child" }],
+    ] as const)
+      await expect(
+        callTool(client, {}, name, { ...args, picture }),
+      ).rejects.toThrow("PNG, JPEG, GIF or WebP");
+  expect(client.uploadPicture).not.toHaveBeenCalled();
+  expect(pictures).toEqual([]);
+  await callTool(client, {}, "agent_update", {
+    agent: "Child",
+    picture: "/tmp/me.png",
+  });
+  await callTool(client, {}, "agent_create", {
+    type: "codex/codex",
+    name: "Kid",
+    picture: "kid.png",
+  });
+  expect(client.uploadPicture).toHaveBeenCalledWith(image, "image/png");
+  expect(client.upload).not.toHaveBeenCalled();
+  expect(pictures).toEqual([
+    "https://relay/media/x.png",
+    "https://relay/media/x.png",
+  ]);
+  expect(client.updateAgent).toHaveBeenLastCalledWith({
+    agent: "Child",
+    picture: expect.any(Function),
+  });
+  expect(client.createAgent).toHaveBeenLastCalledWith({
+    type: "codex/codex",
+    name: "Kid",
+    picture: expect.any(Function),
+  });
+});
+
 it("nests a reply under a message inside a thread, naming the root and the parent", async () => {
   const { client, published } = fake([
     ...community,
@@ -3456,6 +4783,35 @@ it("nests a reply under a message inside a thread, naming the root and the paren
   ]);
   expect(published[0]?.tags[4]?.[0]).toBe("imeta");
 });
+
+it.each(["send", "reply_in_subthread"])(
+  "%s refuses a self-mention instead of reporting a post as a wake",
+  async (name) => {
+    const { client, published } = fake([...community, profile(me, "Echo")]);
+    for (const mention of [
+      { text: "@Echo carry on" },
+      { text: `nostr:${npubEncode(me)} carry on` },
+      { text: "carry on", mentions: [me] },
+    ]) {
+      await expect(
+        callTool(client, { channel: "elsewhere" }, name, {
+          channel: "chan",
+          parent: root,
+          audience: "agents",
+          ...mention,
+        }),
+      ).rejects.toThrow("self_handoff");
+    }
+    expect(published).toEqual([]);
+    await callTool(client, { channel: "elsewhere" }, name, {
+      channel: "chan",
+      parent: root,
+      audience: "everyone",
+      text: "An ordinary update",
+    });
+    expect(published).toHaveLength(1);
+  },
+);
 
 it.each(["everyone", "agents"])(
   "replies under a thread's root as send does, for audience %s",
@@ -3481,11 +4837,12 @@ it.each(["everyone", "agents"])(
   },
 );
 
-it("tags a nested reply for agents only", async () => {
+it("tags a nested reply for agents only, signing its request", async () => {
   const { client, published } = fake(community);
   await callTool(client, { channel: "chan", root }, "reply_in_subthread", {
     parent: nested,
     audience: "agents",
+    request: "f".repeat(64),
     text: "a",
   });
   expect(published[0]?.tags).toEqual([
@@ -3493,6 +4850,7 @@ it("tags a nested reply for agents only", async () => {
     ["e", root, "", "root"],
     ["e", nested, "", "reply"],
     ["audience", "agents"],
+    ["buzz:request", "f".repeat(64)],
   ]);
 });
 
@@ -3645,4 +5003,83 @@ it("needs the message to reply under", async () => {
     }),
   ).rejects.toThrow("parent is required");
   expect(published).toEqual([]);
+});
+
+it("deletes only the given message, one target per deletion", async () => {
+  const mine = event({ id: root, pubkey: me, created_at: 100 });
+  const copy = event({
+    id: nested,
+    pubkey: me,
+    created_at: 101,
+    tags: [
+      ["h", "chan"],
+      ["buzz:copy-of", root],
+    ],
+  });
+  const { client, published } = fake([mine, copy]);
+  expect(
+    await callTool(client, { channel: "chan" }, "delete", { id: nested }),
+  ).toContain("deleted");
+  expect(published).toEqual([
+    {
+      kind: 5,
+      content: "",
+      tags: [
+        ["h", "chan"],
+        ["e", nested],
+        ["k", "9"],
+      ],
+    },
+  ]);
+});
+
+it("marks delete as destructive, also as a session lists it", () => {
+  for (const tools of [TOOLS, sessionTools()])
+    expect(tools.find((tool) => tool.name === "delete")).toMatchObject({
+      annotations: { readOnlyHint: false, destructiveHint: true },
+    });
+});
+
+it("refuses to delete another author's message", async () => {
+  const { client, published } = fake([event({ id: root, pubkey: alice })]);
+  await expect(
+    callTool(client, { channel: "chan" }, "delete", { id: root }),
+  ).rejects.toThrow("Only your own messages can be deleted.");
+  expect(published).toEqual([]);
+});
+
+it("saves a canvas of exactly the live limit in UTF-8 bytes, and refuses one byte over", async () => {
+  const { client, published } = fake([
+    event({ kind: 39000, tags: [["d", "chan"]] }),
+  ]);
+  const exact = "é".repeat(LIVE_CANVAS_BYTES / 2);
+  await expect(
+    callTool(client, { channel: "chan" }, "canvas_set", { content: exact }),
+  ).resolves.toBe("saved");
+  expect(published).toHaveLength(1);
+  await expect(
+    callTool(client, { channel: "chan" }, "canvas_set", {
+      content: `${exact.slice(1)}xyz`,
+    }),
+  ).rejects.toThrow(`over its limit of ${LIVE_CANVAS_BYTES} bytes`);
+  expect(published).toHaveLength(1);
+});
+
+it("addresses a new reaction to the actual message author and fails before publishing if the target is unavailable", async () => {
+  const { client, published } = fake([event({ id: root, pubkey: alice })]);
+  await callTool(client, {}, "react", { id: root, emoji: "❤️" });
+  expect(published).toEqual([
+    {
+      kind: 7,
+      content: "❤️",
+      tags: [
+        ["e", root],
+        ["p", alice],
+      ],
+    },
+  ]);
+  await expect(
+    callTool(client, {}, "react", { id: nested, emoji: "❤️" }),
+  ).rejects.toThrow("No message");
+  expect(published).toHaveLength(1);
 });

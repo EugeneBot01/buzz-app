@@ -90,8 +90,14 @@ fn lifecycle(event: &EventTemplate) -> bool {
     {
         return false;
     }
+    // The narrow 9002 flips one relay-enforced flag: archive, or auto-join
+    // for community owners/admins. Generic metadata edits take the details route.
     tag(event, 0, "h").is_some_and(uuid)
-        && (event.kind != 9002 || matches!(tag(event, 1, "archived"), Some("true" | "false")))
+        && (event.kind != 9002
+            || matches!(
+                tag(event, 1, "archived").or_else(|| tag(event, 1, "auto_join")),
+                Some("true" | "false")
+            ))
 }
 fn archive(event: &EventTemplate) -> bool {
     if !matches!(event.kind, 9035 | 9036)
@@ -126,9 +132,26 @@ fn member_administration(event: &EventTemplate) -> bool {
         && event.created_at <= 9_007_199_254_740_991
         && event.tags.len() == if event.kind == 9000 { 3 } else { 2 }
         && tag(event, 0, "h").is_some_and(uuid)
-        && tag(event, 1, "p").is_some_and(super::hex_key)
-        && (event.kind == 9001
-            || matches!(tag(event, 2, "role"), Some("admin" | "member" | "guest")))
+        && (ownership_transfer(event).is_some()
+            || (tag(event, 1, "p").is_some_and(super::hex_key)
+                && (event.kind == 9001
+                    || matches!(tag(event, 2, "role"), Some("admin" | "member" | "guest")))))
+}
+/// The stepping-down owner of `[h, ["p", heir, "owner"], ["p", owner, "admin"]]`.
+fn ownership_transfer(event: &EventTemplate) -> Option<&str> {
+    let [_, heir, owner] = event.tags.as_slice() else {
+        return None;
+    };
+    (event.kind == 9000
+        && matches!(heir.as_slice(), [p, key, role] if p == "p" && role == "owner" && super::hex_key(key))
+        && matches!(owner.as_slice(), [p, key, role] if p == "p" && role == "admin" && super::hex_key(key))
+        && heir[1] != owner[1])
+        .then(|| owner[1].as_str())
+}
+/// A member command may change only others, except an owner stepping down.
+fn member_signer_mismatch(event: &EventTemplate, viewer: &str) -> bool {
+    tag(event, 1, "p") == Some(viewer)
+        || ownership_transfer(event).is_some_and(|owner| owner != viewer)
 }
 fn valid(route: &str, event: &EventTemplate) -> bool {
     match route {
@@ -147,7 +170,7 @@ fn validate(route: &str, event: &Value, viewer: Option<&str>) -> Result<EventTem
     if !valid(route, &parsed)
         || viewer.is_some_and(|v| event.get("pubkey").and_then(Value::as_str) != Some(v))
         || (route == "member-administration"
-            && viewer.is_some_and(|v| tag(&parsed, 1, "p") == Some(v)))
+            && viewer.is_some_and(|v| member_signer_mismatch(&parsed, v)))
     {
         return Err("Invalid channel lifecycle command".into());
     }
@@ -166,9 +189,7 @@ pub(crate) async fn relay_channel_sign(
 ) -> Result<Value> {
     origin(&community)?;
     let parsed = validate(&route, &event, None)?;
-    if route == "member-administration"
-        && tag(&parsed, 1, "p") == Some(host.viewer().await?.as_str())
-    {
+    if route == "member-administration" && member_signer_mismatch(&parsed, &host.viewer().await?) {
         return Err("Invalid member administration command".into());
     }
     host.sign(parsed).await
@@ -480,12 +501,17 @@ mod boundary_tests {
         }
     }
     #[test]
-    fn lifecycle_accepts_only_exact_archive_values() {
+    fn lifecycle_accepts_only_exact_archive_and_auto_join_values() {
+        for flag in ["archived", "auto_join"] {
+            lifecycle_accepts_only_exact_flag_values(flag);
+        }
+    }
+    fn lifecycle_accepts_only_exact_flag_values(flag: &str) {
         let event = serde_json::json!({
             "kind": 9002,
             "created_at": 1700000010,
             "content": "",
-            "tags": [["h", uuid::Uuid::nil().to_string()], ["archived", "false"]]
+            "tags": [["h", uuid::Uuid::nil().to_string()], [flag, "false"]]
         });
         for value in ["true", "false"] {
             let mut command = event.clone();
@@ -510,23 +536,30 @@ mod boundary_tests {
         }
         for tags in [
             serde_json::json!([["h", uuid::Uuid::nil().to_string()]]),
-            serde_json::json!([["h", uuid::Uuid::nil().to_string()], ["archived"]]),
+            serde_json::json!([["h", uuid::Uuid::nil().to_string()], [flag]]),
             serde_json::json!([
                 ["h", uuid::Uuid::nil().to_string()],
-                ["archived", "false", "extra"]
+                [flag, "false", "extra"]
+            ]),
+            serde_json::json!([
+                ["h", uuid::Uuid::nil().to_string()],
+                [flag, "false"],
+                [flag, "true"]
             ]),
             serde_json::json!([
                 ["h", uuid::Uuid::nil().to_string()],
                 ["archived", "false"],
-                ["archived", "true"]
+                ["auto_join", "true"]
             ]),
             serde_json::json!([
                 ["h", uuid::Uuid::nil().to_string()],
-                ["archived", "false"],
+                [flag, "false"],
                 ["name", "injected"]
             ]),
-            serde_json::json!([["archived", "false"], ["h", uuid::Uuid::nil().to_string()]]),
-            serde_json::json!([["h", "not-a-channel"], ["archived", "false"]]),
+            serde_json::json!([[flag, "false"], ["h", uuid::Uuid::nil().to_string()]]),
+            serde_json::json!([["h", "not-a-channel"], [flag, "false"]]),
+            serde_json::json!([["h", uuid::Uuid::nil().to_string()], ["autojoin", "true"]]),
+            serde_json::json!([["h", uuid::Uuid::nil().to_string()], ["auto-join", "true"]]),
         ] {
             let mut command = event.clone();
             command["tags"] = tags;
@@ -537,14 +570,19 @@ mod boundary_tests {
     #[test]
     fn commands_reject_cross_route_and_foreign_signatures() {
         let host = IdentityHost::fixture();
-        for (value, tampered) in [("true", "false"), ("false", "true")] {
+        for (flag, value, tampered) in [
+            ("archived", "true", "false"),
+            ("archived", "false", "true"),
+            ("auto_join", "true", "false"),
+            ("auto_join", "false", "true"),
+        ] {
             let template = EventTemplate {
                 kind: 9002,
                 created_at: 1700000010,
                 content: String::new(),
                 tags: vec![
                     vec!["h".into(), uuid::Uuid::new_v4().to_string()],
-                    vec!["archived".into(), value.into()],
+                    vec![flag.into(), value.into()],
                 ],
             };
             let event = tauri::async_runtime::block_on(host.sign(template)).unwrap();
@@ -949,6 +987,34 @@ mod member_administration_tests {
             );
             let error = invoke("relay_channel_sign", event).unwrap_err();
             assert!(!error.to_string().contains("not allowed"), "{error}");
+        }
+        let viewer = invoke("relay_channel_sign", cases["accepted"][0]["event"].clone())
+            .unwrap()
+            .deserialize::<Value>()
+            .unwrap()["pubkey"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let transfer = |case: &Value| -> Value {
+            serde_json::from_str(&case["event"].to_string().replace("$viewer", &viewer)).unwrap()
+        };
+        for case in cases["transfer"]["accepted"].as_array().unwrap() {
+            let template = transfer(case);
+            let event: Value = invoke("relay_channel_sign", template.clone())
+                .unwrap()
+                .deserialize()
+                .unwrap();
+            assert_eq!(event["tags"], template["tags"]);
+            assert!(validate("member-administration", &event, Some(&viewer)).is_ok());
+            assert!(validate("member-administration", &event, Some(&"f".repeat(64))).is_err());
+        }
+        for case in cases["transfer"]["rejected"].as_array().unwrap() {
+            let error = invoke("relay_channel_sign", transfer(case)).unwrap_err();
+            assert!(
+                error.to_string().contains("Invalid"),
+                "{}: {error}",
+                case["name"]
+            );
         }
     }
 }

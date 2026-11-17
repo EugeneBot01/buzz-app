@@ -123,7 +123,7 @@ export function SoloChatMenuItems({
         Chat settings
       </MenuItem>
       {active &&
-        !regions.excluded.has(channel.id) &&
+        !regions.managed.has(channel.id) &&
         onMove &&
         onNewWorkspace && (
           <MenuSubmenu>
@@ -159,7 +159,7 @@ export function SoloChatMenuItems({
       )}
       <ChannelCopyLinkMenuItem channelId={channel.id} />
       {active &&
-        !regions.excluded.has(channel.id) &&
+        !regions.managed.has(channel.id) &&
         onConvert &&
         canConvertToChannel(session, channel) && (
           <MenuItem onClick={onConvert}>
@@ -169,16 +169,18 @@ export function SoloChatMenuItems({
             {conversionLabel(session, channel.id)}
           </MenuItem>
         )}
-      {onLifecycle && !channel.readOnly && !channel.cached && (
-        <ChannelLifecycleMenu
-          channelId={channel.id}
-          lifecycle={session.channelLifecycle}
-          disabled={!!handoff?.lifecycleDialog}
-          separator
-          noun="chat"
-          choose={onLifecycle}
-        />
-      )}
+      {onLifecycle &&
+        (!channel.readOnly || channel.viewerRole === "guest") &&
+        !channel.cached && (
+          <ChannelLifecycleMenu
+            channel={channel}
+            session={session}
+            disabled={!!handoff?.lifecycleDialog}
+            separator
+            noun="chat"
+            choose={onLifecycle}
+          />
+        )}
     </>
   );
 }

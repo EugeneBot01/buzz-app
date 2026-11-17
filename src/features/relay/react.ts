@@ -51,6 +51,7 @@ function sameRoster(a: ChannelList, b: ChannelList) {
     b.status === "ready" &&
     a.coverage === b.coverage &&
     a.asOf === b.asOf &&
+    a.rosterAsOf === b.rosterAsOf &&
     a.channels.length === b.channels.length &&
     a.channels.every((channel, index) =>
       sameRosterEntry(channel, b.channels[index]),
@@ -81,6 +82,14 @@ export function useChannelWindow(queries: ChannelQueries, channelId: string) {
   );
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
+const noSubscribe = () => () => {};
+/** The directory's purge generation. Read it in an effect that ensures the
+ * profiles a view shows, so the view ensures them again after an access purge. */
+export function useProfileGeneration(queries: ProfileQueries | undefined) {
+  const read = () => queries?.generation?.() ?? 0;
+  return useSyncExternalStore(queries?.subscribe ?? noSubscribe, read, read);
+}
+
 export function useRowProfiles(
   queries: ProfileQueries,
   rows: readonly ChannelMessage[],

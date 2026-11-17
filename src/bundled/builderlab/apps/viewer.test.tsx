@@ -5,10 +5,9 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BrowserViewProps } from "../../../features/browser/api";
 import type { PanelProps } from "../../../features/panels/service";
-import { createOAuthSession } from "../oauth/session";
 import { applyApps } from "./index";
-import { deferred } from "../test-helpers";
-import type { Credential } from "../oauth/browser";
+import { deferred, createTestSession } from "../test-helpers";
+import type { Credential } from "../session";
 
 const APP = "https://counter--workspace.apps.example/report/42";
 afterEach(() => {
@@ -16,11 +15,11 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function setup(loginAvailable = true) {
+function setup(loginAvailable = true, openSignIn?: () => void) {
   vi.stubEnv("VITE_BUZZ_BUILDERLAB_URL", "https://login.example");
   vi.stubEnv("VITE_BUZZ_BUILDERLAB_APPS_DOMAIN", "apps.example");
   const acquire = vi.fn(async () => ({
-    value: "first-private-token",
+    revision: "first-private-token",
     account: {
       subject: "first",
       email: "first@example.com",
@@ -29,7 +28,7 @@ function setup(loginAvailable = true) {
     },
   }));
   const revoke = vi.fn();
-  const session = createOAuthSession(acquire, revoke);
+  const session = createTestSession(acquire, revoke);
   const viewed = vi.fn((_props: BrowserViewProps) =>
     createElement("div", { "aria-label": "App website" }),
   );
@@ -43,7 +42,7 @@ function setup(loginAvailable = true) {
     agents: { addTool: vi.fn() },
     host: {},
   };
-  applyApps(ctx as never, session, loginAvailable);
+  applyApps(ctx as never, session, loginAvailable, undefined, openSignIn);
   const panel = register.mock.calls[0]?.[0] as {
     matches(target: string): boolean;
     component: ComponentType<PanelProps>;
@@ -58,7 +57,7 @@ it("app links and apps_open use the Settings account and replace its guest lifet
   render(createElement(panel.component, { target: APP } as PanelProps));
   expect(screen.getByLabelText("App website")).toBeInTheDocument();
   const first = viewed.mock.lastCall?.[0].builderlab;
-  expect(first).toMatchObject({ credential: "first-private-token" });
+  expect(first).toMatchObject({ federated: "first-private-token" });
   expect(viewed.mock.lastCall?.[0].url).toBe(APP);
   act(() => session.signOut());
   expect(first?.signal.aborted).toBe(true);
@@ -67,7 +66,7 @@ it("app links and apps_open use the Settings account and replace its guest lifet
     screen.getByRole("button", { name: "Sign in with Builderlab" }),
   ).toBeInTheDocument();
   acquire.mockResolvedValueOnce({
-    value: "second-private-token",
+    revision: "second-private-token",
     account: {
       subject: "second",
       email: "second@example.com",
@@ -77,7 +76,7 @@ it("app links and apps_open use the Settings account and replace its guest lifet
   });
   await act(() => session.signIn());
   expect(viewed.mock.lastCall?.[0].builderlab).toMatchObject({
-    credential: "second-private-token",
+    federated: "second-private-token",
   });
   expect(viewed.mock.lastCall?.[0].builderlab?.storage).not.toBe(
     first?.storage,
@@ -126,7 +125,7 @@ it("closing an observing app panel does not cancel Settings' pending login", asy
   expect(session.snapshot().status).toBe("pending");
   await act(async () => {
     held.resolve({
-      value: "private",
+      revision: "private",
       account: {
         subject: "owner",
         email: "",
@@ -137,7 +136,7 @@ it("closing an observing app panel does not cancel Settings' pending login", asy
     await login;
   });
   expect(viewed.mock.lastCall?.[0].builderlab).toMatchObject({
-    credential: "private",
+    federated: "private",
   });
   second.unmount();
   session.dispose();
@@ -175,6 +174,40 @@ it("an unconfigured native exchange keeps the account-isolated browser-login pat
   expect(lifetime?.signal.aborted).toBe(true);
   expect(screen.queryByLabelText("App website")).not.toBeInTheDocument();
   session.dispose();
+});
+
+it("gives a signed-in app the way back to sign-in, but not an app on its own browser login", async () => {
+  const openSignIn = vi.fn();
+  const { session, viewed, panel } = setup(true, openSignIn);
+  await session.signIn();
+  render(createElement(panel.component, { target: APP } as PanelProps));
+  expect(viewed.mock.lastCall?.[0]).toMatchObject({
+    url: APP,
+    openSignIn,
+  });
+  // Another tenant's app signs in to its own website, not in Settings.
+  render(
+    createElement(panel.component, {
+      target: "https://counter.apps.other.example/",
+    } as PanelProps),
+  );
+  expect(viewed.mock.lastCall?.[0]).toMatchObject({
+    storage: "builderlab-apps",
+  });
+  expect(viewed.mock.lastCall?.[0].openSignIn).toBeUndefined();
+  session.dispose();
+  cleanup();
+
+  const unavailable = setup(false, openSignIn);
+  render(
+    createElement(unavailable.panel.component, { target: APP } as PanelProps),
+  );
+  expect(unavailable.viewed.mock.lastCall?.[0]).toMatchObject({
+    storage: "builderlab-apps",
+  });
+  expect(unavailable.viewed.mock.lastCall?.[0].openSignIn).toBeUndefined();
+  expect(openSignIn).not.toHaveBeenCalled();
+  unavailable.session.dispose();
 });
 
 it("opens the app for its own browser login when Settings login is unavailable", () => {

@@ -1,9 +1,10 @@
 import { pluginAction } from "./plugin-settings.mjs";
 import { test, expect } from "./fixture.mjs";
-import { open, wheel } from "./timeline.mjs";
+import { open, wheel, virtuaIdle } from "./timeline.mjs";
 import { closeSettings } from "./navigation.mjs";
 import { npubEncode } from "nostr-tools/nip19";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools";
+import { animationsSettled } from "./animations.mjs";
 test.use({
   productionBroker: true,
   // Navigation can publish read positions through the real broker.
@@ -11,18 +12,27 @@ test.use({
   developmentReact: true,
 });
 
-// The channel composer's context is the form's preceding sibling.
+// Agent responses live in history; human typing stays beside the composer.
 const channelComposer = (page) =>
   page
-    .getByRole("form", { name: "Send a message to Alpha", exact: true })
-    .locator("..");
-// Floating avatars above a composer; its accessible name summarizes who works.
+    .getByRole("region", { name: "Alpha", exact: true })
+    .or(page.getByRole("tabpanel", { name: "Alpha", exact: true }));
 const activityTrigger = (scope) =>
-  scope.getByRole("button", { name: /^Activity: .+ working$/ });
+  scope.locator("[data-agent-activity-trigger]");
+const responseAvatars = (trigger) =>
+  trigger
+    .locator("xpath=ancestor::*[@data-agent-response-preview]")
+    .locator(".buzz-avatar");
 const workingNow = (page) =>
   page.getByRole("dialog", { name: "Working now", exact: true });
 // Hover is the pointer path; keyboard opening is exercised explicitly below.
 const openWorkingNow = async (page, scope) => {
+  // Leave the sidebar preview before crossing into the conversation. Its
+  // open surface can cover the conversation trigger after channel navigation.
+  await page.mouse.move(0, 0);
+  await expect(
+    page.locator('[role="dialog"][data-channel-activity]'),
+  ).toHaveCount(0);
   await activityTrigger(scope).hover();
   const popup = workingNow(page);
   await expect(popup).toBeVisible();
@@ -188,7 +198,7 @@ test("channel activity consumes telemetry, opens each agent's profile, and reset
     .toBe(true);
   await page
     .locator(
-      '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button:not([role="tab"])',
+      '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button[aria-label^="Close "]',
     )
     .click();
   // A busy skip followed by a successful retry must not masquerade as recovery.
@@ -203,19 +213,22 @@ test("channel activity consumes telemetry, opens each agent's profile, and reset
   await expect(trigger).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   for (const side of ["top", "right", "bottom", "left"])
     await expect(trigger).toHaveCSS(`border-${side}-width`, "0px");
-  await expect(trigger.locator(".buzz-avatar")).toHaveCount(2);
+  await expect(responseAvatars(trigger)).toHaveCount(2);
 
   await openWorkingNow(page, composer);
+  // Each agent's row is the way in; there is no separate Activity heading.
   await expect(
-    popup.getByRole("heading", { name: "Working now", exact: true }),
-  ).toBeVisible();
+    popup.getByRole("button", { name: "View full activity", exact: true }),
+  ).toHaveCount(0);
   // Observer turns carry no thread identity, and the channel is already shown:
   // rows open each agent's activity instead of guessing a thread.
   for (const agent of [first, second]) {
     await expect(agentRow(popup, agent)).toHaveAccessibleName(
       /^View .+ activity$/,
     );
-    await expect(agentRow(popup, agent)).toContainText("Working");
+    await expect(agentRow(popup, agent)).toContainText(
+      "No current step details received.",
+    );
     await expect(agentRow(popup, agent)).toContainText(
       "Work with unconfirmed thread",
     );
@@ -230,9 +243,7 @@ test("channel activity consumes telemetry, opens each agent's profile, and reset
   await expect(popup).toBeVisible();
   // Keyboard opening focuses the first row a frame later. Rows can be in either
   // order, so wait for that focus, then Tab to this agent's row.
-  await expect(
-    popup.getByRole("button", { name: /^View .+ activity$/ }).first(),
-  ).toBeFocused();
+  await expect(popup.getByRole("button").first()).toBeFocused();
   const firstAction = agentActivityAction(popup, first);
   for (let step = 0; step < 3 && !(await isFocused(firstAction)); step++)
     await page.keyboard.press("Tab");
@@ -244,7 +255,7 @@ test("channel activity consumes telemetry, opens each agent's profile, and reset
 
   await page
     .locator(
-      '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button:not([role="tab"])',
+      '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button[aria-label^="Close "]',
     )
     .click();
   // The popup's action has unmounted; focus returns to its floating trigger.
@@ -253,12 +264,14 @@ test("channel activity consumes telemetry, opens each agent's profile, and reset
   await expectProfile(page, second);
   await page
     .locator(
-      '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button:not([role="tab"])',
+      '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button[aria-label^="Close "]',
     )
     .click();
   await expect(trigger).toBeFocused();
 
-  const sockets = app.relay.sockets.length;
+  const sockets = app.relay.sockets.filter(
+    (s) => s.community === "primary",
+  ).length;
   await page.getByRole("button", { name: "Your profile", exact: true }).click();
   await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
   await page
@@ -278,7 +291,9 @@ test("channel activity consumes telemetry, opens each agent's profile, and reset
   await expect
     .poll(() => app.relay.hasRoute("primary", "observer"))
     .toBe(false);
-  expect(app.relay.sockets).toHaveLength(sockets);
+  expect(
+    app.relay.sockets.filter((s) => s.community === "primary"),
+  ).toHaveLength(sockets);
   await closeSettings(page);
   await page.locator('[data-channel-id="alpha"]').click();
   await expect(
@@ -314,7 +329,7 @@ test("channel activity consumes telemetry, opens each agent's profile, and reset
   // order, are the barrier for each transition. The route survives closing the profile.
   await page
     .locator(
-      '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button:not([role="tab"])',
+      '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button[aria-label^="Close "]',
     )
     .click();
   app.observer(activity("turn_liveness", "alpha", "parallel"), firstKey);
@@ -385,29 +400,23 @@ for (const mode of ["light", "dark"]) {
         const history = page.getByRole("region", {
           name: "Channel message history",
         });
+        await virtuaIdle(page, history);
         await history.hover();
         await wheel(page, -500, history);
         const jump = history.getByRole("button", { name: "Jump to latest" });
         await expect(jump).toBeVisible();
-        await expect
-          .poll(async () => {
-            const jumpBox = await jump.boundingBox();
-            const activityBox = await trigger.boundingBox();
-            return jumpBox.y + jumpBox.height <= activityBox.y;
-          })
-          .toBe(true);
+        await jump.click();
+        await expect(trigger).toBeInViewport();
         const triggerBox = await trigger.boundingBox();
-        const formBox = await page
-          .getByRole("form", { name: "Send a message to Alpha", exact: true })
-          .boundingBox();
-        // Floats in its own lane above the composer, at the composer's end edge.
-        expect(triggerBox.y + triggerBox.height).toBeLessThanOrEqual(formBox.y);
-        expect(triggerBox.x).toBeGreaterThanOrEqual(formBox.x);
-        expect(triggerBox.x + triggerBox.width).toBeCloseTo(
-          formBox.x + formBox.width,
-          0,
+        const historyBox = await history.boundingBox();
+        expect(triggerBox.x).toBeGreaterThanOrEqual(historyBox.x);
+        expect(triggerBox.x + triggerBox.width).toBeLessThanOrEqual(
+          historyBox.x + historyBox.width,
         );
-        const avatar = trigger.locator(".buzz-avatar").first();
+        expect(triggerBox.y + triggerBox.height).toBeLessThanOrEqual(
+          historyBox.y + historyBox.height,
+        );
+        const avatar = responseAvatars(trigger).first();
         // Production CSS must retain a loadable SVG mask after bundling. A valid
         // mask-image string alone can still point to the HTML fallback route.
         await expect
@@ -544,29 +553,21 @@ test.describe("thread activity", () => {
     await expect(channelTrigger).toHaveCount(0);
     const unrecognized = generateSecretKey();
     const otherThread = "b".repeat(64);
-    sendTyping(root.id, unrecognized);
     sendTyping(otherThread);
+    sendTyping(root.id, unrecognized);
     // An unrecognized signer is ordinary typing, never an agent avatar.
     await expect(threadStatus).toHaveText(/^\S+ is typing$/);
-    // Another thread's agent work lights the channel control with that thread's
-    // scope; arriving after the first event, it is also the barrier for it.
-    await openWorkingNow(page, composer);
-    await expect(agentRow(popup, agent)).toContainText(
-      `Thread · ${otherThread.slice(0, 8)}`,
-    );
+    // The later human typing event is the relay barrier. Another thread's
+    // agent activity belongs to that thread, not this channel or open thread.
+    await expect(channelTrigger).toHaveCount(0);
     await expect(threadTrigger).toHaveCount(0);
-    await closePopup();
     // A completed message ends public typing in both scopes.
     sendEvent(9, root.id, unrecognized, "Unrecognized participant finished");
     sendEvent(9, otherThread, key, "Other thread finished");
     await expect(threadStatus).toBeEmpty();
     await expect(channelTrigger).toHaveCount(0);
     // Finish panel entrance before starting the eight-second working signal.
-    await page.locator("[data-panel-dock]").evaluate(async (element) => {
-      await Promise.all(
-        element.getAnimations().map((animation) => animation.finished),
-      );
-    });
+    await animationsSettled(page.locator("[data-panel-dock]"));
     const typing = sendTyping(root.id);
     await expect(threadTrigger).toHaveAccessibleName(onlyAgent);
     await expect(threadStatus).toHaveText(/ is working$/);
@@ -583,9 +584,8 @@ test.describe("thread activity", () => {
         formBox = await form.boundingBox();
       expect(triggerBox.y + triggerBox.height).toBeLessThanOrEqual(formBox.y);
       expect(triggerBox.x).toBeGreaterThanOrEqual(formBox.x);
-      expect(triggerBox.x + triggerBox.width).toBeCloseTo(
+      expect(triggerBox.x + triggerBox.width).toBeLessThanOrEqual(
         formBox.x + formBox.width,
-        0,
       );
     };
     await expectAboveForm();
@@ -606,9 +606,7 @@ test.describe("thread activity", () => {
     await expect(agentRow(popup, agent)).toContainText(
       "Work with unconfirmed thread",
     );
-    await expect(agentRow(popup, agent)).toContainText(
-      `Thread · ${root.content.replace(/\s+/g, " ").trim().slice(0, 60)}`,
-    );
+    await expect(agentRow(popup, agent)).not.toContainText("Thread ·");
     await expect(threadTrigger).toHaveAccessibleName(onlyAgent);
     await page.screenshot({
       path: testInfo.outputPath("thread-activity-above-composer.png"),
@@ -618,7 +616,7 @@ test.describe("thread activity", () => {
     await expectProfile(page, agent);
     await page
       .locator(
-        '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button:not([role="tab"])',
+        '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button[aria-label^="Close "]',
       )
       .click();
     // The profile and Thread share the detail pane; return to the thread.
@@ -639,7 +637,7 @@ test.describe("thread activity", () => {
     await expectProfile(page, agent);
     await page
       .locator(
-        '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button:not([role="tab"])',
+        '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button[aria-label^="Close "]',
       )
       .click();
     await openThread();
@@ -658,24 +656,26 @@ test.describe("thread activity", () => {
     await expectProfile(page, agent);
     await page
       .locator(
-        '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button:not([role="tab"])',
+        '.buzz-tabs-item:not(:has([data-tab-value^="thread:"])) > button[aria-label^="Close "]',
       )
       .click();
-    // The channel row opens the agent's one known thread.
+    // The reply summary opens the thread; channel activity never guesses
+    // that an unscoped observer turn belongs to a known thread.
     await openThread();
     await page
       .locator(
-        '.buzz-tabs-item:has([data-tab-value^="thread:"][aria-selected="true"]) > button:not([role="tab"])',
+        '.buzz-tabs-item:has([data-tab-value^="thread:"][aria-selected="true"]) > button[aria-label^="Close "]',
       )
       .click();
     await expect(thread).toHaveCount(0);
     sendTyping(root.id);
     await openWorkingNow(page, composer);
     await expect(agentRow(popup, agent)).toHaveAccessibleName(
-      /^Open thread for /,
+      /^View .+ activity$/,
     );
-    await agentRow(popup, agent).click();
-    await expect(popup).toHaveCount(0);
+    await expect(agentRow(popup, agent)).not.toContainText("Thread ·");
+    await closePopup();
+    await openThread();
     await expect(
       thread.getByRole("region", { name: "Thread messages", exact: true }),
     ).toContainText(root.content);
@@ -683,8 +683,12 @@ test.describe("thread activity", () => {
     app.observer(activity("turn_completed", "alpha", "parallel-two"), key);
     sendEvent(9, root.id, key, "Thread work finished");
     await expect(threadTrigger).toHaveCount(0);
-    sendTyping();
-    await expect(marker).toBeVisible();
+    // A thread reply also quiets the agent's channel-level typing for two
+    // seconds, so channel work shows from its first pulse after that.
+    await expect(async () => {
+      sendTyping();
+      await expect(marker).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
     const workingBox = await marker.boundingBox();
     expect(workingBox).toEqual(
       expect.objectContaining({ width: 26, height: 15 }),
@@ -695,7 +699,9 @@ test.describe("thread activity", () => {
     await expect(agentRow(popup, agent)).toHaveAccessibleName(
       /^View .+ activity$/,
     );
-    await expect(agentRow(popup, agent)).toContainText("Channel conversation");
+    await expect(agentRow(popup, agent)).toContainText(
+      "Only typing updates are reaching this app.",
+    );
     const channelStatus = composer.locator("[data-agent-working-status]");
     await expect(channelStatus).toHaveText(/ is working$/);
     await page.screenshot({
@@ -815,7 +821,7 @@ test.describe("thread activity", () => {
     await expect(workingStatus).toHaveText(
       /^Worker [12], Worker [12] are working$/,
     );
-    await expect(threadTrigger.locator(".buzz-avatar")).toHaveCount(2);
+    await expect(responseAvatars(threadTrigger)).toHaveCount(2);
     await openWorkingNow(page, thread);
     for (const name of ["Worker 1", "Worker 2"])
       await expect(
@@ -830,11 +836,7 @@ test.describe("thread activity", () => {
     await expect(humanTyping(thread)).not.toContainText("Worker");
     await expect(workingStatus).toHaveText(/ are working\. .+ is typing$/);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.locator("[data-panel-dock]").evaluate(async (element) => {
-      await Promise.all(
-        element.getAnimations().map((animation) => animation.finished),
-      );
-    });
+    await animationsSettled(page.locator("[data-panel-dock]"));
     for (const key of keys) publish(key, roots[0]);
     publish(human, roots[0]);
     await expect(threadTrigger).toHaveAccessibleName(
@@ -850,7 +852,7 @@ test.describe("thread activity", () => {
     expect(typingBox.y + typingBox.height).toBeLessThanOrEqual(formBox.y);
     expect(triggerBox.y + triggerBox.height).toBeLessThanOrEqual(formBox.y);
     expect(typingBox.x).toBeGreaterThanOrEqual(formBox.x);
-    expect(typingBox.x + typingBox.width).toBeLessThanOrEqual(triggerBox.x);
+    expect(triggerBox.y + triggerBox.height).toBeLessThanOrEqual(typingBox.y);
     expect(triggerBox.x + triggerBox.width).toBeLessThanOrEqual(
       formBox.x + formBox.width + 0.5,
     );
@@ -864,7 +866,7 @@ test.describe("thread activity", () => {
     await expect(humanTyping(thread)).toHaveCount(0);
     await page
       .locator(
-        '.buzz-tabs-item:has([data-tab-value^="thread:"][aria-selected="true"]) > button:not([role="tab"])',
+        '.buzz-tabs-item:has([data-tab-value^="thread:"][aria-selected="true"]) > button[aria-label^="Close "]',
       )
       .click();
     await openThread(roots[1]);
@@ -875,7 +877,7 @@ test.describe("thread activity", () => {
     await expect(workingStatus).toBeEmpty();
     await page
       .locator(
-        '.buzz-tabs-item:has([data-tab-value^="thread:"][aria-selected="true"]) > button:not([role="tab"])',
+        '.buzz-tabs-item:has([data-tab-value^="thread:"][aria-selected="true"]) > button[aria-label^="Close "]',
       )
       .click();
     await openThread(roots[0]);
@@ -895,21 +897,29 @@ test.describe("thread activity", () => {
     await expect(humanTyping(thread)).toHaveCount(0);
     await page
       .locator(
-        '.buzz-tabs-item:has([data-tab-value^="thread:"][aria-selected="true"]) > button:not([role="tab"])',
+        '.buzz-tabs-item:has([data-tab-value^="thread:"][aria-selected="true"]) > button[aria-label^="Close "]',
       )
       .click();
     // The channel composer uses the same floating control and popup rows.
     const channelStatus = composer.locator("[data-agent-working-status]");
-    publish(keys[0]);
-    await expect(channelTrigger).toHaveAccessibleName(
-      "Activity: Worker 1 working",
-    );
+    // Their thread replies also quieted the agents' channel-level typing for
+    // two seconds, so channel work shows from the first pulse after that.
+    await expect(async () => {
+      publish(keys[0]);
+      await expect(channelTrigger).toHaveAccessibleName(
+        "Activity: Worker 1 working",
+        { timeout: 1000 },
+      );
+    }).toPass({ timeout: 10_000 });
     await expect(channelStatus).toHaveText("Worker 1 is working");
     await expect(humanTyping(composer)).toHaveCount(0);
-    publish(keys[1]);
-    await expect(channelTrigger).toHaveAccessibleName(
-      "Activity: 2 agents working",
-    );
+    await expect(async () => {
+      publish(keys[1]);
+      await expect(channelTrigger).toHaveAccessibleName(
+        "Activity: 2 agents working",
+        { timeout: 1000 },
+      );
+    }).toPass({ timeout: 10_000 });
     await expect(channelStatus).toHaveText(
       /^Worker [12], Worker [12] are working$/,
     );

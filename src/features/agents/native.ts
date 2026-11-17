@@ -4,6 +4,8 @@ import type {
 } from "../agent-protection/service";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { eventsDto, type RelayEvent } from "../relay/events";
+import { effectiveEditDto, effectiveEditFilter } from "../relay/effective-edit";
+import { importedEmojiPicture } from "./import-picture";
 
 /** A plugin agent's identity in one community as native custody reports it;
  * never the key. The saved identities are the agent list: one for each
@@ -41,8 +43,15 @@ export type Membership = Readonly<{ pubkey: string; relay: string }>;
  * harness agents, or the installed or development build of old Buzz. */
 export type PortSource = "harness" | "installed" | "development";
 /** An identity an earlier agent system saved, which Agents can take over. */
+export type SavedConnection = Readonly<{
+  runtime: string;
+  provider?: string;
+  model?: string;
+  effort?: string;
+}>;
 export type PortableAgent = Readonly<{
   source: PortSource;
+  connection?: SavedConnection;
   pubkey: string;
   name: string;
   picture?: string;
@@ -76,6 +85,13 @@ export type PortableAgents = Readonly<{
   /** A store that could not be read; the others are still listed. */
   warnings: readonly string[];
 }>;
+const UNCONFIRMED_EVENT =
+  /^Agent event ([0-9a-f]{64}) unconfirmed; it may or may not have been accepted$/;
+export function unconfirmedAgentEvent(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return UNCONFIRMED_EVENT.exec(message)?.[1];
+}
+
 export type AgentEventTemplate = Readonly<{
   kind: number;
   content: string;
@@ -174,6 +190,11 @@ export type AgentsNative = {
   publish(member: Membership, event: AgentEventTemplate): Promise<RelayEvent>;
   /** Reads the membership's community as the agent: one to eight filters. */
   query(member: Membership, filters: readonly object[]): Promise<RelayEvent[]>;
+  effectiveEdit(
+    member: Membership,
+    id: string,
+    channel: string,
+  ): Promise<RelayEvent>;
   /** Finds profiles by `name` or `display_name` in the agent's community, as
    * the agent, best match first. `undefined` when the community has no
    * profile name search. */
@@ -200,7 +221,8 @@ export type AgentsNative = {
   ): Promise<RelayEvent>;
   /** Publishes its name and picture as its profile in one community unless
    * that community already has it. */
-  publishProfile(member: Membership): Promise<void>;
+  /** `force` republishes it even when unchanged. */
+  publishProfile(member: Membership, force?: boolean): Promise<void>;
   /** Whether this app runs the agent: every copy of the app on this machine
    * shares the agent list, and one runs each agent. The installed app always
    * runs what it can; a dev build lets go while it does. */
@@ -218,14 +240,29 @@ export const nativeAgents = (): AgentsNative | undefined =>
         create: (destination, owner, agentType, name) =>
           invoke("app_agent_create", { destination, owner, agentType, name }),
         portable: () => invoke("app_agent_portable"),
-        port: (source, pubkey, destination, owner, agentType) =>
-          invoke("app_agent_port", {
+        port: async (source, pubkey, destination, owner, agentType) => {
+          // Preparation is optional; native reports a skipped picture if it fails.
+          let convertedPicture: Awaited<
+            ReturnType<typeof importedEmojiPicture>
+          >;
+          try {
+            const found = await invoke<PortableAgents>("app_agent_portable");
+            const picture = found.agents.find(
+              (agent) => agent.source === source && agent.pubkey === pubkey,
+            )?.picture;
+            convertedPicture = await importedEmojiPicture(picture);
+          } catch {
+            // A picture failure must not prevent taking over the identity.
+          }
+          return invoke("app_agent_port", {
             source,
             pubkey,
             destination,
             owner,
             agentType,
-          }),
+            convertedPicture,
+          });
+        },
         protectionDefaults: (owner) =>
           invoke("app_agent_protection_defaults", { owner }),
         setProtectionDefaults: (owner, revision, provider, policy) =>
@@ -279,6 +316,16 @@ export const nativeAgents = (): AgentsNative | undefined =>
           eventsDto(
             await invoke("app_agent_query", { pubkey, relay, filters }),
           ),
+        effectiveEdit: async ({ pubkey, relay }, id, channel) =>
+          effectiveEditDto(
+            await invoke("app_agent_query", {
+              pubkey,
+              relay,
+              filters: effectiveEditFilter(id, channel),
+            }),
+            id,
+            channel,
+          ),
         searchProfiles: async ({ pubkey, relay }, query, limit) => {
           const found = await invoke("app_agent_search_profiles", {
             pubkey,
@@ -296,8 +343,8 @@ export const nativeAgents = (): AgentsNative | undefined =>
           invoke("app_agent_git_auth", { pubkey, relay, owner, repo }),
         remember: ({ pubkey, relay }, slug, body, after) =>
           invoke("app_agent_remember", { pubkey, relay, slug, body, after }),
-        publishProfile: ({ pubkey, relay }) =>
-          invoke("app_agent_publish_profile", { pubkey, relay }),
+        publishProfile: ({ pubkey, relay }, force) =>
+          invoke("app_agent_publish_profile", { pubkey, relay, force }),
         claim: (pubkey, revision) =>
           invoke("app_agent_claim", { pubkey, revision: revision ?? 0 }),
         release: (pubkey) => invoke("app_agent_release", { pubkey }),

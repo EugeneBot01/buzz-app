@@ -2,10 +2,13 @@
 // keeps on this computer and shown in the host's turn-transcript model. Claude
 // Code owns the file; nothing here writes or keeps it.
 import { isMessageTool } from "../../buzz-mcp/session-tools";
+import { readEventBody } from "../../features/agent-harness/turn-records";
 import { readFile } from "../../buzz-mcp/app-client";
 import {
+  postedAs,
   promptMessage,
   promptSections,
+  STEER,
   type ToolItem,
   type Transcript,
   type TranscriptItem,
@@ -22,9 +25,10 @@ export type ClaudeTranscript = Transcript & {
   more: boolean;
   incomplete?: string;
 };
-const STEER = "new-message-arrived-while-you-were-working";
 
 type Json = Record<string, unknown>;
+/** A person's display name, if known. */
+type Names = (pubkey: string) => string | undefined;
 /** One session file's conversation. */
 type Session = Readonly<{
   sessionId: string;
@@ -71,18 +75,26 @@ const KINDS: Record<string, string> = {
   WebSearch: "fetch",
 };
 
-/** A Buzz prompt, or a steer wrapping one, as the turn's opening item. */
-function prompt(id: string, at: number, raw: string): TranscriptItem {
+/** A Buzz prompt, or a steer, as the turn's opening item. */
+function prompt(
+  id: string,
+  at: number,
+  raw: string,
+  name?: Names,
+): TranscriptItem {
   let sections = promptSections(raw);
   const steer = sections.find((section) => section.tag === STEER);
-  if (steer) sections = promptSections(steer.body);
-  const { text, author } = promptMessage(sections);
+  // An older steer wraps a whole turn.
+  if (steer && !readEventBody(steer.body))
+    sections = promptSections(steer.body);
+  const { text, author, authorPubkey } = promptMessage(sections, name);
   return {
     id,
     at,
     type: "prompt",
     text: text || raw,
     ...(author ? { author } : {}),
+    ...(authorPubkey ? { authorPubkey } : {}),
     sections,
     steer: !!steer,
   };
@@ -94,13 +106,17 @@ export function claudeTurns(
   file: string,
   conversation: Session,
   working: boolean,
+  name?: Names,
 ): TranscriptTurn[] {
   const turns: TranscriptTurn[] = [];
   const tools = new Map<string, ToolItem>();
   /** Messages sent with send, until their result says whether they were posted. */
   const sends = new Map<
     string,
-    { turn: TranscriptTurn; message: { posted?: boolean } }
+    {
+      turn: TranscriptTurn;
+      message: { posted?: boolean; messageId?: string };
+    }
   >();
   let last = 0;
   const turn = (id: string, at: number, partial: boolean) => {
@@ -142,7 +158,7 @@ export function claudeTurns(
       (block) => block.type === "tool_result",
     );
     if (entry.type === "user" && !results.length) {
-      const item = prompt(id, at, text(message.content));
+      const item = prompt(id, at, text(message.content), name);
       const current =
         item.type === "prompt" && item.steer ? turns.at(-1) : undefined;
       (current ?? turn(id, at, false)).items.push(item);
@@ -153,7 +169,8 @@ export function claudeTurns(
     last = at;
     for (const result of results) {
       const sent = sends.get(str(result.tool_use_id));
-      if (sent && !result.is_error) sent.message.posted = true;
+      if (sent && !result.is_error)
+        Object.assign(sent.message, postedAs(text(result.content)));
       else if (sent) {
         sent.turn.items.push({
           id: `${id}:${str(result.tool_use_id)}`,
@@ -225,6 +242,8 @@ export function claudeTurns(
   }
   const current = turns.at(-1);
   if (current && !working) current.endedAt = Math.max(last, current.startedAt);
+  // A session file holds the whole session, from its start.
+  if (turns[0] && !turns[0].partial) turns[0].newSession = true;
   return turns;
 }
 
@@ -274,13 +293,22 @@ const indexedFor = (start: Start, conversation: Conversation) =>
     ? start.scope === "thread" && start.root === conversation.root
     : start.scope !== "thread");
 
+/** How long finding the agent's workspace may take. */
+const WORKSPACE_TIMEOUT_MS = 10_000;
+
+/** Where a conversation's sessions ran: the agent's workspace, found by
+ * starting there, or the folder a plugin gave the conversation, kept already
+ * resolved, so it is never visited: that would create a removed one again. */
+export type SessionsPlace = string | Readonly<{ folder: string }>;
+
 /** The Claude Code project directory name for the agent's workspace, or
  * undefined when it is too long to be one. */
 export async function workspaceProject(
   spawn: Spawn,
-  workspace: string,
+  workspace: SessionsPlace,
   signal: AbortSignal,
 ) {
+  if (typeof workspace !== "string") return limited(workspace.folder);
   let directory = "";
   const process = await spawn("workspace", {
     cwd: workspace,
@@ -288,18 +316,183 @@ export async function workspaceProject(
       directory += data;
     },
   });
-  if ((await process.exited) !== 0)
-    throw new Error("Could not find the agent's workspace");
+  const stop = () => void process.kill();
+  signal.addEventListener("abort", stop, { once: true });
+  if (signal.aborted) stop();
+  const timer = setTimeout(stop, WORKSPACE_TIMEOUT_MS);
+  const code = await process.exited.finally(() => {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", stop);
+  });
   signal.throwIfAborted();
-  const project = projectName(directory.trim());
+  if (code !== 0) throw new Error("Could not find the agent's workspace");
+  return limited(directory.trim());
+}
+const limited = (directory: string) => {
+  const project = projectName(directory);
   return project.length > PROJECT_NAME_LIMIT ? undefined : project;
+};
+
+/** MiB per page of a session too large to read whole, under its 50 MB. */
+const PAGE_MIB = 32;
+/** Pages read of one session at most, so a few huge turns or a record with
+ * no end cannot hold more than this in memory; older lines are left. */
+const PAGE_BUDGET = 2;
+const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
+
+/** A session file's size in bytes. */
+async function sizeOf(spawn: Spawn, path: string, signal: AbortSignal) {
+  let output = "";
+  const sizing = await spawn("size", {
+    args: [path],
+    cwd: "~/.claude/projects",
+    onStdout: (data) => {
+      output += data;
+    },
+  });
+  const stop = () => void sizing.kill();
+  signal.addEventListener("abort", stop, { once: true });
+  if (signal.aborted) stop();
+  const code = await sizing.exited.finally(() =>
+    signal.removeEventListener("abort", stop),
+  );
+  const size = Number.parseInt(output, 10);
+  if (code !== 0 || !(size > 0)) throw new Error(`Could not read ${path}`);
+  signal.throwIfAborted();
+  return size;
+}
+
+/** MiB read from the end of a session for its latest turns. */
+const LATEST_MIB = 2;
+
+/** Each workspace's project, found once for the latest-turn reads. */
+const projects = new Map<string, string | undefined>();
+
+/** How often a session whose latest turn is larger than {@link LATEST_MIB}
+ * MiB is read in full instead. */
+export const OVERSIZED_READ_MS = 30_000;
+/** When each such session was last left to a full read. */
+const oversized = new Map<string, number>();
+
+/** The whole turns in the last {@link LATEST_MIB} MiB of the conversation's
+ * saved session, oldest first; undefined with no saved session. While a turn
+ * is larger than that, none, so what is shown stays, except undefined every
+ * {@link OVERSIZED_READ_MS} to read it in full. */
+export async function readLatestTurns(
+  spawn: Spawn,
+  workspace: SessionsPlace,
+  conversation: Conversation,
+  working: boolean,
+  signal: AbortSignal,
+  nameOf?: Names,
+): Promise<TranscriptTurn[] | undefined> {
+  // A folder's project is known without a lookup to keep.
+  if (typeof workspace === "string" && !projects.has(workspace))
+    projects.set(workspace, await workspaceProject(spawn, workspace, signal));
+  const project =
+    typeof workspace === "string"
+      ? projects.get(workspace)
+      : await workspaceProject(spawn, workspace, signal);
+  const { sessionId } = conversation;
+  if (!project || !sessionId) return undefined;
+  const path = `./${project}/${sessionId}.jsonl`;
+  const size = await sizeOf(spawn, path, signal);
+  const from = Math.max(0, Math.floor((size - 1) / (1 << 20)) - LATEST_MIB + 1);
+  const bytes = await readFile(
+    spawn,
+    "~/.claude/projects",
+    path,
+    signal,
+    undefined,
+    "read-page",
+    [String(from), String(LATEST_MIB)],
+  );
+  const tooLarge = () => {
+    const last = oversized.get(path);
+    if (last !== undefined && Date.now() - last < OVERSIZED_READ_MS) return [];
+    oversized.set(path, Date.now());
+    return undefined;
+  };
+  // A chunk from partway through starts partway through a line.
+  const start = from ? bytes.indexOf(10) + 1 : 0;
+  if (from && !start) return tooLarge();
+  const turns = claudeTurns(
+    decode(bytes.subarray(start)),
+    {
+      sessionId,
+      channelId: conversation.channelId,
+      ...(conversation.root ? { root: conversation.root } : {}),
+    },
+    working,
+    nameOf,
+  ).filter((turn) => !turn.partial);
+  if (from && turns[0]) turns[0].newSession = false;
+  if (from && !turns.length) return tooLarge();
+  oversized.delete(path);
+  return turns;
+}
+
+/** A session file in `~/.claude/projects`. One too large to read whole is
+ * read a page at a time from its end, until `enough` of its latest lines are
+ * read, its start is or `PAGE_BUDGET` pages are; `cut` says older ones were
+ * left. Its `start` is the session's first lines even then, which say whose
+ * conversation it is. */
+async function readSession(
+  spawn: Spawn,
+  path: string,
+  signal: AbortSignal,
+  enough: (text: string) => boolean,
+) {
+  const read = (process?: string, ...args: string[]) =>
+    readFile(
+      spawn,
+      "~/.claude/projects",
+      path,
+      signal,
+      undefined,
+      process,
+      args,
+    );
+  try {
+    const text = decode(await read());
+    return { text, cut: false, start: async () => text };
+  } catch (error) {
+    signal.throwIfAborted();
+    if (!/larger than 50 MB/.test(error instanceof Error ? error.message : ""))
+      throw error;
+  }
+  const size = await sizeOf(spawn, path, signal);
+  let page = Math.floor((size - 1) / (PAGE_MIB << 20));
+  let text = "";
+  // A page starts partway through a line, which ends the page before it.
+  let rest = new Uint8Array();
+  for (let pages = 1; page >= 0; page--, pages++) {
+    const chunk = await read(
+      "read-page",
+      String(page * PAGE_MIB),
+      String(PAGE_MIB),
+    );
+    const bytes = new Uint8Array(chunk.length + rest.length);
+    bytes.set(chunk);
+    bytes.set(rest, chunk.length);
+    const line = page ? bytes.indexOf(10) + 1 || bytes.length : 0;
+    rest = bytes.subarray(0, line);
+    text = decode(bytes.subarray(line)) + text;
+    if (pages >= PAGE_BUDGET || enough(text)) break;
+  }
+  const cut = page > 0;
+  return {
+    text,
+    cut,
+    start: async () => (cut ? decode(await read("read-page", "0", "4")) : text),
+  };
 }
 
 /** The title Claude Code generated for a session (its latest `ai-title`
  * record), or undefined before it has one. */
 export async function readSessionTitle(
   spawn: Spawn,
-  workspace: string,
+  workspace: SessionsPlace,
   sessionId: string,
   signal: AbortSignal,
 ): Promise<string | undefined> {
@@ -307,14 +500,12 @@ export async function readSessionTitle(
   if (!project || !/^[\w-]+$/.test(sessionId)) return undefined;
   let file: string;
   try {
-    file = new TextDecoder().decode(
-      await readFile(
-        spawn,
-        "~/.claude/projects",
-        `./${project}/${sessionId}.jsonl`,
-        signal,
-      ),
-    );
+    ({ text: file } = await readSession(
+      spawn,
+      `./${project}/${sessionId}.jsonl`,
+      signal,
+      (text) => text.includes('"ai-title"'),
+    ));
   } catch (error) {
     signal.throwIfAborted();
     if (/no such file/i.test(error instanceof Error ? error.message : ""))
@@ -340,10 +531,11 @@ export async function readSessionTitle(
  * no longer uses. */
 export async function readTranscript(
   spawn: Spawn,
-  workspace: string,
+  workspace: SessionsPlace,
   conversation: Conversation,
   working: boolean,
   signal: AbortSignal,
+  nameOf?: Names,
 ): Promise<ClaudeTranscript | undefined> {
   const project = await workspaceProject(spawn, workspace, signal);
   if (!project) return undefined;
@@ -372,17 +564,24 @@ export async function readTranscript(
   signal.throwIfAborted();
   const turns: TranscriptTurn[] = [];
   let found = false;
+  let cut = false;
+  // A cut session's older turns are left, so other sessions' turns before its
+  // first kept one would leave a gap; the transcript starts there instead.
+  let since = Number.NEGATIVE_INFINITY;
   for (const name of names) {
-    let file: string;
+    const session = {
+      sessionId: name.slice(0, -".jsonl".length),
+      channelId: conversation.channelId,
+      ...(conversation.root ? { root: conversation.root } : {}),
+    };
+    let file: Awaited<ReturnType<typeof readSession>>;
     try {
-      file = new TextDecoder().decode(
-        await readFile(
-          spawn,
-          "~/.claude/projects",
-          // Project names start with `-`; GNU base64 would read one as options.
-          `./${project}/${name}`,
-          signal,
-        ),
+      // Project names start with `-`; GNU base64 would read one as options.
+      file = await readSession(
+        spawn,
+        `./${project}/${name}`,
+        signal,
+        (text) => claudeTurns(text, session, false).length > TURN_LIMIT,
       );
     } catch (error) {
       signal.throwIfAborted();
@@ -390,30 +589,35 @@ export async function readTranscript(
         continue;
       throw error;
     }
-    if (name !== saved && !startedFor(file, conversation)) continue;
+    if (name !== saved && !startedFor(await file.start(), conversation))
+      continue;
     found = true;
-    const sessionId = name.slice(0, -".jsonl".length);
-    turns.push(
-      ...claudeTurns(
-        file,
-        {
-          sessionId,
-          channelId: conversation.channelId,
-          ...(conversation.root ? { root: conversation.root } : {}),
-        },
-        working && name === saved,
-      ),
+    const own = claudeTurns(
+      file.text,
+      session,
+      working && name === saved,
+      nameOf,
     );
+    cut ||= file.cut;
+    if (file.cut) {
+      // Its first kept turn did not start the session, and with none kept
+      // (one record larger than the budget) nothing older is contiguous.
+      if (own[0]) own[0].newSession = false;
+      since = Math.max(since, own[0]?.startedAt ?? Number.POSITIVE_INFINITY);
+    }
+    turns.push(...own);
   }
   // Nothing found is no transcript only when every file was searched.
   if (!found) {
     if (failure) throw failure;
     return undefined;
   }
-  turns.sort((a, b) => a.startedAt - b.startedAt);
+  const kept = turns
+    .filter((turn) => turn.startedAt >= since)
+    .sort((a, b) => a.startedAt - b.startedAt);
   return {
-    turns: turns.slice(-TURN_LIMIT),
-    more: turns.length > TURN_LIMIT,
+    turns: kept.slice(-TURN_LIMIT),
+    more: cut || turns.length > TURN_LIMIT,
     ...(failure
       ? {
           incomplete:

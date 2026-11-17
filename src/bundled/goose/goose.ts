@@ -1,9 +1,11 @@
 // goose on the shared ACP client: one `goose-acp` process, with goose's
 // extensions for the system prompt, steering, and per-turn provider and model
 // picks. Each session's Buzz tools reach goose over HTTP MCP, never a Buzz key.
+import { sessionTools } from "../../buzz-mcp/session-tools";
 import {
   AcpProcess,
   REQUEST_TIMEOUT_MS,
+  STOP_TIMEOUT_MS,
 } from "../../features/agent-harness/acp/process";
 import type {
   AcpSession,
@@ -38,7 +40,15 @@ export type GooseHost = Readonly<{
   resolveDirectory(path: string): Promise<string>;
 }>;
 
-const DEVELOPER = { type: "platform", name: "developer" };
+/** A goose built-in extension for `session/new`; `available_tools` limits it
+ * to the listed tools. */
+export type PlatformExtension = Readonly<{
+  type: "platform";
+  name: string;
+  available_tools?: readonly string[];
+}>;
+
+const DEVELOPER: PlatformExtension = { type: "platform", name: "developer" };
 /** goose's provider id for the provider and model its config picks. */
 const CONFIGURED = "goose";
 
@@ -47,6 +57,11 @@ const CONFIGURED = "goose";
  * model, which goose would prefer to each session's. */
 export const ENV: Readonly<Record<string, string | null>> = {
   GOOSE_MODE: "auto",
+  GOOSE_TOOL_DEFERRAL: "lookup",
+  GOOSE_TOOL_DEFERRAL_ALWAYS_LOAD: sessionTools()
+    .filter((tool) => tool.load === "always")
+    .map((tool) => `buzz__${tool.name}`)
+    .join(","),
   BUZZ_PRIVATE_KEY: null,
   BUZZ_AUTH_TAG: null,
   BUZZ_RELAY_URL: null,
@@ -83,24 +98,36 @@ export const GOOSE: AcpHooks = {
         },
         () => true,
       ),
-  newSessionMeta: (buzz, { title, provider }) => ({
+  newSessionMeta: (buzz, { title, provider, platform, tags }) => ({
     // The session's whole tool set: goose's developer tools and the Buzz
     // tools, so extensions in the owner's goose config and plugins never load
     // into a Buzz agent. The pinned Goose persists this list, including the
-    // Buzz MCP token; aaif-goose/goose#12908 is not in v1.57.0. Keep the entry
+    // Buzz MCP token; aaif-goose/goose#12908 is not in v1.59.2. Keep the entry
     // until upstream supports client MCP servers alongside this allowlist.
     // The non-persistence acceptance test remains a known failure.
-    enabledExtensions: buzz ? [DEVELOPER, { type: "mcp", server: buzz }] : [],
+    // Mesh sessions pass a narrower `platform` set (see mesh-compute).
+    enabledExtensions: buzz
+      ? [...(platform ?? [DEVELOPER]), { type: "mcp", server: buzz }]
+      : [],
     ...(title ? { sessionTitle: title } : {}),
     // On the provider's default model, whatever goose's config holds.
     ...(provider ? { provider } : {}),
+    // Indexed by goose, so `session/list` finds the session by them.
+    ...(tags ? { tags } : {}),
   }),
   // Appended under goose's own prompt, which carries each extension's
-  // instructions; `set` would replace it, and render ours as a template.
-  systemPrompt: async (goose, sessionId, text) => {
+  // instructions. `set` replaces that prompt and renders the text as a
+  // template, so ours goes in raw.
+  systemPrompt: async (goose, sessionId, text, replace) => {
     await goose.request(
       "_goose/unstable/session/system-prompt/set",
-      { sessionId, mode: "append", key: "buzz", text },
+      replace
+        ? {
+            sessionId,
+            mode: "set",
+            text: `{% raw %}${text.replace(/{%-?\s*endraw\s*-?%}/g, "")}{% endraw %}`,
+          }
+        : { sessionId, mode: "append", key: "buzz", text },
       REQUEST_TIMEOUT_MS,
     );
   },
@@ -167,18 +194,58 @@ export const GOOSE: AcpHooks = {
 
 /** Starts `goose-acp` and checks it can reach the Buzz tools. */
 export const GooseProcess = {
-  start: (
+  start: async (
     spawn: Spawn,
     launch: Readonly<{
       cwd: string;
       env?: Readonly<Record<string, string | null>>;
       serve?: ServeMcp;
+      protected?: boolean;
+      signal?: AbortSignal;
+      onProcess?: (goose: AcpProcess) => void;
+      agent?: Readonly<{ pubkey: string; relay: string }>;
     }>,
-  ) =>
-    AcpProcess.start(spawn, GOOSE, {
+  ) => {
+    const goose = await AcpProcess.start(spawn, GOOSE, {
       ...launch,
-      env: { ...databricks(), ...launch.env },
-    }),
+      env: {
+        ...databricks(),
+        ...launch.env,
+        ...(launch.protected && { GOOSE_DISABLE_SESSION_NAMING: "true" }),
+      },
+    });
+    const cancel = () => void goose.kill();
+    launch.signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      launch.signal?.throwIfAborted();
+      if (launch.protected) {
+        const capability = (await goose.request(
+          "_buzz/security/capabilities",
+          {},
+          REQUEST_TIMEOUT_MS,
+        )) as { version?: number; enabled?: boolean };
+        if (capability.version !== 2)
+          throw new Error("This Goose build lacks mandatory security hooks");
+        // The engine gates exactly when Buzz gives it the security bridge.
+        // Engines released before it reported this omit `enabled`.
+        if (
+          capability.enabled !== undefined &&
+          capability.enabled !== (launch.env?.BUZZ_SECURITY_URL != null)
+        )
+          throw new Error(
+            "Protected Goose's security gate is in the wrong state",
+          );
+      }
+      launch.signal?.throwIfAborted();
+      return goose;
+    } catch (error) {
+      // Rejects once it has exited or `STOP_TIMEOUT_MS` has passed.
+      await goose.stop(STOP_TIMEOUT_MS);
+      throw error;
+    } finally {
+      launch.signal?.removeEventListener("abort", cancel);
+    }
+  },
 };
 
 async function defaultModel(goose: AcpProcess, provider: string) {
