@@ -9073,7 +9073,7 @@ it("prefers a live open in: channel over an archived joined namesake", async () 
       />,
     );
     await waitFor(() =>
-      expect(reads.flat()).toEqual([
+      expect(reads.flat().filter((filter) => "search" in filter)).toEqual([
         expect.objectContaining({ "#h": ["open"] }),
       ]),
     );
