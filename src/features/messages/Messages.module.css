@@ -1327,6 +1327,8 @@ html[data-keyboard-navigation] .fileAttachment:focus-visible {
   justify-content: center;
   width: 32px;
   height: 32px;
+  /* The app's default button padding would crush the icon to zero width. */
+  padding: 0;
   /* Same top margin as the card, so both centre on the same line. */
   margin-top: var(--space-2);
   /* Card padding + download icon (20px) + the card's gap. */
@@ -1338,6 +1340,14 @@ html[data-keyboard-navigation] .fileAttachment:focus-visible {
   background: transparent;
   color: var(--text-standard);
   cursor: pointer;
+}
+.teamFileOpen > svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  visibility: visible;
+  opacity: 1;
 }
 .teamFileOpen:disabled {
   opacity: 0.5;

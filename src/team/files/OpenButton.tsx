@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { BookIcon } from "../../shared/design-system/icons/index";
 import { isNativeMediaSource } from "../../features/messages/attachment-source";
 import { artcraftAppFor, canOpenFile, openNativeMedia } from "./open";
 
@@ -56,7 +55,23 @@ export function OpenFileButton({
         disabled={state === "opening"}
         onClick={open}
       >
-        <BookIcon size={20} aria-hidden="true" />
+        <svg
+          viewBox="0 0 64 64"
+          width="20"
+          height="20"
+          aria-hidden="true"
+          style={{ width: 20, height: 20, flexShrink: 0 }}
+        >
+          {/* The team's own open-book mark. */}
+          <path
+            d="M32 19C25 13 17 12 8 15V46C17 43 25 44 32 50C39 44 47 43 56 46V15C47 12 39 13 32 19V50"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </button>
     );
   return (
