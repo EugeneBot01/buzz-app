@@ -37,14 +37,19 @@
 html[data-team-bubbles="on"]
   [data-message-action-anchor]:not([data-emoji-only]):not([data-diff-only]) {
   width: fit-content;
-  max-width: min(62%, 36rem);
+  /* Window-based, not %: the column around a bubble shrinks to fit it, so a
+     % cap shrank with short text and wrapped "넵!" one letter a line. */
+  max-width: min(62vw, 36rem);
   padding: 8px 12px;
   border-radius: 14px;
   border-top-left-radius: 4px;
   background: var(--color-soft);
   color: var(--text);
   word-break: keep-all;
-  overflow-wrap: anywhere;
+  /* break-word (not anywhere) so a short line like "넵!" is never squeezed
+     to one letter a line; long links still wrap at the bubble's max width. */
+  overflow-wrap: break-word;
+  flex-shrink: 0;
 }
 /* Same :not() weight as the base bubble rule, so mine always wins. */
 html[data-team-bubbles="on"]
@@ -64,6 +69,11 @@ html[data-team-bubbles="on"]
 html[data-team-bubbles="on"] [data-message-action-anchor][data-own] a,
 html[data-team-bubbles="on"] [data-message-action-anchor][data-own] code {
   color: inherit;
+}
+/* Reactions sit plain under the bubble: just the emoji and count, no pill. */
+html[data-team-bubbles="on"]
+  .buzz-compact-controls:has(> * button[data-reaction], > button[data-reaction]) {
+  background: transparent;
 }
 html[data-team-bubbles="on"] [data-viewer-message] {
   justify-content: flex-end;
@@ -94,5 +104,5 @@ html[data-team-bubbles="on"] [data-team-card] {
   min-width: min(16rem, 100%);
 }
 html[data-team-bubbles="on"] [data-message-action-anchor]:has([data-team-card]) {
-  min-width: min(18rem, 62%);
+  min-width: min(18rem, 62vw);
 }

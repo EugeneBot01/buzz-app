@@ -22,7 +22,7 @@ import {
 import styles from "./Messages.module.css";
 import { useNativeDownload, type DownloadState } from "./use-native-download";
 import type { ReactNode } from "react";
-import { OpenFileButton } from "../../team/files/OpenButton";
+import { OpenFileButton, canOpenAttachment } from "../../team/files/OpenButton";
 
 export function formatFileSize(size: number): string {
   if (size < 1024) return `${size} B`;
@@ -149,7 +149,7 @@ export function FileAttachment({
     );
   }
 
-  const content = (state: DownloadState = "idle") => (
+  const content = (state: DownloadState = "idle", openSlot = false) => (
     <>
       <span className={fileIconStyles.slot}>
         <FileTypeIcon name={attachment.name} mime={attachment.mime} />
@@ -172,6 +172,11 @@ export function FileAttachment({
                   : "File unavailable"}
         </span>
       </span>
+      {/* Team: room for the open-book button laid over the card, so the
+          name never runs under it. */}
+      {openSlot && (
+        <span className={styles.teamFileOpenSlot} aria-hidden="true" />
+      )}
       {state === "pending" ? (
         <CircleNotchIcon
           size={20}
@@ -213,9 +218,13 @@ export function FileAttachment({
         {content()}
       </a>
     );
-  if (nativeSource)
+  if (nativeSource) {
+    const openable = canOpenAttachment(source, attachment.name);
     return (
-      <>
+      <span
+        className={openable ? styles.teamFileCard : undefined}
+        style={openable ? undefined : { display: "contents" }}
+      >
         <NativeFileDownload
           key={JSON.stringify([source, attachment.name])}
           source={source}
@@ -232,13 +241,21 @@ export function FileAttachment({
               title={displayName}
               onClick={() => void download()}
             >
-              {content(state)}
+              {content(state, openable)}
             </button>
           )}
         </NativeFileDownload>
-        <OpenFileButton source={source} name={attachment.name} />
-      </>
+        {openable && (
+          <OpenFileButton
+            variant="icon"
+            className={styles.teamFileOpen}
+            source={source}
+            name={attachment.name}
+          />
+        )}
+      </span>
     );
+  }
   return (
     <a
       className={styles.fileAttachment}
