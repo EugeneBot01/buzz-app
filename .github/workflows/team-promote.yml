@@ -20,6 +20,10 @@ on:
         description: "Only check and report what would happen. Changes nothing."
         type: boolean
         default: false
+      notify_only:
+        description: "Only (re)post the update notice with patch notes for an already-sent version (empty = newest sent). Sends nothing to team apps."
+        type: boolean
+        default: false
 
 concurrency:
   group: team-release
@@ -37,11 +41,20 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ inputs.version }}
       DRY_RUN: ${{ inputs.dry_run }}
+      NOTIFY_ONLY: ${{ inputs.notify_only }}
     steps:
       - name: Pick the build
         id: pick
         run: |
           set -euo pipefail
+          if [[ -z "$VERSION" && "$NOTIFY_ONLY" == "true" ]]; then
+            # Newest build already sent to team apps.
+            VERSION=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 \
+              --json tagName,isPrerelease,createdAt \
+              --jq '[.[] | select((.isPrerelease | not) and (.tagName | test("^app-v[0-9]+\\.[0-9]+\\.[0-9]+-team\\.[0-9]+$")))]
+                    | sort_by(.createdAt) | last | .tagName // "" | ltrimstr("app-v")')
+            [[ -n "$VERSION" ]] || { echo "::error::no sent build found"; exit 1; }
+          fi
           if [[ -z "$VERSION" ]]; then
             # Newest pre-release that is a team build (not the team-app-latest feed).
             VERSION=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 \
@@ -57,6 +70,7 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Check it is a complete test build
+        if: ${{ !inputs.notify_only }}
         env:
           VERSION: ${{ steps.pick.outputs.version }}
         run: |
@@ -81,6 +95,7 @@ jobs:
           }
 
       - name: Refuse to go backwards
+        if: ${{ !inputs.notify_only }}
         env:
           VERSION: ${{ steps.pick.outputs.version }}
         run: |
@@ -96,7 +111,7 @@ jobs:
           fi
 
       - name: Send to team apps
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !inputs.notify_only }}
         env:
           VERSION: ${{ steps.pick.outputs.version }}
         run: |
@@ -130,14 +145,22 @@ jobs:
             echo "Buzz update notice not set up yet (BUZZ_UPDATE_HOOK_URL / BUZZ_UPDATE_HOOK_SECRET); skipping."
             exit 0
           fi
+          # Patch notes are the release's description; without one, the commit
+          # titles since the previous sent build stand in.
+          NOTES=$(gh release view "app-v${VERSION}" --repo "$GITHUB_REPOSITORY" --json body --jq .body || true)
+          if [[ -z "${NOTES//[[:space:]]/}" ]]; then
+            NOTES=$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="app-v${VERSION}" --jq .body || true)
+          fi
+          NOTES=${NOTES:0:3500}
           curl -fsS --max-time 20 -X POST "$HOOK_URL" \
             -H "X-Webhook-Secret: ${HOOK_SECRET}" \
             -H "Content-Type: application/json" \
-            --data-raw "$(jq -cn --arg v "$VERSION" '{version: $v}')" > /dev/null
+            --data-raw "$(jq -cn --arg v "$VERSION" --arg n "$NOTES" '{version: $v, notes: $n}')" > /dev/null
           echo "Buzz update notice sent for v${VERSION}"
 
       - name: Dry run summary
-        if: ${{ inputs.dry_run }}
+        if: ${{ inputs.dry_run && !inputs.notify_only }}
         env:
           VERSION: ${{ steps.pick.outputs.version }}
         run: echo "Dry run - would send v${VERSION} to team apps. Nothing was changed."
