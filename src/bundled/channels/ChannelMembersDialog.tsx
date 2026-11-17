@@ -198,6 +198,7 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
   adding,
   picture,
   isAgent,
+  profiled,
   roleLabel,
   archived,
   ownerName,
@@ -234,6 +235,7 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
   adding: boolean;
   picture: string | undefined;
   isAgent: boolean;
+  profiled: boolean;
   roleLabel: string | undefined;
   archived: boolean;
   ownerName: string;
@@ -357,6 +359,8 @@ const MemberIdentityRow = memo(function MemberIdentityRow({
       place={place}
       pubkey={pubkey}
       name={name}
+      agent={isAgent}
+      profiled={profiled}
       verifiedOwner={verifiedOwner}
       onChange={onChange}
       returnFocus={input}
@@ -668,8 +672,10 @@ export function ChannelMembersDialog({
     if (shownIntent === previous) return;
     lastShown.current = shownIntent;
     if (shownIntent) {
-      // Enter confirms reversible changes; removal starts on Cancel.
-      (shownIntent.change.role !== "remove" && !apply.current?.disabled
+      // Enter confirms reversible changes; removal and transfer start on Cancel.
+      (shownIntent.change.role !== "remove" &&
+      shownIntent.change.role !== "owner" &&
+      !apply.current?.disabled
         ? apply.current
         : cancel.current
       )?.focus();
@@ -972,7 +978,10 @@ export function ChannelMembersDialog({
       current = false;
     };
   }, [session, channelId, refresh, soloSharing]);
-  const memberKey = channel?.members?.join(":") ?? "";
+  const memberKey = useMemo(
+    () => channel?.members?.join(":") ?? "",
+    [channel?.members],
+  );
   const largeRoster = (channel?.members?.length ?? 0) > MEMBER_PAGE_SIZE;
   const administration = useMemberAdministration(
     session,
@@ -1039,10 +1048,14 @@ export function ChannelMembersDialog({
       withVerifiedNames(search.people, searchVerified, profiles, preference),
     [search.people, searchVerified, profiles, preference],
   );
-  const searchProfiles = new Map(
-    searchPeople.map((person) => [person.pubkey, person]),
+  const searchProfiles = useMemo(
+    () => new Map(searchPeople.map((person) => [person.pubkey, person])),
+    [searchPeople],
   );
-  const members = new Set(channel?.members ?? []);
+  const members = useMemo(
+    () => new Set(channel?.members ?? []),
+    [channel?.members],
+  );
   const verifiedOf = (key: string): VerifiedProfile | undefined =>
     profiles.get(key)?.verified ?? searchVerified.get(key);
   const pageLabel = (verified: VerifiedProfile | undefined) =>
@@ -1088,13 +1101,31 @@ export function ChannelMembersDialog({
   const addable = (key: string, ...names: (string | undefined)[]) =>
     key === typedKey || names.some(nameMatches);
   // Label once per member: a fallback label bech32-encodes the key, too costly
-  // to repeat for every member of a large roster on each render.
-  const memberLabels = new Map([...members].map((key) => [key, label(key)]));
+  // to repeat for every member of a large roster on each render. Effects and
+  // subscriptions render the dialog several times per keystroke; relabel only
+  // when a member or an input of `label` changes: `profiles`, `searchVerified`,
+  // `preference`, `searchProfiles`, `known` and `resolveName`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: listed above.
+  const memberLabels = useMemo(
+    () => new Map((channel?.members ?? []).map((key) => [key, label(key)])),
+    [
+      channel?.members,
+      profiles,
+      searchProfiles,
+      searchVerified,
+      known,
+      preference,
+      resolveName,
+    ],
+  );
   const memberLabel = (key: string) => memberLabels.get(key) ?? label(key);
   // Sort again only when a member or label changes, not on every render (each
   // filter keystroke), which would re-sort a large roster. The serialized
   // pairs are the memo key, since they change whenever either does.
-  const labelList = JSON.stringify([...memberLabels]);
+  const labelList = useMemo(
+    () => JSON.stringify([...memberLabels]),
+    [memberLabels],
+  );
   const currentMembers = useMemo(
     () =>
       (JSON.parse(labelList) as [string, string][])
@@ -1129,18 +1160,22 @@ export function ChannelMembersDialog({
     selectedAccess !== accessFilter
   )
     setSelectedAccess(accessFilter);
-  const currentGroups = ["People", "Agents"].map((name) => {
-    const keys = currentMembers.filter((key) => {
-      const group =
-        known.has(key) || profiles.get(key)?.isAgent ? "Agents" : "People";
-      return group === name;
-    });
-    return {
-      name,
-      count: keys.length,
-      keys,
-    };
-  });
+  const currentGroups = useMemo(
+    () =>
+      ["People", "Agents"].map((name) => {
+        const keys = currentMembers.filter((key) => {
+          const group =
+            known.has(key) || profiles.get(key)?.isAgent ? "Agents" : "People";
+          return group === name;
+        });
+        return {
+          name,
+          count: keys.length,
+          keys,
+        };
+      }),
+    [currentMembers, known, profiles],
+  );
   // Optional profile updates change labels, not the identities being browsed.
   // Reopening or refreshing takes a new paging order. Live roster changes
   // retain surviving identities and append new members in their current order.
@@ -1190,24 +1225,45 @@ export function ChannelMembersDialog({
   const isArchived = (key: string) =>
     archiveHides(session.archives, key, session.viewer);
   const baseGroups = largeRoster ? orderedGroups : currentGroups;
-  const groups = [
-    ...baseGroups.map((group) => ({
-      name: group.name,
-      keys: group.keys.filter((key) => !isArchived(key)),
-    })),
-    {
-      name: "Archived",
-      keys: baseGroups.flatMap((group) => group.keys.filter(isArchived)),
-    },
-  ].map((group) => ({
-    name: group.name,
-    count: group.keys.length,
-    keys: group.keys.filter(
-      (key) =>
-        matches(key, memberLabel(key)) &&
-        (accessFilter === "All" || accessOf(key) === accessFilter),
-    ),
-  }));
+  // Filters every member: redo it only when the roster, the query or an input
+  // of the filters changes, not on each of the several renders effects cause
+  // per keystroke. `matches` reads the query, `searchProfiles`, `profiles` and
+  // `searchVerified`; `memberLabel` reads `memberLabels` (every key here is a
+  // member); `isArchived` reads `archives`; `accessOf` reads `roles`.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: listed above.
+  const groups = useMemo(
+    () =>
+      [
+        ...baseGroups.map((group) => ({
+          name: group.name,
+          keys: group.keys.filter((key) => !isArchived(key)),
+        })),
+        {
+          name: "Archived",
+          keys: baseGroups.flatMap((group) => group.keys.filter(isArchived)),
+        },
+      ].map((group) => ({
+        name: group.name,
+        count: group.keys.length,
+        keys: group.keys.filter(
+          (key) =>
+            matches(key, memberLabel(key)) &&
+            (accessFilter === "All" || accessOf(key) === accessFilter),
+        ),
+      })),
+    [
+      baseGroups,
+      archives,
+      session.viewer,
+      query,
+      searchProfiles,
+      profiles,
+      searchVerified,
+      memberLabels,
+      accessFilter,
+      roles,
+    ],
+  );
   const narrowed = text.length > 0 || accessFilter !== "All";
   const presentGroups = groups.filter((group) => group.count > 0);
   const identityFilter =
@@ -1488,6 +1544,9 @@ export function ChannelMembersDialog({
         session.viewer ?? "",
         selection,
         ownership.owners.get(selection.pubkey),
+        known.has(selection.pubkey) ||
+          !profiles.has(selection.pubkey) ||
+          !!profiles.get(selection.pubkey)?.isAgent,
       );
       changePermitted = true;
     } catch {
@@ -1814,6 +1873,7 @@ export function ChannelMembersDialog({
         adding={adding}
         picture={picture ?? profiles.get(key)?.picture}
         isAgent={isAgent}
+        profiled={profiles.has(key)}
         archived={isArchived(key)}
         roleLabel={
           isAgent && role === "bot"
@@ -2087,16 +2147,15 @@ export function ChannelMembersDialog({
         selection
           ? selection.role === "remove"
             ? `Remove ${removalTarget} from ${place}`
-            : selection.expectedRole === "absent"
-              ? "Add member?"
-              : `Change access to ${memberAccessLabel(selection.role)}?`
+            : selection.role === "owner"
+              ? `Transfer ownership to ${selectedName}?`
+              : selection.expectedRole === "absent"
+                ? "Add member?"
+                : `Change access to ${memberAccessLabel(selection.role)}?`
           : (title ?? memberAccess(channel).title)
       }
       height={selection ? "content" : generalAccess ? "stable-tall" : "stable"}
       bodyLayout={selection ? "flow" : "flex"}
-      headerGap={
-        !selection || selection.role === "remove" ? "compact" : "default"
-      }
       footerGap={
         selection && selection.role !== "remove" ? "default" : "compact"
       }
@@ -2131,7 +2190,9 @@ export function ChannelMembersDialog({
             <Button
               ref={apply}
               variant={
-                selection.role === "remove" ? "destructive" : "prominent"
+                selection.role === "remove" || selection.role === "owner"
+                  ? "destructive"
+                  : "prominent"
               }
               disabled={!changePermitted}
               onClick={() => {
@@ -2152,11 +2213,13 @@ export function ChannelMembersDialog({
             >
               {selection.role === "remove"
                 ? `Remove ${removalTarget}`
-                : selectedAddition
-                  ? selectedAddition.action
-                  : selection.role === "admin"
-                    ? "Set as admin"
-                    : `Set to ${memberAccessLabel(selection.role).toLowerCase()}`}
+                : selection.role === "owner"
+                  ? "Transfer ownership"
+                  : selectedAddition
+                    ? selectedAddition.action
+                    : selection.role === "admin"
+                      ? "Set as admin"
+                      : `Set to ${memberAccessLabel(selection.role).toLowerCase()}`}
             </Button>
           </>
         ) : (
@@ -2171,8 +2234,10 @@ export function ChannelMembersDialog({
       {selection ? (
         selection.role !== "remove" && (
           <p className="text-body-sm">
-            {selectedAddition?.description ??
-              `Change access from ${memberAccessLabel(selection.expectedRole)} to ${memberAccessLabel(selection.role)}. ${selection.role === "admin" ? `Admins can manage this ${place} and its members.` : `This changes what they can do in this ${place}.`}`}
+            {selection.role === "owner"
+              ? `${selectedName} becomes the owner of this ${place} and you'll become an admin. They can change your role, remove you or delete the ${place}. Only an owner can make you an owner again.`
+              : (selectedAddition?.description ??
+                `Change access from ${memberAccessLabel(selection.expectedRole)} to ${memberAccessLabel(selection.role)}. ${selection.role === "admin" ? `Admins can manage this ${place} and its members.` : `This changes what they can do in this ${place}.`}`)}
           </p>
         )
       ) : (

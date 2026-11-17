@@ -18,6 +18,7 @@ import {
   outsideMentionDetail,
   remoteMentionDetail,
 } from "./mention-candidates";
+import { outsideMentionReferences } from "../../features/messages/mention-admission";
 import { matchesMentionQuery, pendingMentionQuery } from "./mention-query";
 import {
   channelMember,
@@ -236,7 +237,12 @@ export function MentionCompletion({
               model.managedBy.get(recipient.pubkey),
               memberKeys.has(recipient.pubkey)
                 ? undefined
-                : inviteAgents
+                : inviteAgents &&
+                    !outsideMentionReferences(
+                      channel,
+                      agents.identities,
+                      recipient.pubkey,
+                    )
                   ? parentAdmission
                     ? "Adds to channel"
                     : "Adds to chat"
